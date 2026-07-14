@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wurzel 2 - Area Model (V28 - Exact Integer Digit Math)</title>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    
+    <style>
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; font-family: system-ui, sans-serif; background: #0b1120; overflow: hidden; }
+        canvas { display: block; width: 100%; height: 100%; }
+
+        #right-panel {
+            position: absolute; top: 20px; right: 20px; width: 400px;
+            display: flex; flex-direction: column; gap: 15px; max-height: calc(100vh - 40px); z-index: 10; pointer-events: none; 
+            transition: transform 0.35s ease;
+        }
+        #right-panel.collapsed { transform: translateX(calc(100% - 14px)); }
+
+        .collapse-tab {
+            position: absolute; left: -22px; top: 50%; transform: translateY(-50%);
+            width: 22px; height: 60px; background: rgba(15,23,42,0.85); border: 1px solid rgba(255,255,255,0.15);
+            border-right: none; border-radius: 8px 0 0 8px; display: flex; align-items: center; justify-content: center;
+            cursor: pointer; pointer-events: auto; color: #64748b; font-size: 0.8em; user-select: none;
+            transition: color 0.2s, background 0.2s;
+        }
+        .collapse-tab:hover { color: #f8fafc; background: rgba(30,41,59,0.95); }
+
+        .overlay-panel {
+            background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px;
+            color: #f8fafc; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+            pointer-events: auto; box-sizing: border-box; width: 100%; position: relative;
+        }
+        
+        #narrative { flex-grow: 1; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+        
+        .phase-title { font-weight: bold; color: #3b82f6; font-size: 1.1em; border-bottom: 1px solid #334155; padding-bottom: 5px; }
+        .phase-desc { font-size: 0.9em; line-height: 1.4; color: #cbd5e1; }
+        
+        .inventory-box { background: rgba(0,0,0,0.4); border-radius: 8px; padding: 12px; border: 1px solid rgba(255,255,255,0.05); }
+        .inventory-title { font-size: 0.8em; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-bottom: 10px; font-weight: bold; }
+        .piece-row { display: flex; align-items: center; gap: 8px; font-size: 0.8em; margin-bottom: 7px; font-family: monospace; }
+        .piece-left { display: flex; align-items: center; gap: 8px; width: 78px; flex-shrink: 0; }
+        .color-swatch { width: 14px; height: 14px; border-radius: 3px; border: 1px solid rgba(255,255,255,0.3); flex-shrink: 0; }
+        .exp-label { color: #94a3b8; font-size: 0.95em; }
+        .piece-bar { flex-grow: 1; display: flex; align-items: center; gap: 2px; height: 14px; overflow: hidden; }
+        .piece-block { width: 6px; height: 12px; border-radius: 1px; flex-shrink: 0; }
+        .piece-count-text { width: 34px; text-align: right; flex-shrink: 0; font-weight: bold; }
+        
+        .control-group { display: flex; flex-direction: column; gap: 8px; font-size: 0.9em; margin-bottom: 5px;}
+        .control-row { display: flex; gap: 10px; }
+        .control-row > div { flex: 1; }
+        input[type=range], input[type=number], select { width: 100%; cursor: pointer; background: #1e293b; color: #fff; border: 1px solid #334155; border-radius: 4px; padding: 6px; box-sizing: border-box;}
+        
+        button.play { background: #3b82f6; color: white; border: none; padding: 10px; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top: 5px; transition: background 0.2s; }
+        button.play:hover { background: #2563eb; }
+        .warning { color: #f59e0b; font-size: 0.8em; margin-top: -5px; }
+        .error-msg { color: #ef476f; font-weight: bold; font-size: 0.9em; display: none; }
+        .zoom-readout { color: #3b82f6; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<canvas id="glCanvas"></canvas>
+
+<div id="right-panel">
+    <div class="collapse-tab" id="collapseTab" title="Steuerung ein-/ausblenden">⟩</div>
+    <div class="overlay-panel" id="controls">
+        <div style="font-weight: bold; margin-bottom: 5px; color: #3b82f6;">System-Compiler</div>
+        <div class="control-row">
+            <div class="control-group"><label>Basis (b)</label><input type="number" id="baseInput" min="2" max="16" value="10"></div>
+            <div class="control-group"><label>Tiefe ($n_{max}$)</label><input type="number" id="depthInput" min="1" max="100" value="3"></div>
+        </div>
+        <div class="warning" id="perfWarning">Tiefe > 5 kann Leistung beeinträchtigen.</div>
+        <div class="error-msg" id="errorMsg"></div>
+
+        <div class="control-group" style="margin-top: 5px;">
+            <label>Transformation (Flug-Modus)</label>
+            <select id="transformMode">
+                <!-- Z (Zerschneiden) und R (Rotieren) vorübergehend entfernt -
+                     beide hatten Bugs, aktuell wird nur mit S getestet.
+                     Für spätere Neuimplementierung siehe Kommentare im JS.
+                <option value="Z">Z: Zerschneiden (Montessori)</option>
+                <option value="R">R: Rotieren (Festkörper)</option>
+                -->
+                <option value="S">S: Strecken (Morphing)</option>
+            </select>
+        </div>
+
+        <hr style="border: 1px solid #334155; margin: 10px 0;">
+
+        <div class="control-group"><label id="timeLabel">Zeitstrahl (0.0)</label><input type="range" id="timeSlider" min="0" max="10" step="0.01" value="0"></div>
+        
+        <div class="control-group" style="margin-top:10px;"><label>Modus B (Hypothetische Basis $b \to 1$)</label><input type="range" id="modeSliderAB" min="0" max="1" step="0.01" value="0"></div>
+
+        <div class="control-group" style="margin-top:10px;">
+            <label>Bank-Zoom (automatisch, reale Basis) — <span class="zoom-readout" id="bankZoomLabel">1,0×</span></label>
+            <label style="margin-top:-4px;">Restfläche der Bank — <span class="zoom-readout" id="bankAreaLabel">100%</span></label>
+        </div>
+        <div class="control-group" style="margin-top:6px;">
+            <label>Zoom-Schwellwert (Potenzen ignorieren)</label>
+            <input type="number" id="zoomThresholdInput" min="0" max="10" step="1" value="0">
+        </div>
+        
+        <button class="play" id="playBtn">Play / Pause (Endlos)</button>
+    </div>
+
+    <div class="overlay-panel" id="narrative">
+        <div class="phase-title" id="hudTitle">Kompiliere...</div>
+        <div class="phase-desc" id="hudDesc"></div>
+        <div class="inventory-box">
+            <div class="inventory-title">Bank (Restfläche)</div>
+            <div id="hudInventory"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+const COLORS = ["#cbd5e1", "#ef476f", "#ffd166", "#06d6a0", "#118ab2", "#8338ec", "#f78c6b", "#ff006e", "#3a86ff", "#fb5607", "#ffbe0b"];
+
+let N_MAX = 3; let BASE = 10;
+let TOTAL_STEPS = 0; let MAX_TIME = 0; let P_FINAL = 0;
+let render_pipeline = []; let bank_pieces = []; let axes = [];
+
+// Speichert die Ziffern für die exakte BigInt-Ausgabe
+let GLOBAL_N_ARR = []; 
+// Speichert, zu welchem Zeitpunkt Schale S beginnt (ersetzt die alte
+// Annahme "Schale S beginnt bei Zeit S*3.0", die nicht mehr gilt,
+// seit die Zeitachse monoton statt in festen Bloecken laeuft)
+let GLOBAL_SHELL_START = [];
+// Speichert pro Schale S den Auto-Zoom-Zustand der Bank ({z, cx, cy}) -
+// einmal berechnet in compileSystem(), zwischen den Schalen wird zur
+// Laufzeit stetig interpoliert (siehe getInterpolatedBankZoom()).
+let GLOBAL_BANK_ZOOM = [];
+// Feine Checkpoint-Zeitpunkte (ein Eintrag pro Entnahme-Ereignis, nicht nur
+// pro Schale) - Basis für GLOBAL_BANK_ZOOM, siehe compileSystem().
+let GLOBAL_BANK_ZOOM_TIMES = [];
+// Zoom-Schwellwert (in Potenzen von BASE): 0 = alle Stücke fließen ins
+// Framing ein (bisheriges Verhalten). Siehe compileSystem() für Details.
+let BANK_ZOOM_THRESHOLD_POWERS = 0;
+
+// === SYSTEM A: COMPILER ===
+//
+// PATCH V28: Die Ziffernsuche läuft jetzt komplett in BigInt-Integer-Arithmetik.
+// Vorher wurde P als Float mitgeführt und R = 2 - P*P gebildet ("catastrophic
+// cancellation"): sobald P -> sqrt(2), wird P*P -> 2, und die Differenz R
+// verschwindet irgendwann im Rundungsfehler von Float64 (~4.4e-16). Ab
+// Tiefe ~8-9 (Basis 10) kippte dadurch der Vergleich im inneren Loop und
+// erzeugte eine falsche Ziffer.
+//
+// Neu: P wird als Integer P_int zur Basis b^m gespeichert (Wert = P_int / b^m).
+// Die Bedingung "Ziffer n passt an Position m" wird dann rein ganzzahlig
+// geprüft:
+//      (P_int * b + n)^2  <=  2 * b^(2*(m))
+// Da nie durch b^m geteilt oder mit einer sich der 2 annähernden Fließkomma-
+// zahl subtrahiert wird, ist das für JEDE Tiefe exakt - keine Auslöschung
+// mehr möglich. Das ist genau die "Exponentialschreibweise" (P_int, m),
+// die die Bank-Stücke ohnehin schon implizit über ihren Exponenten k nutzen.
+function compileSystem() {
+    try {
+        document.getElementById('errorMsg').style.display = 'none';
+        N_MAX = parseInt(document.getElementById('depthInput').value);
+        BASE = parseInt(document.getElementById('baseInput').value);
+        BANK_ZOOM_THRESHOLD_POWERS = parseInt(document.getElementById('zoomThresholdInput').value) || 0;
+        let transformMode = document.getElementById('transformMode').value;
+        document.getElementById('perfWarning').style.display = N_MAX > 5 ? 'block' : 'none';
+
+        let baseBig = BigInt(BASE);
+        let n_arr = new Float64Array(N_MAX + 1);
+
+        // P_int repräsentiert P als Integer zur Basis b^m: Wert = P_int / b^m
+        let P_int = 1n;
+        n_arr[0] = 1;
+
+        for (let m = 1; m <= N_MAX; m++) {
+            // Ziel: 2 * b^(2m), exakt als Integer - kein Rundungsfehler.
+            let target = 2n * (baseBig ** BigInt(2 * m));
+            let best_n = 0n;
+            for (let test_n = baseBig - 1n; test_n >= 0n; test_n--) {
+                let candidate = P_int * baseBig + test_n;
+                if (candidate * candidate <= target) { best_n = test_n; break; }
+            }
+            n_arr[m] = Number(best_n);
+            P_int = P_int * baseBig + best_n;
+        }
+
+        // P_FINAL wird nur noch für Skalierung/Layout gebraucht (Rendering),
+        // nicht mehr für die Ziffernlogik selbst - daher unkritisch als Float.
+        P_FINAL = Number(P_int) / Math.pow(BASE, N_MAX);
+        GLOBAL_N_ARR = Array.from(n_arr);
+
+        axes = []; axes.push({ exp: 0, cumulative: 1.0 });
+        for (let m = 1; m <= N_MAX; m++) {
+            for (let c = 0; c < n_arr[m]; c++) {
+                axes.push({ exp: m, cumulative: axes[axes.length - 1].cumulative + Math.pow(BASE, -m) });
+            }
+        }
+        TOTAL_STEPS = axes.length;
+
+        let global_id = 0;
+        bank_pieces = [{ id: global_id++, parent_id: null, k: 0, x: 0, y: 0, w: 1, h: 1, born_time: 0, cut_time: Infinity, taken_time: Infinity, children: [] }];
+        
+        // PATCH V35: Auswahl-Strategie aus dem Algorithmus-Spiel-Tool
+        // übernommen (dort ausführlich gegeneinander getestet):
+        //  - Entnahme: "isolation" - das Stück mit den wenigsten direkt
+        //    berührenden Nachbarn wird zuerst verbraucht (aktiv Einzelgänger
+        //    abbauen, den Kern kompakt lassen).
+        //  - Schneiden: "centroid_far" - der Kandidat, dessen nächster RAND
+        //    am WEITESTEN vom Schwerpunkt aller sichtbaren Stücke entfernt
+        //    ist, wird als Nächstes zerschnitten (nicht der mit höchstem x,y).
+        //  - Streifen-Enden-Filter: nie aus der MITTE eines zusammen-
+        //    hängenden Streifens wählen, nur von den beiden Enden - sonst
+        //    reißt man unnötig Löcher in einen sonst zusammenhängenden Block.
+        function filterToStripEnds(candidates) {
+            let byParent = new Map();
+            for (let p of candidates) {
+                if (!byParent.has(p.parent_id)) byParent.set(p.parent_id, []);
+                byParent.get(p.parent_id).push(p);
+            }
+            let result = [];
+            for (let [pid, group] of byParent) {
+                if (group.length <= 2) { result.push(...group); continue; }
+                let varyX = group.some(p => p.x !== group[0].x);
+                group.sort((a, b) => varyX ? (a.x - b.x) : (a.y - b.y));
+                result.push(group[0], group[group.length - 1]);
+            }
+            return result;
+        }
+
+        function isolationScore(p, action_time) {
+            let touch = 0;
+            const EPS = 1e-9;
+            for (let q of bank_pieces) {
+                if (q.id === p.id) continue;
+                if (!(action_time >= q.born_time && action_time < q.cut_time && action_time < q.taken_time)) continue;
+                let touchX = (Math.abs(p.x + p.w - q.x) < EPS || Math.abs(q.x + q.w - p.x) < EPS) && !(p.y + p.h <= q.y + EPS || q.y + q.h <= p.y + EPS);
+                let touchY = (Math.abs(p.y + p.h - q.y) < EPS || Math.abs(q.y + q.h - p.y) < EPS) && !(p.x + p.w <= q.x + EPS || q.x + q.w <= p.x + EPS);
+                if (touchX || touchY) touch++;
+            }
+            return touch;
+        }
+
+        function getPieceFromBank(target_k, action_time) {
+            let available = filterToStripEnds(bank_pieces.filter(p => p.k === target_k && p.taken_time === Infinity && p.cut_time === Infinity && p.born_time <= action_time));
+            if (available.length > 0) {
+                available.sort((a, b) => isolationScore(a, action_time) - isolationScore(b, action_time));
+                available[0].taken_time = action_time;
+                return available[0];
+            }
+
+            let parents = filterToStripEnds(bank_pieces.filter(p => p.k < target_k && p.taken_time === Infinity && p.cut_time === Infinity && p.born_time <= action_time));
+            if (parents.length === 0) throw "Bank ist leer! Iterationstiefe überschreitet Vorrat.";
+
+            let visibleForCentroid = bank_pieces.filter(p => p.taken_time === Infinity && p.cut_time === Infinity && p.born_time <= action_time);
+            let ccx = 0, ccy = 0, cwsum = 0;
+            for (let p of visibleForCentroid) { let w = p.w * p.h; ccx += (p.x + p.w / 2) * w; ccy += (p.y + p.h / 2) * w; cwsum += w; }
+            if (cwsum > 0) { ccx /= cwsum; ccy /= cwsum; } else { ccx = 0.5; ccy = 0.5; }
+            function edgeDist(p) {
+                let dx = Math.max(p.x - ccx, 0, ccx - (p.x + p.w));
+                let dy = Math.max(p.y - ccy, 0, ccy - (p.y + p.h));
+                return Math.hypot(dx, dy);
+            }
+            parents.sort((a, b) => (b.k - a.k) || (edgeDist(b) - edgeDist(a))); // am weitesten zuerst
+            let best_parent = parents[0];
+            
+            best_parent.cut_time = action_time - 0.4;
+            let is_vert_cut = (best_parent.k % 2 === 0); 
+            let cw = is_vert_cut ? best_parent.w / BASE : best_parent.w;
+            let ch = is_vert_cut ? best_parent.h : best_parent.h / BASE;
+            
+            for (let i = 0; i < BASE; i++) {
+                let child = {
+                    id: global_id++, parent_id: best_parent.id, k: best_parent.k + 1,
+                    x: best_parent.x + (is_vert_cut ? i * cw : 0), 
+                    y: best_parent.y + (is_vert_cut ? 0 : i * ch),
+                    w: cw, h: ch, born_time: best_parent.cut_time, cut_time: Infinity, taken_time: Infinity,
+                    children: []
+                };
+                bank_pieces.push(child);
+                best_parent.children.push(child);
+            }
+            return getPieceFromBank(target_k, action_time);
+        }
+
+        render_pipeline = [];
+        let global_time = 1.0;
+        let local_max_time = 1.0;
+
+        // PATCH V28b: Bugfix "Bank ist leer" bei größerer Tiefe.
+        // Vorher wurde global_time zu Beginn jeder Schale S hart auf S*3.0
+        // zurueckgesetzt. Eine Schale hat aber (2*S+1) Stuecke, die je 0.15
+        // Zeiteinheiten verbrauchen. Sobald (2*S+1)*0.15 > 3.0 ist (ab S~10),
+        // lief die Zeit ueber das naechste Reset-Ziel hinaus - der naechste
+        // Reset sprang dann RUECKWAERTS in der Zeit. getPieceFromBank()
+        // verlangt aber born_time <= action_time fuer verfuegbare Stuecke;
+        // ein Zeitsprung rueckwaerts macht gerade erst geschnittene Stuecke
+        // "noch nicht geboren" fuer die naechste Anfrage, waehrend aeltere
+        // Stuecke schon verbraucht sind -> Bank erscheint leer, obwohl
+        // rechnerisch genug Papier da waere.
+        //
+        // Fix: kein absolutes Reset mehr, sondern ein garantiert positiver
+        // Abstand ("gap") zum tatsaechlichen Ende der vorherigen Schale.
+        // Damit ist global_time global monoton steigend, unabhaengig davon
+        // wie viele Stuecke eine Schale enthaelt.
+        const SHELL_GAP = 1.0;
+        let shell_start_time = new Array(TOTAL_STEPS).fill(0);
+
+        for (let S = 1; S < TOTAL_STEPS; S++) {
+            let pieces_in_shell = [];
+            for (let v = 0; v < S; v++) pieces_in_shell.push({ u: S, v: v, is_top: false });
+            for (let u = 0; u < S; u++) pieces_in_shell.push({ u: u, v: S, is_top: true });
+            pieces_in_shell.push({ u: S, v: S, is_top: false }); 
+
+            global_time += SHELL_GAP;
+            shell_start_time[S] = global_time;
+            
+            for (let sp of pieces_in_shell) {
+                let k = axes[sp.u].exp + axes[sp.v].exp;
+                let needs_chop = sp.is_top; 
+                
+                let t_cut = global_time - 0.5; let t_fly = global_time; let t_fuse = global_time + 1.0;
+                
+                // PATCH V40: Z (Zerschneiden) und R (Rotieren) vorübergehend
+                // deaktiviert - beide hatten bekannte Bugs (Doppel-Zeichnung
+                // bei Z_source, falsche Zielgröße bei R_macro - teils schon
+                // gefixt, aber nicht mehr aktiv gegengetestet). Nur noch S
+                // (Strecken) ist über die UI wählbar, daher reduziert sich
+                // dieser Zweig ohnehin immer auf den else-Pfad unten. Der
+                // Z-Code bleibt hier als Kommentar für eine spätere,
+                // gründlichere Neuimplementierung erhalten:
+                /*
+                if (needs_chop && transformMode === 'Z') {
+                    let micro_pieces = [];
+                    for (let i = 0; i < BASE; i++) micro_pieces.push(getPieceFromBank(k + 1, t_cut));
+                    
+                    let parent_bp = bank_pieces.find(p => p.id === micro_pieces[0].parent_id);
+
+                    render_pipeline.push({ type: 'Z_source', bp: parent_bp, u: sp.u, v: sp.v, time_cut: t_cut });
+                    render_pipeline.push({ type: 'Z_ghost', bp: parent_bp, u: sp.u, v: sp.v, time_fuse: t_fuse });
+                    
+                    for (let i = 0; i < BASE; i++) {
+                        render_pipeline.push({
+                            type: 'Z_micro', bp: micro_pieces[i], u: sp.u, v: sp.v, i: i, 
+                            time_cut: t_cut, time_fly: t_fly, time_fuse: t_fuse
+                        });
+                    }
+                    local_max_time = Math.max(local_max_time, t_fuse + 0.5);
+                } else {
+                */
+                {
+                    let bp = getPieceFromBank(k, t_fly);
+                    // R (Rotieren) ebenfalls deaktiviert, siehe oben:
+                    /*
+                    if (transformMode === 'R' && needs_chop) {
+                        render_pipeline.push({ type: 'R_macro', bp: bp, u: sp.u, v: sp.v, time_fly: t_fly, rot: Math.PI / 2 });
+                    } else if (transformMode === 'S' && needs_chop) {
+                    */
+                    if (needs_chop) {
+                        render_pipeline.push({ type: 'S_macro', bp: bp, u: sp.u, v: sp.v, time_fly: t_fly });
+                    } else {
+                        render_pipeline.push({ type: 'Z_direct', bp: bp, u: sp.u, v: sp.v, time_fly: t_fly });
+                    }
+                    local_max_time = Math.max(local_max_time, t_fly + 1.0);
+                }
+                global_time += 0.15; 
+            }
+        }
+
+        GLOBAL_SHELL_START = shell_start_time;
+
+        // PATCH V32: Auto-Zoom für die Bank - grundlegend überarbeitet.
+        //
+        // Vorherige Version (festes Zentrum 0.5/0.5) blieb hängen, weil der
+        // Rest sich systematisch zu einer Seite hin verlagert (Entnahme
+        // bevorzugt niedrige x/y, Zerschneiden bevorzugt hohe x/y) - er liegt
+        // fast nie zentriert im Einheitsquadrat. Ein festes Zentrum verlangt
+        // dann fälschlich Platz bis zum GEGENÜBERLIEGENDEN Rand, obwohl die
+        // Box selbst längst geschrumpft ist.
+        //
+        // Neu: Zentrum und Zoom werden pro Checkpoint aus der ECHTEN
+        // Bounding-Box (samt ihres eigenen Mittelpunkts) berechnet - das
+        // Zentrum wandert also mit. Damit eine Überblendung zwischen zwei
+        // verschiedenen Zentren dennoch garantiert sicher bleibt, wird NICHT
+        // (wie zuvor) zwischen den Zoom-PARAMETERN interpoliert, sondern
+        // zwischen den fertig transformierten BILDSCHIRM-POSITIONEN
+        // (siehe getBankTransformed() weiter unten): Für einen Punkt, der
+        // während des Übergangs sichtbar ist, liegt sowohl die alte als auch
+        // die neue Position nachweislich in [0,1] (Box-Schachtelung: die Box
+        // schrumpft monoton, jeder später sichtbare Punkt war Teil jeder
+        // früheren Box). Da [0,1] konvex ist, liegt JEDE gewichtete Mischung
+        // dieser zwei sicheren Positionen ebenfalls in [0,1] - unabhängig
+        // davon, wie stark sich das Zentrum zwischen den Checkpoints
+        // verschiebt. Das ist mathematisch immer sicher, nicht nur im
+        // statistischen Mittel.
+        //
+        // Checkpoints werden aus den tatsächlichen Entnahme-Zeitpunkten
+        // gewonnen (viel feinkörniger als "einmal pro Schale"), damit der
+        // Zoom nicht in großen Sprüngen, sondern in vielen kleinen, stetigen
+        // Schritten wächst. Bei sehr tiefer Rekursion wird auf eine
+        // Obergrenze heruntergesampelt, um die Kompilierzeit zu begrenzen.
+        // PATCH V39: Kein Sicherheitsrand mehr (war 0.2) - damit ist der
+        // Zoom beim Startzustand (volles [0,1]-Quadrat) exakt 1.0 statt
+        // 0.83. Da der Zoom nachweislich monoton wächst, ist 1.0 damit der
+        // garantierte MINIMALE Zoom über die gesamte Laufzeit.
+        const ZOOM_MARGIN = 0;
+        const MAX_CHECKPOINTS = 400;
+
+        let eventTimesSet = new Set([0]);
+        for (let p of bank_pieces) { if (isFinite(p.taken_time)) eventTimesSet.add(p.taken_time); }
+        eventTimesSet.add(local_max_time);
+        let eventTimes = Array.from(eventTimesSet).sort((a, b) => a - b);
+        if (eventTimes.length > MAX_CHECKPOINTS) {
+            let sampled = [];
+            for (let i = 0; i < MAX_CHECKPOINTS; i++) {
+                sampled.push(eventTimes[Math.floor(i * (eventTimes.length - 1) / (MAX_CHECKPOINTS - 1))]);
+            }
+            eventTimes = Array.from(new Set(sampled));
+        }
+
+        // PATCH V35: Zoom-Schwellwert aus dem Algorithmus-Spiel-Tool
+        // übernommen. Stücke, die mehr als BANK_ZOOM_THRESHOLD_POWERS
+        // Potenzen von BASE kleiner sind als das größte gerade sichtbare
+        // Stück, fließen NICHT ins Zoom-Framing ein (werden aber weiter
+        // gezeichnet) - verhindert, dass ein einzelner winziger Einzelgänger
+        // den Zoom aufhält und die Ansicht "unverständlich" wirken lässt.
+        const kThresholdDiff = 2 * BANK_ZOOM_THRESHOLD_POWERS;
+        let bank_zoom_states = new Array(eventTimes.length);
+        for (let i = 0; i < eventTimes.length; i++) {
+            let t = eventTimes[i];
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, found = false;
+            let area = 0;
+            let visibleNow = bank_pieces.filter(p => t >= p.born_time && t < p.cut_time && t < p.taken_time);
+            let kMin = visibleNow.length > 0 ? Math.min(...visibleNow.map(p => p.k)) : 0;
+            for (let p of visibleNow) {
+                area += p.w * p.h; // Fläche zählt IMMER, auch für ausgeblendete (nur fürs Framing irrelevant)
+                if (BANK_ZOOM_THRESHOLD_POWERS > 0 && p.k > kMin + kThresholdDiff) continue;
+                found = true;
+                if (p.x < minX) minX = p.x;
+                if (p.x + p.w > maxX) maxX = p.x + p.w;
+                if (p.y < minY) minY = p.y;
+                if (p.y + p.h > maxY) maxY = p.y + p.h;
+            }
+            if (!found) { minX = 0; maxX = 1; minY = 0; maxY = 1; area = 1; }
+            let cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+            let halfW = Math.max((maxX - minX) / 2, 1e-9) * (1 + ZOOM_MARGIN);
+            let halfH = Math.max((maxY - minY) / 2, 1e-9) * (1 + ZOOM_MARGIN);
+            let z = Math.min(0.5 / halfW, 0.5 / halfH);
+            let offsetX = 0.5 - cx * z, offsetY = 0.5 - cy * z;
+            bank_zoom_states[i] = { z, cx, cy, offsetX, offsetY, area };
+        }
+        GLOBAL_BANK_ZOOM_TIMES = eventTimes;
+        GLOBAL_BANK_ZOOM = bank_zoom_states;
+
+        MAX_TIME = local_max_time;
+        document.getElementById('timeSlider').max = MAX_TIME;
+        u_time = 0; document.getElementById('timeSlider').value = 0;
+        updateOutputs(); 
+    } catch(e) {
+        document.getElementById('errorMsg').style.display = 'block';
+        document.getElementById('errorMsg').innerText = `Compiler-Absturz: ${e}`;
+        isPlaying = false;
+    }
+}
+
+// === SYSTEM B: DYNAMIC LAYOUT & HUD ===
+let DYN_TARGET_W = 1.0; let dyn_prefA = []; let dyn_axes_w = [];
+let _lastLayoutT_AB = null;
+
+function updateDynamicLayout(t_AB) {
+    // PATCH V29: Vorher wurden bank_pieces[*].dyn_x/y/w/h rekursiv aus b_eff
+    // (Modus B, "hypothetische Basis") neu berechnet - das hat die BANK
+    // (das Restflächen-Reservoir) mitverzerrt, sobald am Modus-B-Regler
+    // gedreht wurde. Gewünscht ist aber: die Bank bleibt IMMER in der realen,
+    // unverzerrten Basis. Jedes bank_piece hat bereits seine echte, exakte
+    // Geometrie in p.x/p.y/p.w/p.h (bei der Erzeugung mit der realen BASE
+    // berechnet) - diese Werte werden jetzt direkt zum Zeichnen benutzt
+    // (siehe project()/renderFrame() weiter unten), eine Neuberechnung ist
+    // dafür gar nicht mehr nötig. updateDynamicLayout() kümmert sich daher
+    // nur noch um die ZIEL-Achsenbreiten (dyn_prefA/dyn_axes_w), die weiterhin
+    // von Modus B abhängen - das große Zielquadrat "atmet" mit dem Regler,
+    // die Bank nicht mehr.
+    if (t_AB === _lastLayoutT_AB) return;
+    _lastLayoutT_AB = t_AB;
+
+    let b_eff = Math.pow(BASE, 1.0 - t_AB);
+    if (b_eff < 1.000001) b_eff = 1.000001; 
+    
+    dyn_prefA = [0]; dyn_axes_w = [1.0];
+    let sumA = 1.0;
+    for (let i = 1; i < TOTAL_STEPS; i++) {
+        let val = Math.pow(b_eff, -axes[i].exp);
+        dyn_prefA.push(sumA); dyn_axes_w.push(val);
+        sumA += val;
+    }
+    // PATCH V38: Randstreifen für die "nächste Stelle" (Tiefe+1). Ohne
+    // diesen Zusatz würde V_SCALE_TARGET das Ziel exakt bis zum sqrt(2)-
+    // Rahmen ausfüllen und optisch "fertig" vortäuschen - dabei ist √2
+    // irrational, es fehlt immer noch etwas. Der Rand hat exakt die Größe,
+    // die die NÄCHSTE Ziffer-Stelle (N_MAX+1) einnehmen würde - nach
+    // derselben b_eff-Formel wie jede andere Stelle berechnet. Das macht
+    // den Rand konsistent mit der übrigen Darstellung: bei Modus B Richtung
+    // b→1 wächst der Rand automatisch mit (dieselbe Formel wie alle
+    // anderen, jetzt größer wirkenden Stellen) - "quasi-logarithmisch"
+    // sichtbar, nie ganz verschwindend, aber auch nie maßstabsgetreu winzig.
+    let nextDigitMargin = Math.pow(b_eff, -(N_MAX + 1));
+    DYN_TARGET_W = sumA + nextDigitMargin;
+}
+
+let current_hud_hash = "";
+function updateHUD(time) {
+    // Step = höchste Schale S, deren Startzeit bereits erreicht ist.
+    // (ersetzt die alte, nicht mehr gültige Annahme fester 3.0-Zeitblöcke)
+    let Step = 0;
+    for (let S = 1; S < GLOBAL_SHELL_START.length; S++) {
+        if (time >= GLOBAL_SHELL_START[S]) Step = S; else break;
+    }
+    Step = Math.max(0, Math.min(TOTAL_STEPS - 1, Step));
+    let counts = new Array(Math.min(2 * N_MAX + 1, 50)).fill(0); 
+    for (let p of bank_pieces) {
+        if (p.k < counts.length && time >= p.born_time && time < p.cut_time && time < p.taken_time) counts[p.k]++;
+    }
+    
+    let hash = Step + "_" + JSON.stringify(counts) + "_" + BASE;
+    if (hash === current_hud_hash) return;
+    current_hud_hash = hash;
+    
+    // Ermittle den "echten" Iterationsschritt (m) passend zum Fragment (S)
+    let current_m = axes[Step].exp;
+
+    // === EXAKTE BIGINT-MATHEMATIK (jetzt konsistent mit dem Compiler oben) ===
+    let N = 0n;
+    let baseBig = BigInt(BASE);
+    for(let i=0; i<=current_m; i++) {
+        N = N * baseBig + BigInt(GLOBAL_N_ARR[i]);
+    }
+    
+    // Seitenlänge P
+    let P_str = N.toString(BASE).toUpperCase();
+    if (current_m > 0) P_str = P_str.slice(0, 1) + "." + P_str.slice(1);
+    
+    // Fläche P^2
+    let P2 = N * N;
+    let P2_str = P2.toString(BASE).toUpperCase();
+    if (current_m > 0) {
+        let intPart = P2_str.slice(0, P2_str.length - 2*current_m);
+        if (!intPart) intPart = "0";
+        let fracPart = P2_str.slice(-2*current_m).padStart(2*current_m, '0');
+        P2_str = intPart + "." + fracPart;
+    }
+    
+    // Rest 2 - P^2
+    // Die mathematische '2' als BigInt, verschoben um 2*m Stellen
+    let two_scaled = 2n * (baseBig ** BigInt(2*current_m));
+    let rem = two_scaled - P2;
+    let rem_str = rem.toString(BASE).toUpperCase();
+    if (current_m > 0) {
+        rem_str = "0." + rem_str.padStart(2*current_m, '0');
+    }
+    
+    let title = Step === 0 ? "Schritt 0: Startquadrat" : `Näherung (Tiefe $n=${current_m}$)`;
+    let desc = `
+        Seitenlänge $P = ${P_str}_{${BASE}}$<br>
+        Fläche $P^2 = ${P2_str}_{${BASE}}$<br>
+        Rest $R = ${rem_str}_{${BASE}}$
+    `;
+    
+    document.getElementById('hudTitle').innerHTML = title;
+    document.getElementById('hudDesc').innerHTML = desc;
+    
+    let inv_html = "";
+    const BLOCK_CAP = 24; // ab hier wird die Bargraph-Darstellung zu einer "+N"-Kurzform verdichtet
+    for (let k = 0; k < counts.length; k++) {
+        let count = counts[k] || 0;
+        let color = COLORS[k % COLORS.length];
+        let expLabel = k === 0 ? "$b^{0}$" : `$b^{-${k}}$`;
+        let shapeLabel = k === 0 ? "Quadrat" : (k % 2 === 0 ? "Quadrat" : "Streifen");
+
+        let barHtml = "";
+        if (count === 0) {
+            barHtml = `<div class="piece-bar" style="opacity:0.25"></div>`;
+        } else if (count <= BLOCK_CAP) {
+            let blocks = "";
+            for (let i = 0; i < count; i++) blocks += `<div class="piece-block" style="background:${color}"></div>`;
+            barHtml = `<div class="piece-bar">${blocks}</div>`;
+        } else {
+            // Bei sehr vielen Stücken (z.B. tiefe Rekursion, Basis>2): kompakter
+            // durchgehender Balken statt hunderter einzelner Blöckchen - bleibt
+            // trotzdem klar als "voller Bestand" erkennbar, plus exakte Zahl rechts.
+            barHtml = `<div class="piece-bar"><div style="flex-grow:1; height:12px; border-radius:2px; background:${color}"></div></div>`;
+        }
+
+        inv_html += `<div class="piece-row" style="opacity: ${count === 0 ? 0.45 : 1.0}" title="${shapeLabel}">
+            <div class="piece-left">
+                <div class="color-swatch" style="background:${color}"></div>
+                <span class="exp-label">${expLabel}</span>
+            </div>
+            ${barHtml}
+            <div class="piece-count-text">${count}×</div>
+        </div>`;
+    }
+    document.getElementById('hudInventory').innerHTML = inv_html;
+    if (window.MathJax) MathJax.typesetPromise([document.getElementById('narrative')]);
+}
+
+// === SYSTEM C: RENDER ENGINE ===
+const canvas = document.getElementById('glCanvas'); const ctx = canvas.getContext('2d');
+let isPlaying = false; let animDirection = 1; let animPause = 0;
+let u_time = 0.0; let u_mode_AB = 0.0;
+
+function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; renderFrame(); }
+window.addEventListener('resize', resizeCanvas);
+
+// PATCH V32: Liefert die Auto-Zoom-Transformation der Bank für Zeitpunkt
+// "time" - Zentrum UND Zoom wandern jetzt mit dem tatsächlichen Rest mit
+// (statt eines festen Zentrums, das beim asymmetrisch abgebauten Rest
+// "hängen blieb").
+//
+// Transformation pro Checkpoint: T(x) = 0.5 + (x - cx) * z (Box-Mitte cx
+// wird auf die Bildschirm-Mitte 0.5 abgebildet). Umgeformt als affine
+// Funktion: T(x) = x*z + (0.5 - cx*z).
+//
+// PATCH V33: "Mechanisch träger" Zoom statt stückweiser Smoothstep-
+// Überblendung. Das Problem an Smoothstep zwischen JEDEM der bis zu 400
+// Checkpoints: die Kurve hat an JEDEM Checkpoint Ableitung exakt Null (sie
+// bremst komplett ab und beschleunigt neu) - das erzeugt einen sichtbaren
+// Stop-and-Go-Rhythmus statt einer gleichmäßigen Trägheit ("wackelig").
+//
+// Neu: ein KAUSALER Tiefpassfilter (Exponentialkern), wie ein gedämpftes
+// mechanisches System (Feder-Dämpfer 1. Ordnung). Mathematisch:
+//   Z(t) = k * Integral_{-unendlich}^{t} Ziel(t') * exp(-k*(t-t')) dt'
+// Da "Ziel" hier stückweise konstant ist (ein Checkpoint-Wert gilt bis zum
+// nächsten), lässt sich das Integral analytisch als Teleskopsumme über
+// F(t') = exp(-k*(t-t')) auswerten (siehe Schleife unten) - keine Iteration
+// über die Zeit nötig, funktioniert exakt für JEDEN Zeitpunkt (auch beim
+// Zurückspulen/Scrubben am Zeitstrahl).
+//
+// Sicherheit: Für einen Punkt x, der zur Zeit "time" sichtbar ist, gilt
+// seine Box ist Teilmenge JEDER früheren Box (Box schrumpft monoton). Damit
+// ist die Transformation JEDES einzelnen früheren Checkpoints für x sicher
+// (Ergebnis in [0,1]). Der Filter bildet eine gewichtete Summe dieser
+// Transformationen mit nicht-negativen Gewichten, die sich zu 1 aufsummieren
+// (Beweis: die Gewichte F(t_{i+1})-F(t_i) teleskopieren exakt zu 1). Eine
+// solche Konvexkombination sicherer Werte ist wieder sicher - unabhängig
+// von der Zeitkonstante TAU. TAU beeinflusst nur, wie "träge" der Zoom auf
+// neue Checkpoints reagiert, nie die Sicherheit.
+//
+// Monotonie: da alle Checkpoint-Werte z_i monoton wachsen (Box kann pro
+// Achse nur schrumpfen) und der Filter ein gewichteter Mittelwert mit wandernd
+// mehr Gewicht auf neueren (größeren) Werten ist, bleibt auch Z(t) monoton
+// wachsend - bewiesen und getestet (siehe Analyse im Gespräch).
+function getBankTransform(time) {
+    if (GLOBAL_BANK_ZOOM.length === 0) return { z: 1, offsetX: 0, offsetY: 0, area: 1 };
+    let times = GLOBAL_BANK_ZOOM_TIMES;
+    let states = GLOBAL_BANK_ZOOM;
+
+    // Zeitkonstante: 3% der Gesamtlaufzeit - spürbar träge, aber reagiert
+    // noch innerhalb einer überschaubaren Spanne auf neue Checkpoints.
+    let TAU = Math.max(MAX_TIME * 0.03, 0.5);
+    let k = 1 / TAU;
+    function F(tp) { return Math.exp(-k * (time - tp)); }
+
+    let n = 0;
+    for (let i = 1; i < times.length; i++) { if (time >= times[i]) n = i; else break; }
+
+    // Beitrag der Zeit vor t=0 (Zustand des allerersten Checkpoints,
+    // gedanklich unendlich weit in die Vergangenheit fortgesetzt)
+    let s0 = states[0];
+    let wFirst = F(times[0]);
+    let z = s0.z * wFirst, offsetX = s0.offsetX * wFirst, offsetY = s0.offsetY * wFirst, area = s0.area * wFirst;
+
+    for (let i = 0; i < n; i++) {
+        let w = F(times[i + 1]) - F(times[i]);
+        z += states[i].z * w;
+        offsetX += states[i].offsetX * w;
+        offsetY += states[i].offsetY * w;
+        area += states[i].area * w;
+    }
+    let wLast = F(time) - F(times[n]);
+    z += states[n].z * wLast;
+    offsetX += states[n].offsetX * wLast;
+    offsetY += states[n].offsetY * wLast;
+    area += states[n].area * wLast;
+
+    return { z, offsetX, offsetY, area };
+}
+
+function renderFrame() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (render_pipeline.length === 0) return; 
+    updateDynamicLayout(u_mode_AB);
+
+    // PATCH V31: Zwei getrennte Skalen. V_SCALE_TARGET hängt (gewollt) von
+    // Modus B ab und bestimmt nur die Größe des Zielquadrats. V_SCALE_BANK
+    // ist STETS 1.0 - das entspricht mathematisch exakt dem Wert, den
+    // V_SCALE bei Modus B = 0 (reale Basis) ohnehin annehmen würde (die
+    // Achsenbreiten summieren sich dann exakt zu P_FINAL). Die Bank soll
+    // aber unter keinen Umständen von Modus B beeinflusst werden - daher
+    // hier hart auf 1.0 gesetzt, unabhängig vom Regler.
+    const V_SCALE_TARGET = P_FINAL / DYN_TARGET_W;
+    const V_SCALE_BANK = 1.0;
+    const SQRT2 = Math.SQRT2;
+    const LOGICAL_MAX_W = SQRT2 + 0.1 + 1.0;
+    const LOGICAL_MAX_H = SQRT2;
+
+    const renderAreaWidth = canvas.width - 450; 
+    const scale = Math.min(renderAreaWidth / LOGICAL_MAX_W, (canvas.height - 100) / LOGICAL_MAX_H);
+    
+    const BANK_X_OFFSET = SQRT2 + 0.1;
+    const bankT = getBankTransform(u_time);
+    bankZoomLabel.innerText = formatZoomFactor(bankT.z);
+    bankAreaLabel.innerText = (bankT.area * 100).toLocaleString('de-DE', { maximumFractionDigits: bankT.area < 0.01 ? 4 : 1 }) + '%';
+
+    ctx.save();
+    ctx.translate(50, canvas.height - 50); 
+    ctx.scale(1, -1); 
+    
+    function project(x, y, w, h, isTarget) {
+        if (isTarget) {
+            let final_x = x * V_SCALE_TARGET;
+            let final_y = y * V_SCALE_TARGET;
+            let final_w = w * V_SCALE_TARGET;
+            let final_h = h * V_SCALE_TARGET;
+            return [final_x * scale, final_y * scale, final_w * scale, final_h * scale];
+        }
+        // Fit-to-Frame-Autozoom mit wanderndem Zentrum (siehe getBankTransform).
+        // x,y,w,h sind hier die echten, unverzerrten Bank-Koordinaten (immer
+        // Teilmenge von [0,1]x[0,1]). Diese Abbildung kann die Bank unter
+        // keinen Umständen über das Ziel malen - bewiesen unabhängig davon,
+        // wie stark sich das Zentrum zwischen zwei Checkpoints verschiebt.
+        let zx = x * bankT.z + bankT.offsetX;
+        let zy = y * bankT.z + bankT.offsetY;
+        let zw = w * bankT.z;
+        let zh = h * bankT.z;
+        let final_x = BANK_X_OFFSET + zx * V_SCALE_BANK;
+        // PATCH V37: Von UNTEN (y=0) statt von OBEN (SQRT2-V_SCALE_BANK)
+        // verankert - damit liegt das 1x1-Basisquadrat der Bank bei Zoom=1
+        // auf derselben Höhe wie das 1x1-Basisquadrat im Ziel (beide starten
+        // bei y=0 und wachsen nach oben).
+        let final_y = zy * V_SCALE_BANK;
+        let final_w = zw * V_SCALE_BANK;
+        let final_h = zh * V_SCALE_BANK;
+        return [final_x * scale, final_y * scale, final_w * scale, final_h * scale];
+    }
+
+    let [t_x, t_y, t_w, t_h] = project(0, 0, SQRT2 / V_SCALE_TARGET, SQRT2 / V_SCALE_TARGET, true);
+    ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.strokeRect(t_x, t_y, t_w, t_h);
+    
+    let [b_x, b_y, b_w, b_h] = project(0, 0, 1.0, 1.0, false);
+    ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.strokeRect(b_x, b_y, b_w, b_h);
+
+    // PATCH V36: Das "1x1"-Basisquadrat (axes[0], die Ziffer "1" vor dem
+    // Komma) wurde bisher nie explizit gezeichnet - die Schalen-Schleife
+    // beginnt erst bei S=1, die Position (u=0,v=0) kam nie vor. Dadurch
+    // startete das Ziel bei Zeit 0 leer, obwohl die Bank von Anfang an ihr
+    // Wurzel-Stück zeigt - zwei ungleiche Startbilder, wo eigentlich beide
+    // Seiten mit demselben "1x1"-Quadrat beginnen sollten. Dieses Quadrat
+    // ist permanent (von Geburt an, verschwindet nie) Teil der Konstruktion.
+    let [base_x, base_y, base_w, base_h] = project(dyn_prefA[0], dyn_prefA[0], dyn_axes_w[0], dyn_axes_w[0], true);
+    ctx.fillStyle = COLORS[0];
+    ctx.fillRect(base_x, base_y, base_w, base_h);
+    ctx.strokeStyle = 'rgba(0,0,0,0.8)'; ctx.lineWidth = 1;
+    ctx.strokeRect(base_x, base_y, base_w, base_h);
+
+    for (let p of bank_pieces) {
+        if (u_time >= p.born_time && u_time < p.cut_time && u_time < p.taken_time) {
+            let [px, py, pw, ph] = project(p.x, p.y, p.w, p.h, false);
+            if (pw < 0.2 && ph < 0.2) continue; 
+            ctx.fillStyle = COLORS[p.k % COLORS.length];
+            ctx.fillRect(px, py, pw, ph);
+            ctx.strokeStyle = `rgba(0,0,0,0.8)`; ctx.lineWidth = 1; ctx.strokeRect(px, py, pw, ph);
+        }
+    }
+
+    for (let p of render_pipeline) {
+        let alpha = 1.0; let is_visible = false;
+
+        // PATCH V34: Bugfix "Stücke liegen aufeinander". Zwei Sichtbarkeits-
+        // fenster überlappten sich mit der regulären Bank-Zeichenschleife
+        // (weiter oben, "for (let p of bank_pieces)") und zeichneten
+        // dasselbe Stück doppelt an derselben Stelle:
+        //  1) Z_direct/S_macro/R_macro waren schon 0.5 Zeiteinheiten VOR
+        //     dem eigentlichen Abflug (time_fly) sichtbar, standen aber in
+        //     dieser Vorlaufzeit exakt an der Bank-Position (fly_t=0) - der
+        //     exakt gleichen Stelle, die die reguläre Schleife bis
+        //     "taken_time" (= time_fly, ohne Versatz) ohnehin schon zeigt.
+        //  2) Z_source war von der GEBURT des Stücks an sichtbar, obwohl
+        //     die reguläre Schleife dasselbe Stück bis "cut_time" (mit
+        //     einem -0.4-Versatz, der für die Versorgungs-Logik der Bank
+        //     tatsächlich notwendig ist - siehe compileSystem) ohnehin
+        //     schon zeigt.
+        // Fix: beide Fenster auf die exakte Übergabe-Lücke verkleinert, die
+        // die reguläre Schleife tatsächlich offen lässt - keine Änderung an
+        // cut_time/taken_time selbst (das würde die Bank-Versorgung wieder
+        // durcheinanderbringen, siehe Testprotokoll im Gespräch).
+        if (p.type === 'Z_direct' || p.type === 'S_macro' || p.type === 'R_macro') {
+            if (u_time >= p.time_fly) is_visible = true;
+        } else if (p.type === 'Z_source') {
+            if (u_time >= p.bp.cut_time && u_time < p.time_cut) is_visible = true;
+        } else if (p.type === 'Z_ghost') {
+            if (u_time >= p.time_fuse) { is_visible = true; alpha = Math.min(1, (u_time - p.time_fuse)/0.2); }
+        } else if (p.type === 'Z_micro') {
+            if (u_time >= p.time_cut && u_time < p.time_fuse) { 
+                is_visible = true; if(u_time > p.time_fuse - 0.2) alpha = Math.max(0, (p.time_fuse - u_time)/0.2);
+            } 
+        }
+
+        if (!is_visible) continue;
+        
+        ctx.fillStyle = COLORS[p.bp.k % COLORS.length];
+        ctx.globalAlpha = alpha;
+
+        let fly_t = Math.max(0, Math.min(1, (u_time - p.time_fly) / 0.8));
+        if (p.type === 'Z_source' || p.type === 'Z_ghost') fly_t = p.type === 'Z_ghost' ? 1 : 0;
+        fly_t = fly_t * fly_t * (3.0 - 2.0 * fly_t); 
+
+        let tx = dyn_prefA[p.u]; let ty = dyn_prefA[p.v];
+        let tw = dyn_axes_w[p.u]; let th = dyn_axes_w[p.v];
+        let target_w = tw; let target_h = th;
+        
+        let b_eff = Math.pow(BASE, 1.0 - u_mode_AB);
+        if (b_eff < 1.000001) b_eff = 1.000001;
+
+        if (p.type === 'Z_micro') {
+            target_w = tw > th ? tw / b_eff : tw; target_h = tw > th ? th : th / b_eff;
+            tx = tx + (tw > th ? p.i * target_w : 0);
+            ty = ty + (tw > th ? 0 : p.i * target_h);
+        }
+        // PATCH V28e: Bugfix "Rotieren"-Modus. Vorher wurde hier target_w/target_h
+        // auf die Quellgröße des Bank-Stücks (p.bp.dyn_w/h) gesetzt - identisch zu
+        // start_w/start_h. Damit hat sich die Größe des Stücks während des Flugs
+        // NIE geändert, unabhängig davon wie groß die Zielzelle (tw, th) im
+        // Raster tatsächlich war -> das Stück landete in falscher Größe, sichtbar
+        // als Lücken/Überlappungen im Zielraster. Die Drehung ist ein rein
+        // visueller Flug-Effekt (wie ein Spin) und darf die Zielgröße nicht
+        // beeinflussen - target_w/target_h bleiben daher auf ihren korrekten
+        // Default-Werten (tw, th), genau wie bei Z_direct/S_macro.
+
+        let [start_x, start_y, start_w, start_h] = project(p.bp.x, p.bp.y, p.bp.w, p.bp.h, false);
+        let [end_x, end_y, end_w, end_h] = project(tx, ty, target_w, target_h, true);
+
+        let px = start_x * (1 - fly_t) + end_x * fly_t;
+        let py = start_y * (1 - fly_t) + end_y * fly_t;
+        let pw = start_w * (1 - fly_t) + end_w * fly_t;
+        let ph = start_h * (1 - fly_t) + end_h * fly_t;
+
+        if (p.type === 'R_macro') {
+            let center_x = px + pw/2; let center_y = py + ph/2;
+            ctx.save();
+            ctx.translate(center_x, center_y);
+            ctx.rotate(p.rot * fly_t);
+            ctx.fillRect(-pw/2, -ph/2, pw, ph);
+            ctx.strokeStyle = `rgba(0,0,0, ${alpha})`; ctx.lineWidth = 1; ctx.strokeRect(-pw/2, -ph/2, pw, ph);
+            ctx.restore();
+        } else {
+            if (pw > 0.2 && ph > 0.2) {
+                ctx.fillRect(px, py, pw, ph);
+                if (alpha > 0.8 || p.type === 'Z_ghost') {
+                    ctx.strokeStyle = `rgba(0,0,0, ${alpha})`; ctx.lineWidth = 1; ctx.strokeRect(px, py, pw, ph);
+                }
+            }
+        }
+        ctx.globalAlpha = 1.0;
+    }
+    ctx.restore();
+}
+
+const timeSlider = document.getElementById('timeSlider'); 
+const modeSliderAB = document.getElementById('modeSliderAB');
+const bankZoomLabel = document.getElementById('bankZoomLabel');
+const bankAreaLabel = document.getElementById('bankAreaLabel');
+const timeLabel = document.getElementById('timeLabel');
+
+function updateOutputs() { timeLabel.innerText = `Zeitstrahl (${u_time.toFixed(1)})`; renderFrame(); updateHUD(u_time); }
+
+function formatZoomFactor(f) {
+    if (f < 10) return f.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '×';
+    if (f < 1000) return Math.round(f).toLocaleString('de-DE') + '×';
+    return f.toExponential(1).replace('.', ',').replace('e+', ' × 10^') + '×';
+}
+
+document.getElementById('baseInput').addEventListener('change', compileSystem);
+document.getElementById('depthInput').addEventListener('change', compileSystem);
+document.getElementById('zoomThresholdInput').addEventListener('change', compileSystem);
+document.getElementById('transformMode').addEventListener('change', compileSystem);
+
+timeSlider.addEventListener('input', (e) => { u_time = parseFloat(e.target.value); updateOutputs(); });
+modeSliderAB.addEventListener('input', (e) => { u_mode_AB = parseFloat(e.target.value); updateOutputs(); });
+
+// PATCH V30: Bank-Zoom ist jetzt vollautomatisch (siehe getInterpolatedBankZoom()
+// in renderFrame) - kein manueller Regler mehr, nur noch das Zahlen-Readout
+// (bankZoomLabel) wird pro Frame aktualisiert.
+
+// PATCH V29: dezent ausblendbare Steuerung - ein schmaler Tab am Rand
+// klappt das komplette Bedienpanel weg, ohne dass ein Klick auf die
+// eigentliche Visualisierung nötig ist. Für den Exponat-/Ausstellungs-
+// Kontext gedacht, in dem die Regler nicht permanent im Blick sein sollen.
+const rightPanel = document.getElementById('right-panel');
+const collapseTab = document.getElementById('collapseTab');
+collapseTab.addEventListener('click', () => {
+    rightPanel.classList.toggle('collapsed');
+    collapseTab.innerText = rightPanel.classList.contains('collapsed') ? '⟨' : '⟩';
+});
+
+document.getElementById('playBtn').addEventListener('click', () => { isPlaying = !isPlaying; if (isPlaying) requestAnimationFrame(loop); });
+
+let lastTime = performance.now();
+function loop(now) {
+    if (!isPlaying) return;
+    let dt = (now - lastTime) / 1000.0; lastTime = now;
+    
+    if (animPause > 0) {
+        animPause -= dt;
+    } else {
+        u_time += dt * 2.0 * animDirection;
+        if (u_time >= MAX_TIME) {
+            u_time = MAX_TIME; animDirection = -1; animPause = 1.5;
+        } else if (u_time <= 0) {
+            u_time = 0; animDirection = 1; animPause = 1.5;
+        }
+        timeSlider.value = u_time; updateOutputs(); 
+    }
+    requestAnimationFrame(loop);
+}
+
+resizeCanvas(); compileSystem();
+</script>
+</body>
+</html>
