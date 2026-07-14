@@ -8,9 +8,9 @@ Interaktive Visualisierung von √2 als Beispiel einer irrationalen Zahl, für S
 
 | Datei | Zweck | Zustand |
 |---|---|---|
-| `sqrt2.html` | **Haupttool.** Volle Visualisierung: Zielquadrat (wächst ziffernweise Richtung √2) + Bank/Rest (Restflächen-Reservoir) + Steuerung (Basis, Tiefe, Modus B/C, Zoom-Schwellwert). | Funktionsfähig, aber **Bank-Algorithmus ist NICHT mehr synchron mit dem Test-Tool** (siehe Abschnitt 5) |
-| `selection_strategy_prototype.html` | **Algorithmus-Spiel-Tool.** Isolierter Prototyp nur für die Bank - zeigt Stücke an ihren echten, unveränderten Positionen, Tick-Zeitachse (1 Tick = 1 Entnahme), zum Testen von Auswahl-/Schneide-Strategien. | **Gerade mitten im Umbau** auf gemeinsame Code-Basis - Kernlogik verifiziert (Node-Test läuft durch), aber **im Browser noch nicht getestet** (DOM/Rendering/UI-Interaktion offen) |
-| `shared/bank-core.js` | **Neue gemeinsame Bibliothek** (nur lokal in der Sandbox, `/home/claude/shared/bank-core.js` - liegt NICHT in den Outputs, muss separat gesichert werden!). Enthält den fertigen Bank-Algorithmus + Kompaktierung + bijektive Tick↔Zeit-Abbildung. | Fertig geschrieben, in Node getestet (siehe Abschnitt 6), **noch nicht ins Haupttool integriert** |
+| `sqrt2.html` | **Haupttool.** Volle Visualisierung: Zielquadrat (wächst ziffernweise Richtung √2) + Bank/Rest (Restflächen-Reservoir) + Steuerung (Basis, Tiefe, Modus B/C, Zoom-Schwellwert). | Funktionsfähig, nutzt jetzt `bank-core.js` (siehe Abschnitt 5) - **Kompaktierung fehlt hier noch** (nur im Test-Tool) |
+| `selection_strategy_prototype.html` | **Algorithmus-Spiel-Tool.** Isolierter Prototyp nur für die Bank - zeigt Stücke an ihren echten, unveränderten Positionen, Tick-Zeitachse (1 Tick = 1 Entnahme), zum Testen von Auswahl-/Schneide-Strategien. | Funktionsfähig, im Browser getestet |
+| `bank-core.js` | **Gemeinsame Bibliothek**, von beiden Tools per ES-Modul-Import eingebunden (siehe `vite.config.js`). Enthält den Bank-Algorithmus + Kompaktierung + bijektive Tick↔Zeit-Abbildung. | Fertig, in Node getestet (siehe Abschnitt 6) und ins Haupttool integriert |
 
 ## 3. Grundkonzept der Konstruktion (falls das in VS Code neu aufgesetzt wird)
 
@@ -29,26 +29,25 @@ Nach vielen Experimenten (siehe Abschnitt 7 für die verworfenen) hat sich diese
 3. **Streifen-Enden-Filter**: Nie aus der **Mitte** eines zusammenhängenden Streifens wählen (weder zum Schneiden noch zum Entnehmen) - nur von den beiden Enden. Verhindert unnötige Löcher in sonst zusammenhängenden Blöcken.
 4. **Quadrat-Schnittrichtung**: Bei exakten Quadraten (gerades `k`) ist die Schnittrichtung mathematisch frei wählbar (keine Auswirkung auf die Stellenwert-Größen). Zwei Optionen getestet: "immer gleich" (senkrecht) und "alternierend" (wechselt je Quadrat-Ebene, gekoppelt an `k`, NICHT an die zeitliche Reihenfolge). **Kein Effektivitätsunterschied**, nur ästhetisch verschieden.
 
-## 5. DAS OFFENE HAUPTPROBLEM: Haupttool und Test-Tool sind nicht synchron
+## 5. Haupttool und Test-Tool: gemeinsame Code-Basis (größtenteils gelöst)
 
-Der Nutzer hat zu Recht bemängelt: das Verhalten des Rests sieht im Haupttool "komplett anders" aus als im Test-Tool. Ursachen (alle bestätigt):
+Ursprünglich lief das Verhalten des Rests im Haupttool "komplett anders" als im Test-Tool. Ursachen (alle bestätigt):
 
-1. **Der Algorithmus-Code war separat kopiert** in beiden Dateien und ist auseinandergedriftet (z.B. ein `born_time <= action_time`-Filter, der im Haupttool nötig ist, im Test-Tool aber fehlte - empirisch aber ohne Auswirkung, siehe unten).
-2. **Kompaktierung existiert nur im Test-Tool**, nicht im Haupttool. 
+1. ~~**Der Algorithmus-Code war separat kopiert**~~ in beiden Dateien und ist auseinandergedriftet (z.B. ein `born_time <= action_time`-Filter, der im Haupttool nötig war, im Test-Tool aber fehlte - empirisch aber ohne Auswirkung). **Gelöst:** beide Tools importieren jetzt denselben `bank-core.js`-Code (`createBankSimulation`/`buildSystem` per ES-Modul, siehe `vite.config.js`). Dabei kam auch eine reale Divergenz ans Licht: das Haupttool schnitt Quadrate bisher nach `k`-Parität statt nach der (validierten) Form-/`squareSplit`-Regel aus `bank-core.js` - mit der Umstellung stimmt das jetzt überein.
+2. **Kompaktierung existiert weiterhin nur im Test-Tool**, nicht im Haupttool - offener Punkt, siehe Abschnitt 10.
+3. **Tiefe-Standardwert war unterschiedlich**: Haupttool hatte `Tiefe=3`, Test-Tool `Tiefe=10` - weiterhin nicht synchronisiert (offene Entscheidung, siehe Abschnitt 10).
+4. Haupttool hat **keine Auswahlmöglichkeit** für den Algorithmus (bewusst - Best-Kombination `squareSplit='fixed'` fest einprogrammiert, um die Haupt-UI schlank zu halten).
 
-3. **Tiefe-Standardwert war unterschiedlich**: Haupttool hatte `Tiefe=3`, Test-Tool `Tiefe=10` - war nie synchronisiert worden.
-4. Haupttool hat **keine Auswahlmöglichkeit** für den Algorithmus (bewusst - Best-Kombination fest einprogrammiert, um die Haupt-UI schlank zu halten).
+### Wie die Anbindung funktioniert
 
-### Lösung (in Arbeit, siehe Abschnitt 6): gemeinsame Code-Basis
+`bank-core.js` wird per ES-Modul-Import in beide HTML-Dateien eingebunden (kein Kopier-Build-Schritt mehr nötig, siehe `vite.config.js`). Das Haupttool nutzt das low-level `createBankSimulation(BASE, N_MAX, squareSplit)` (statt des höheren `buildSystem()`), weil es die Schalen-Konstruktion selbst durchläuft, um dabei parallel seine eigene kontinuierliche Animationszeit (`global_time`/`t_fly`) mitzuführen. Aus jedem `sim.getPieceFromBank(k)`-Aufruf wird `(tick, t_fly)` gesammelt; nach dem vollständigen Durchlauf übersetzt `buildTickTimeMapping()` alle `born_time`/`cut_time`/`taken_time`-Felder der Bank-Stücke (die `bank-core.js` nur als Integer-Tick führt) zurück in die kontinuierliche Zeitachse.
 
-`shared/bank-core.js` wurde geschrieben, um GENAU DAS zu lösen: ein einziger Algorithmus-Code, den beide Tools einbinden. Zusätzlich wurde eine **bijektive Tick↔Zeit-Abbildung** gebaut, da das Haupttool eine kontinuierliche Animationszeit (für Flug-Animationen) braucht, während der Algorithmus selbst nur einen monotonen Tick-Zähler nutzt (1 Tick = 1 tatsächliche Entnahme, Schneiden allein kostet keinen Tick).
+### Tick-Vergleich mit dem Test-Tool (Zeitstrahl-Regler "Tick")
 
-**Noch zu tun:**
-- [ ] Test-Tool: Browser-seitig testen (im Node-Test funktioniert die Kernlogik, DOM/Rendering/UI noch nicht verifiziert)
-- [ ] Haupttool: `bank-core.js` einbinden, eigene Kopie des Algorithmus entfernen
-- [ ] Haupttool: Kompaktierung einbauen (analog zum Test-Tool, aber mit der bijektiven Zeit-Abbildung verbunden)
-- [ ] Haupttool: Tiefe-Standardwert auf 10 setzen (aktuell noch 3) - offene Entscheidung, ob gewünscht
-- [ ] Build-Prozess etablieren (Python-Skript, das `bank-core.js` in beide HTML-Dateien einfügt) - Ansatz mit Platzhalter `__BANK_CORE_JS__` in einer Template-Datei wurde begonnen (`/home/claude/prototype_template.html`), aber noch nicht für das Haupttool wiederholt
+Unterhalb des normalen Zeitstrahl-Reglers zeigt das Haupttool jetzt zusätzlich den zum aktuellen Zeitpunkt passenden **Tick** an (und lässt ihn direkt eintippen) - darüber lässt sich exakt derselbe Bank-Zustand ansteuern wie im Test-Tool bei gleichem Tick (Basis/Tiefe müssen natürlich übereinstimmen). Zwei echte Bugs sind dabei aufgefallen und behoben worden:
+
+1. **Rand-Zellen forderten das falsche Stück an.** Beim Bau einer Schale braucht eine Rand-Position (`is_top`) laut `bank-core.js` (TEIL 1b) BASE Stücke der nächsten, feineren Ebene `k+1` - nicht ein einzelnes Stück der Ebene `k`. Die erste Version dieser Migration hatte (das alte, S-Modus-Verhalten von vor `bank-core.js` übernehmend) hier weiterhin nur EIN Stück angefordert. Rechnerisch kam am Ende dieselbe Gesamtfläche heraus, aber die Tick-Zahlen liefen komplett auseinander (bei Basis 5/Tiefe 4 z.B. 48 statt 132 Ticks) - ein Tick im Haupttool war schlicht ein anderer Zustand als derselbe Tick im Test-Tool. Fix: Rand-Zellen fordern jetzt ebenfalls BASE Stücke der Ebene `k+1` an (neuer Render-Typ `S_micro`, analog zum deaktivierten `Z_micro`, aber als einfacher Direktflug ohne dessen Schneiden/Verschmelzen-Choreografie). Jedes der BASE Stücke bekommt außerdem einen eigenen Zeitpunkt (nicht alle gleichzeitig), sonst wäre die Bank-Ansicht innerhalb einer Rand-Zelle nicht Tick-für-Tick auflösbar.
+2. **Der visuelle Vorlauf von `cut_time`/`born_time` konnte die Reihenfolge verfälschen.** Der alte Versatz war `-0.4` (Zeiteinheiten). Da einzelne Ticks aber nur `0.15` Zeiteinheiten auseinanderliegen, konnte ein Schnitt-Ereignis aus einem *späteren* Tick durch den `-0.4`-Versatz vor die Entnahme eines *nahen, aber früheren* Ticks rutschen - an vielen (nicht allen) Ticks zeigte das Haupttool dadurch spürbar mehr sichtbare Bank-Stücke als das Test-Tool beim selben Tick. Fix: Versatz auf `0.1` verkleinert (nachweislich kleiner als der minimal mögliche Tick-Abstand von `0.15`, siehe Kommentar in `compileSystem()`) - damit ist eine solche Umsortierung mathematisch ausgeschlossen. Mit einem Playwright-Test durch alle Ticks bei mehreren Basis/Tiefe-Kombinationen gegengeprüft (0 Abweichungen).
 
 ## 6. Wichtige mathematische Erkenntnisse (nicht neu herleiten müssen!)
 
@@ -104,7 +103,8 @@ Im Haupttool gibt es historisch drei Flug-Animationsmodi für die Ziel-Seite: **
 
 ## 10. Empfohlene nächste Schritte (Priorität)
 
-1. Test-Tool (`selection_strategy_prototype.html`, gerade neu gebaut) im Browser verifizieren - Node-Test war erfolgreich, DOM/UI noch offen.
-2. Haupttool auf `bank-core.js` umstellen (größere Aufgabe: bijektive Zeit-Abbildung einbauen, Kompaktierung ergänzen).
-3. Tiefe-Standardwert im Haupttool klären/synchronisieren.
-4. Erst danach: Z/R-Transformationsmodi neu aufbauen (C¹-stetig, siehe Abschnitt 8) - eigenständiges Thema, nicht mit Punkt 1-3 vermischen.
+1. ~~Test-Tool im Browser verifizieren~~ - erledigt.
+2. ~~Haupttool auf `bank-core.js` umstellen~~ - erledigt (Kompaktierung dabei bewusst ausgeklammert, siehe Punkt 3 unten).
+3. Haupttool: Kompaktierung ergänzen (analog zum Test-Tool, verbunden mit der bijektiven Tick↔Zeit-Abbildung, die das Haupttool jetzt schon nutzt).
+4. Tiefe-Standardwert im Haupttool klären/synchronisieren.
+5. Erst danach: Z/R-Transformationsmodi neu aufbauen (C¹-stetig, siehe Abschnitt 8) - eigenständiges Thema, nicht mit den Punkten oben vermischen.

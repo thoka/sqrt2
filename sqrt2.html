@@ -92,7 +92,8 @@
         <hr style="border: 1px solid #334155; margin: 10px 0;">
 
         <div class="control-group"><label id="timeLabel">Zeitstrahl (0.0)</label><input type="range" id="timeSlider" min="0" max="10" step="0.01" value="0"></div>
-        
+        <div class="control-group" style="margin-top:-4px;"><label id="tickLabel">Tick (Vergleich mit Test-Tool) — 0 / 0</label><input type="number" id="tickInput" min="0" step="1" value="0"></div>
+
         <div class="control-group" style="margin-top:10px;"><label>Modus B (Hypothetische Basis $b \to 1$)</label><input type="range" id="modeSliderAB" min="0" max="1" step="0.01" value="0"></div>
 
         <div class="control-group" style="margin-top:10px;">
@@ -117,7 +118,9 @@
     </div>
 </div>
 
-<script>
+<script type="module">
+import { createBankSimulation, buildTickTimeMapping } from './bank-core.js';
+
 const COLORS = ["#cbd5e1", "#ef476f", "#ffd166", "#06d6a0", "#118ab2", "#8338ec", "#f78c6b", "#ff006e", "#3a86ff", "#fb5607", "#ffbe0b"];
 
 let N_MAX = 3; let BASE = 10;
@@ -140,24 +143,23 @@ let GLOBAL_BANK_ZOOM_TIMES = [];
 // Zoom-Schwellwert (in Potenzen von BASE): 0 = alle Stücke fließen ins
 // Framing ein (bisheriges Verhalten). Siehe compileSystem() für Details.
 let BANK_ZOOM_THRESHOLD_POWERS = 0;
+// Bijektive Tick<->Zeit-Abbildung aus compileSystem() (siehe dort) - wird
+// hier zusätzlich aufgehoben, damit der Tick-Regler (siehe unten) jederzeit
+// zwischen der kontinuierlichen Animationszeit dieses Tools und dem
+// ganzzahligen Tick-Zähler aus bank-core.js hin- und herrechnen kann. Das
+// erlaubt den direkten Zustandsvergleich mit dem Test-Tool (dort ist Tick
+// die native Zeitachse).
+let GLOBAL_TTM = null;
 
 // === SYSTEM A: COMPILER ===
 //
-// PATCH V28: Die Ziffernsuche läuft jetzt komplett in BigInt-Integer-Arithmetik.
-// Vorher wurde P als Float mitgeführt und R = 2 - P*P gebildet ("catastrophic
-// cancellation"): sobald P -> sqrt(2), wird P*P -> 2, und die Differenz R
-// verschwindet irgendwann im Rundungsfehler von Float64 (~4.4e-16). Ab
-// Tiefe ~8-9 (Basis 10) kippte dadurch der Vergleich im inneren Loop und
-// erzeugte eine falsche Ziffer.
-//
-// Neu: P wird als Integer P_int zur Basis b^m gespeichert (Wert = P_int / b^m).
-// Die Bedingung "Ziffer n passt an Position m" wird dann rein ganzzahlig
-// geprüft:
-//      (P_int * b + n)^2  <=  2 * b^(2*(m))
-// Da nie durch b^m geteilt oder mit einer sich der 2 annähernden Fließkomma-
-// zahl subtrahiert wird, ist das für JEDE Tiefe exakt - keine Auslöschung
-// mehr möglich. Das ist genau die "Exponentialschreibweise" (P_int, m),
-// die die Bank-Stücke ohnehin schon implizit über ihren Exponenten k nutzen.
+// Ziffernsuche und Bank-Algorithmus (Auswahl "isolation" + Schneiden
+// "centroid_far" + Streifen-Enden-Filter) kommen aus bank-core.js - derselben
+// Datei, die auch das Algorithmus-Spiel-Tool (selection_strategy_prototype.html)
+// nutzt. Beide Tools verhalten sich damit garantiert identisch. bank-core.js
+// zählt intern nur einen monotonen Tick (1 Tick = 1 Entnahme); die Brücke zur
+// kontinuierlichen Animationszeit dieses Tools liefert buildTickTimeMapping()
+// weiter unten (siehe Abschnitt 6.3 im README).
 
 function compileSystem() {
     try {
@@ -168,124 +170,25 @@ function compileSystem() {
         let transformMode = document.getElementById('transformMode').value;
         document.getElementById('perfWarning').style.display = N_MAX > 5 ? 'block' : 'none';
 
-        let baseBig = BigInt(BASE);
-        let n_arr = new Float64Array(N_MAX + 1);
+        // Beste validierte Kombination fest einprogrammiert (siehe README) -
+        // das Haupttool bietet bewusst keine Auswahl dafür an.
+        let sim = createBankSimulation(BASE, N_MAX, 'fixed');
+        axes = sim.axes;
+        TOTAL_STEPS = sim.TOTAL_STEPS;
+        bank_pieces = sim.bank_pieces;
 
-        // P_int repräsentiert P als Integer zur Basis b^m: Wert = P_int / b^m
-        let P_int = 1n;
-        n_arr[0] = 1;
+        // n_arr[m] (Ziffer an Stelle m) ergibt sich direkt aus der Anzahl der
+        // axes-Einträge mit exp===m - genau so hat bank-core.js sie erzeugt.
+        let n_arr = new Array(N_MAX + 1).fill(0);
+        for (let a of axes) n_arr[a.exp]++;
+        GLOBAL_N_ARR = n_arr;
 
-        for (let m = 1; m <= N_MAX; m++) {
-            // Ziel: 2 * b^(2m), exakt als Integer - kein Rundungsfehler.
-            let target = 2n * (baseBig ** BigInt(2 * m));
-            let best_n = 0n;
-            for (let test_n = baseBig - 1n; test_n >= 0n; test_n--) {
-                let candidate = P_int * baseBig + test_n;
-                if (candidate * candidate <= target) { best_n = test_n; break; }
-            }
-            n_arr[m] = Number(best_n);
-            P_int = P_int * baseBig + best_n;
-        }
-
-        // P_FINAL wird nur noch für Skalierung/Layout gebraucht (Rendering),
-        // nicht mehr für die Ziffernlogik selbst - daher unkritisch als Float.
-        P_FINAL = Number(P_int) / Math.pow(BASE, N_MAX);
-        GLOBAL_N_ARR = Array.from(n_arr);
-
-        axes = []; axes.push({ exp: 0, cumulative: 1.0 });
-        for (let m = 1; m <= N_MAX; m++) {
-            for (let c = 0; c < n_arr[m]; c++) {
-                axes.push({ exp: m, cumulative: axes[axes.length - 1].cumulative + Math.pow(BASE, -m) });
-            }
-        }
-        TOTAL_STEPS = axes.length;
-
-        let global_id = 0;
-        bank_pieces = [{ id: global_id++, parent_id: null, k: 0, x: 0, y: 0, w: 1, h: 1, born_time: 0, cut_time: Infinity, taken_time: Infinity, children: [] }];
-        
-        // PATCH V35: Auswahl-Strategie aus dem Algorithmus-Spiel-Tool
-        // übernommen (dort ausführlich gegeneinander getestet):
-        //  - Entnahme: "isolation" - das Stück mit den wenigsten direkt
-        //    berührenden Nachbarn wird zuerst verbraucht (aktiv Einzelgänger
-        //    abbauen, den Kern kompakt lassen).
-        //  - Schneiden: "centroid_far" - der Kandidat, dessen nächster RAND
-        //    am WEITESTEN vom Schwerpunkt aller sichtbaren Stücke entfernt
-        //    ist, wird als Nächstes zerschnitten (nicht der mit höchstem x,y).
-        //  - Streifen-Enden-Filter: nie aus der MITTE eines zusammen-
-        //    hängenden Streifens wählen, nur von den beiden Enden - sonst
-        //    reißt man unnötig Löcher in einen sonst zusammenhängenden Block.
-        function filterToStripEnds(candidates) {
-            let byParent = new Map();
-            for (let p of candidates) {
-                if (!byParent.has(p.parent_id)) byParent.set(p.parent_id, []);
-                byParent.get(p.parent_id).push(p);
-            }
-            let result = [];
-            for (let [pid, group] of byParent) {
-                if (group.length <= 2) { result.push(...group); continue; }
-                let varyX = group.some(p => p.x !== group[0].x);
-                group.sort((a, b) => varyX ? (a.x - b.x) : (a.y - b.y));
-                result.push(group[0], group[group.length - 1]);
-            }
-            return result;
-        }
-
-        function isolationScore(p, action_time) {
-            let touch = 0;
-            const EPS = 1e-9;
-            for (let q of bank_pieces) {
-                if (q.id === p.id) continue;
-                if (!(action_time >= q.born_time && action_time < q.cut_time && action_time < q.taken_time)) continue;
-                let touchX = (Math.abs(p.x + p.w - q.x) < EPS || Math.abs(q.x + q.w - p.x) < EPS) && !(p.y + p.h <= q.y + EPS || q.y + q.h <= p.y + EPS);
-                let touchY = (Math.abs(p.y + p.h - q.y) < EPS || Math.abs(q.y + q.h - p.y) < EPS) && !(p.x + p.w <= q.x + EPS || q.x + q.w <= p.x + EPS);
-                if (touchX || touchY) touch++;
-            }
-            return touch;
-        }
-
-        function getPieceFromBank(target_k, action_time) {
-            let available = filterToStripEnds(bank_pieces.filter(p => p.k === target_k && p.taken_time === Infinity && p.cut_time === Infinity && p.born_time <= action_time));
-            if (available.length > 0) {
-                available.sort((a, b) => isolationScore(a, action_time) - isolationScore(b, action_time));
-                available[0].taken_time = action_time;
-                return available[0];
-            }
-
-            let parents = filterToStripEnds(bank_pieces.filter(p => p.k < target_k && p.taken_time === Infinity && p.cut_time === Infinity && p.born_time <= action_time));
-            if (parents.length === 0) throw "Bank ist leer! Iterationstiefe überschreitet Vorrat.";
-
-            let visibleForCentroid = bank_pieces.filter(p => p.taken_time === Infinity && p.cut_time === Infinity && p.born_time <= action_time);
-            let ccx = 0, ccy = 0, cwsum = 0;
-            for (let p of visibleForCentroid) { let w = p.w * p.h; ccx += (p.x + p.w / 2) * w; ccy += (p.y + p.h / 2) * w; cwsum += w; }
-            if (cwsum > 0) { ccx /= cwsum; ccy /= cwsum; } else { ccx = 0.5; ccy = 0.5; }
-            function edgeDist(p) {
-                let dx = Math.max(p.x - ccx, 0, ccx - (p.x + p.w));
-                let dy = Math.max(p.y - ccy, 0, ccy - (p.y + p.h));
-                return Math.hypot(dx, dy);
-            }
-            parents.sort((a, b) => (b.k - a.k) || (edgeDist(b) - edgeDist(a))); // am weitesten zuerst
-            let best_parent = parents[0];
-            
-            best_parent.cut_time = action_time - 0.4;
-            let is_vert_cut = (best_parent.k % 2 === 0); 
-            let cw = is_vert_cut ? best_parent.w / BASE : best_parent.w;
-            let ch = is_vert_cut ? best_parent.h : best_parent.h / BASE;
-            
-            for (let i = 0; i < BASE; i++) {
-                let child = {
-                    id: global_id++, parent_id: best_parent.id, k: best_parent.k + 1,
-                    x: best_parent.x + (is_vert_cut ? i * cw : 0), 
-                    y: best_parent.y + (is_vert_cut ? 0 : i * ch),
-                    w: cw, h: ch, born_time: best_parent.cut_time, cut_time: Infinity, taken_time: Infinity,
-                    children: []
-                };
-                bank_pieces.push(child);
-                best_parent.children.push(child);
-            }
-            return getPieceFromBank(target_k, action_time);
-        }
+        // P_FINAL = Summe aller Achsen-Breiten (b^-exp) inkl. des Basisquadrats
+        // (exp=0) - exakt der Wert, den axes[axes.length-1].cumulative früher lieferte.
+        P_FINAL = axes.reduce((sum, a) => sum + Math.pow(BASE, -a.exp), 0);
 
         render_pipeline = [];
+        let tickTimePairs = [];
         let global_time = 1.0;
         let local_max_time = 1.0;
 
@@ -294,12 +197,10 @@ function compileSystem() {
         // zurueckgesetzt. Eine Schale hat aber (2*S+1) Stuecke, die je 0.15
         // Zeiteinheiten verbrauchen. Sobald (2*S+1)*0.15 > 3.0 ist (ab S~10),
         // lief die Zeit ueber das naechste Reset-Ziel hinaus - der naechste
-        // Reset sprang dann RUECKWAERTS in der Zeit. getPieceFromBank()
-        // verlangt aber born_time <= action_time fuer verfuegbare Stuecke;
-        // ein Zeitsprung rueckwaerts macht gerade erst geschnittene Stuecke
-        // "noch nicht geboren" fuer die naechste Anfrage, waehrend aeltere
-        // Stuecke schon verbraucht sind -> Bank erscheint leer, obwohl
-        // rechnerisch genug Papier da waere.
+        // Reset sprang dann RUECKWAERTS in der Zeit. Ausserdem braucht
+        // buildTickTimeMapping() weiter unten monoton wachsende t_fly-Werte,
+        // um Tick <-> Zeit eindeutig umzurechnen - ein Zeitsprung rueckwaerts
+        // wuerde diese Abbildung brechen.
         //
         // Fix: kein absolutes Reset mehr, sondern ein garantiert positiver
         // Abstand ("gap") zum tatsaechlichen Ende der vorherigen Schale.
@@ -319,55 +220,64 @@ function compileSystem() {
             
             for (let sp of pieces_in_shell) {
                 let k = axes[sp.u].exp + axes[sp.v].exp;
-                let needs_chop = sp.is_top; 
-                
-                let t_cut = global_time - 0.5; let t_fly = global_time; let t_fuse = global_time + 1.0;
-                
-                // PATCH V40: Z (Zerschneiden) und R (Rotieren) vorübergehend
-                // deaktiviert - beide hatten bekannte Bugs (Doppel-Zeichnung
-                // bei Z_source, falsche Zielgröße bei R_macro - teils schon
-                // gefixt, aber nicht mehr aktiv gegengetestet). Nur noch S
-                // (Strecken) ist über die UI wählbar, daher reduziert sich
-                // dieser Zweig ohnehin immer auf den else-Pfad unten. Der
-                // Z-Code bleibt hier als Kommentar für eine spätere,
-                // gründlichere Neuimplementierung erhalten:
-                /*
-                if (needs_chop && transformMode === 'Z') {
-                    let micro_pieces = [];
-                    for (let i = 0; i < BASE; i++) micro_pieces.push(getPieceFromBank(k + 1, t_cut));
-                    
-                    let parent_bp = bank_pieces.find(p => p.id === micro_pieces[0].parent_id);
+                let needs_chop = sp.is_top;
 
-                    render_pipeline.push({ type: 'Z_source', bp: parent_bp, u: sp.u, v: sp.v, time_cut: t_cut });
-                    render_pipeline.push({ type: 'Z_ghost', bp: parent_bp, u: sp.u, v: sp.v, time_fuse: t_fuse });
-                    
+                // PATCH V41: Rand einer Schale (is_top) verlangt laut
+                // bank-core.js BASE Stuecke der naechsten, feineren Ebene
+                // (k+1) statt eines einzelnen Stuecks der Ebene k (siehe
+                // bank-core.js TEIL 1b, README Abschnitt 5) - exakt dieselbe
+                // Sequenz, die buildSystem() fuer das Test-Tool durchlaeuft.
+                // Bei der Migration auf bank-core.js wurde hier zunaechst nur
+                // EIN Stueck angefordert (das alte, von allen Transformmodi
+                // gemeinsam genutzte Verhalten) - das ergab zwar ein optisch
+                // plausibles, aber gegenueber dem Algorithmus zu "aufgeraeumtes"
+                // Bank-Bild und liess sich nicht mehr Tick-genau mit dem
+                // Test-Tool vergleichen. Jedes der BASE Stuecke bekommt einen
+                // eigenen Tick UND eigenen Zeitpunkt (statt alle gleichzeitig
+                // zu "poppen") - nur so bleibt auch die Bank-Ansicht (nicht
+                // nur das Zielquadrat) Tick-fuer-Tick vergleichbar.
+                if (needs_chop) {
                     for (let i = 0; i < BASE; i++) {
-                        render_pipeline.push({
-                            type: 'Z_micro', bp: micro_pieces[i], u: sp.u, v: sp.v, i: i, 
-                            time_cut: t_cut, time_fly: t_fly, time_fuse: t_fuse
-                        });
+                        let t_fly = global_time;
+                        let { piece: bp, tick } = sim.getPieceFromBank(k + 1);
+                        tickTimePairs.push({ tick, time: t_fly });
+                        render_pipeline.push({ type: 'S_micro', bp: bp, u: sp.u, v: sp.v, i: i, time_fly: t_fly });
+                        local_max_time = Math.max(local_max_time, t_fly + 1.0);
+                        global_time += 0.15;
                     }
-                    local_max_time = Math.max(local_max_time, t_fuse + 0.5);
                 } else {
-                */
-                {
-                    let bp = getPieceFromBank(k, t_fly);
-                    // R (Rotieren) ebenfalls deaktiviert, siehe oben:
-                    /*
-                    if (transformMode === 'R' && needs_chop) {
-                        render_pipeline.push({ type: 'R_macro', bp: bp, u: sp.u, v: sp.v, time_fly: t_fly, rot: Math.PI / 2 });
-                    } else if (transformMode === 'S' && needs_chop) {
-                    */
-                    if (needs_chop) {
-                        render_pipeline.push({ type: 'S_macro', bp: bp, u: sp.u, v: sp.v, time_fly: t_fly });
-                    } else {
-                        render_pipeline.push({ type: 'Z_direct', bp: bp, u: sp.u, v: sp.v, time_fly: t_fly });
-                    }
+                    let t_fly = global_time;
+                    let { piece: bp, tick } = sim.getPieceFromBank(k);
+                    tickTimePairs.push({ tick, time: t_fly });
+                    render_pipeline.push({ type: 'Z_direct', bp: bp, u: sp.u, v: sp.v, time_fly: t_fly });
                     local_max_time = Math.max(local_max_time, t_fly + 1.0);
+                    global_time += 0.15;
                 }
-                global_time += 0.15; 
             }
         }
+
+        // bank-core.js zählt Entnahmen nur als monotonen Integer-Tick (siehe
+        // Kommentar oben in bank-core.js, TEIL 3). Die bijektive Abbildung
+        // übersetzt jeden Tick zurück in die kontinuierliche Animationszeit
+        // dieses Tools; ein kleiner Versatz auf cut_time/born_time reproduziert
+        // den alten Vorlauf ("Stück ist schon sichtbar geschnitten, bevor es
+        // fliegt"). WICHTIG: dieser Versatz muss strikt kleiner sein als der
+        // kleinstmögliche Abstand zwischen zwei aufeinanderfolgenden Ticks
+        // (0.15, siehe global_time-Inkremente oben) - sonst kann ein Schnitt-
+        // Ereignis aus einem SPÄTEREN Tick durch den Versatz vor die
+        // Entnahme eines NAHEN, aber früheren Ticks rutschen und die
+        // Sichtbarkeits-Reihenfolge verfälschen (führte zu Bank-Zuständen,
+        // die vom Test-Tool bei gleichem Tick abwichen - mit 0.4 empirisch
+        // an vielen Ticks reproduzierbar, mit 0.1 an keinem einzigen mehr).
+        const CUT_BORN_LEAD = 0.1;
+        let ttm = buildTickTimeMapping(tickTimePairs);
+        for (let p of bank_pieces) {
+            p.taken_time = isFinite(p.taken_time) ? ttm.tickToTime(p.taken_time) : Infinity;
+            p.cut_time = isFinite(p.cut_time) ? ttm.tickToTime(p.cut_time) - CUT_BORN_LEAD : Infinity;
+            p.born_time = p.born_time === 0 ? 0 : ttm.tickToTime(p.born_time) - CUT_BORN_LEAD;
+        }
+        GLOBAL_TTM = ttm;
+        tickInput.max = ttm.maxTick;
 
         GLOBAL_SHELL_START = shell_start_time;
 
@@ -518,7 +428,10 @@ function updateHUD(time) {
         if (time >= GLOBAL_SHELL_START[S]) Step = S; else break;
     }
     Step = Math.max(0, Math.min(TOTAL_STEPS - 1, Step));
-    let counts = new Array(Math.min(2 * N_MAX + 1, 50)).fill(0); 
+    // Größtes vorkommendes k ist jetzt 2*N_MAX+1 (nicht mehr 2*N_MAX): der
+    // Rand einer Schale (is_top) fordert seit PATCH V41 Stücke der Ebene k+1
+    // an, siehe compileSystem(). Array muss also einen Platz mehr fassen.
+    let counts = new Array(Math.min(2 * N_MAX + 2, 50)).fill(0);
     for (let p of bank_pieces) {
         if (p.k < counts.length && time >= p.born_time && time < p.cut_time && time < p.taken_time) counts[p.k]++;
     }
@@ -795,7 +708,7 @@ function renderFrame() {
         // die reguläre Schleife tatsächlich offen lässt - keine Änderung an
         // cut_time/taken_time selbst (das würde die Bank-Versorgung wieder
         // durcheinanderbringen, siehe Testprotokoll im Gespräch).
-        if (p.type === 'Z_direct' || p.type === 'S_macro' || p.type === 'R_macro') {
+        if (p.type === 'Z_direct' || p.type === 'S_macro' || p.type === 'R_macro' || p.type === 'S_micro') {
             if (u_time >= p.time_fly) is_visible = true;
         } else if (p.type === 'Z_source') {
             if (u_time >= p.bp.cut_time && u_time < p.time_cut) is_visible = true;
@@ -823,7 +736,12 @@ function renderFrame() {
         let b_eff = Math.pow(BASE, 1.0 - u_mode_AB);
         if (b_eff < 1.000001) b_eff = 1.000001;
 
-        if (p.type === 'Z_micro') {
+        if (p.type === 'Z_micro' || p.type === 'S_micro') {
+            // Rand-Zelle (is_top) wird aus BASE Stücken zusammengesetzt (siehe
+            // PATCH V41 in compileSystem) - jedes bekommt hier denselben
+            // Bruchteil der Zielzelle wie zuvor Z_micro (nur ohne dessen
+            // Schneiden/Verschmelzen-Choreografie, siehe S_micro-Sichtbarkeit
+            // oben: einfacher Direktflug wie Z_direct/S_macro).
             target_w = tw > th ? tw / b_eff : tw; target_h = tw > th ? th : th / b_eff;
             tx = tx + (tw > th ? p.i * target_w : 0);
             ty = ty + (tw > th ? 0 : p.i * target_h);
@@ -867,13 +785,28 @@ function renderFrame() {
     ctx.restore();
 }
 
-const timeSlider = document.getElementById('timeSlider'); 
+const timeSlider = document.getElementById('timeSlider');
 const modeSliderAB = document.getElementById('modeSliderAB');
 const bankZoomLabel = document.getElementById('bankZoomLabel');
 const bankAreaLabel = document.getElementById('bankAreaLabel');
 const timeLabel = document.getElementById('timeLabel');
+const tickInput = document.getElementById('tickInput');
+const tickLabel = document.getElementById('tickLabel');
 
-function updateOutputs() { timeLabel.innerText = `Zeitstrahl (${u_time.toFixed(1)})`; renderFrame(); updateHUD(u_time); }
+function updateOutputs() {
+    timeLabel.innerText = `Zeitstrahl (${u_time.toFixed(1)})`;
+    // Tick-Readout: zeigt zu jedem Zeitpunkt den passenden (auch gebrochenen)
+    // Tick-Wert aus bank-core.js - der Bank-Zustand selbst ändert sich aber
+    // immer nur an ganzzahligen Ticks. Solange das Feld nicht fokussiert ist
+    // (der Nutzer also nicht gerade tippt), wird es live mitgeführt.
+    if (GLOBAL_TTM && document.activeElement !== tickInput) {
+        tickInput.value = Math.round(GLOBAL_TTM.timeToTick(u_time));
+    }
+    if (GLOBAL_TTM) {
+        tickLabel.innerText = `Tick (Vergleich mit Test-Tool) — ${GLOBAL_TTM.timeToTick(u_time).toFixed(2)} / ${GLOBAL_TTM.maxTick}`;
+    }
+    renderFrame(); updateHUD(u_time);
+}
 
 function formatZoomFactor(f) {
     if (f < 10) return f.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '×';
@@ -888,6 +821,18 @@ document.getElementById('transformMode').addEventListener('change', compileSyste
 
 timeSlider.addEventListener('input', (e) => { u_time = parseFloat(e.target.value); updateOutputs(); });
 modeSliderAB.addEventListener('input', (e) => { u_mode_AB = parseFloat(e.target.value); updateOutputs(); });
+
+// Direkter Sprung zu einem Tick (springt exakt auf dessen Animationszeit via
+// GLOBAL_TTM.tickToTime) - erlaubt den Zustandsvergleich mit dem Test-Tool,
+// das intern nur mit Ticks arbeitet, siehe README Abschnitt 5.
+tickInput.addEventListener('change', (e) => {
+    if (!GLOBAL_TTM) return;
+    let tick = Math.max(0, Math.min(GLOBAL_TTM.maxTick, Math.round(parseFloat(e.target.value) || 0)));
+    e.target.value = tick; // Eingabe auf den tatsächlich angefahrenen (geklammerten) Tick zurückspiegeln
+    u_time = GLOBAL_TTM.tickToTime(tick);
+    timeSlider.value = u_time;
+    updateOutputs();
+});
 
 // PATCH V30: Bank-Zoom ist jetzt vollautomatisch (siehe getInterpolatedBankZoom()
 // in renderFrame) - kein manueller Regler mehr, nur noch das Zahlen-Readout
