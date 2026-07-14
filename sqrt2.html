@@ -166,6 +166,13 @@ let BANK_ZOOM_THRESHOLD_POWERS = 0;
 // erlaubt den direkten Zustandsvergleich mit dem Test-Tool (dort ist Tick
 // die native Zeitachse).
 let GLOBAL_TTM = null;
+// Auto-Zoom braucht während der Animation ein bewegliches Ziel: der
+// Exponent der tiefsten gerade sichtbaren Ziffern-Stelle wächst schalenweise
+// (axes[S].exp), nicht erst fix bei N_MAX. Ein Eintrag pro Schale S
+// ({t: Schalen-Startzeit, exp: axes[S].exp}) - Rohdaten für die gedämpfte
+// Überblendung in getSmoothedAutoZoomExp() (Muster identisch zu
+// GLOBAL_BANK_ZOOM/getBankTransform() weiter unten).
+let GLOBAL_AUTO_ZOOM_CHECKPOINTS = [];
 
 // === SYSTEM A: COMPILER ===
 //
@@ -309,6 +316,15 @@ function compileSystem() {
         tickInput.max = ttm.maxTick;
 
         GLOBAL_SHELL_START = shell_start_time;
+
+        // Auto-Zoom-Ziel (Ziel-Seite): pro Schale S der Exponent der tiefsten
+        // in dieser Schale neu sichtbaren Ziffern-Stelle - wächst mit der
+        // Animation von 0 (nur Basisquadrat) bis N_MAX, nicht von Anfang an
+        // fix auf N_MAX. Siehe getSmoothedAutoZoomExp() weiter unten.
+        GLOBAL_AUTO_ZOOM_CHECKPOINTS = [];
+        for (let S = 0; S < TOTAL_STEPS; S++) {
+            GLOBAL_AUTO_ZOOM_CHECKPOINTS.push({ t: shell_start_time[S], exp: axes[S].exp });
+        }
 
         // PATCH V32: Auto-Zoom für die Bank - grundlegend überarbeitet.
         //
@@ -631,35 +647,72 @@ function getBankTransform(time) {
     return { z, offsetX, offsetY, area };
 }
 
-// Auto-Zoom: findet den KLEINSTEN Modus-B-Wert t_AB, bei dem die feinste
-// Ziffern-Stelle (axes[TOTAL_STEPS-1], Exponent N_MAX) mindestens
-// thresholdPx Canvas-Pixel breit dargestellt wird. Reine Funktion (keine
-// Seiteneffekte auf dyn_prefA/dyn_axes_w) - rechnet dieselbe Formel wie
-// updateDynamicLayout() nach, aber unabhängig davon, damit die eigentliche
-// Layout-Berechnung (mit ihrem Memoisierungs-Cache) nicht durch den
-// Suchlauf gestört wird. finestPixelWidth(t_AB) ist monoton wachsend in
-// t_AB (mehr Verzerrung -> größere feinste Stelle), daher reicht eine
-// einfache Bisektion.
-function computeAutoZoomTAB(thresholdPx, scale) {
+// Auto-Zoom macht nur dynamisch Sinn: die tiefste gerade sichtbare
+// Ziffern-Stelle wächst mit der Animation (Schale für Schale von exp=0 bis
+// exp=N_MAX), nicht von Anfang an fix auf N_MAX. getSmoothedAutoZoomExp()
+// liefert den (gedämpft geglätteten) Ziel-Exponenten für Zeitpunkt "time" -
+// exakt dasselbe Muster wie getBankTransform() oben (Checkpoints + kausaler
+// Exponentialkern), nur für einen Skalar (Exponent) statt {z,cx,cy}.
+function getSmoothedAutoZoomExp(time) {
+    let cps = GLOBAL_AUTO_ZOOM_CHECKPOINTS;
+    if (cps.length === 0) return 0;
+    let TAU = Math.max(MAX_TIME * 0.03, 0.5);
+    let k = 1 / TAU;
+    function F(tp) { return Math.exp(-k * (time - tp)); }
+
+    let n = 0;
+    for (let i = 1; i < cps.length; i++) { if (time >= cps[i].t) n = i; else break; }
+
+    let wFirst = F(cps[0].t);
+    let exp = cps[0].exp * wFirst;
+    for (let i = 0; i < n; i++) {
+        let w = F(cps[i + 1].t) - F(cps[i].t);
+        exp += cps[i].exp * w;
+    }
+    let wLast = F(time) - F(cps[n].t);
+    exp += cps[n].exp * wLast;
+    return exp;
+}
+
+// Auto-Zoom: findet den KLEINSTEN Modus-B-Wert t_AB, bei dem eine Ziffern-
+// Stelle vom Exponenten targetExp mindestens thresholdPx Canvas-Pixel breit
+// dargestellt wird. Reine Funktion (keine Seiteneffekte auf dyn_prefA/
+// dyn_axes_w) - rechnet dieselbe Formel wie updateDynamicLayout() nach,
+// aber unabhängig davon, damit die eigentliche Layout-Berechnung (mit ihrem
+// Memoisierungs-Cache) nicht durch den Suchlauf gestört wird.
+//
+// WICHTIG: widthAt(t_AB) ist NUR für targetExp nahe N_MAX monoton wachsend
+// in t_AB. Für kleine targetExp (frühe Schalen, siehe getSmoothedAutoZoomExp)
+// schrumpft die Stelle anfangs sogar (das Basisquadrat wird optisch
+// "verdrängt", wenn feinere Stellen aufgeblasen werden) und kann einen
+// Höcker statt einer Rampe bilden - empirisch geprüft (Node-Test, siehe
+// Gesprächsverlauf), keine geschlossene Formel gefunden. Deshalb bewusst
+// KEINE Bisektion (setzt Monotonie voraus, liefert bei einem Höcker
+// falsche/unruhige Ergebnisse), sondern ein einfacher linearer Suchlauf
+// über 100 Stützstellen - robust unabhängig von der Kurvenform, und mit
+// <0.2ms selbst bei tiefer Rekursion (TOTAL_STEPS~500) weit unter dem
+// Frame-Budget (siehe Performance-Test im Gesprächsverlauf).
+function computeAutoZoomTAB(thresholdPx, scale, targetExp) {
     if (thresholdPx <= 0 || TOTAL_STEPS <= 1) return 0;
-    function finestPixelWidth(t_AB) {
+    function widthAt(t_AB) {
         let b_eff = Math.pow(BASE, 1.0 - t_AB);
         if (b_eff < 1.000001) b_eff = 1.000001;
         let sumA = 1.0;
         for (let i = 1; i < TOTAL_STEPS; i++) sumA += Math.pow(b_eff, -axes[i].exp);
         let DYN_W = sumA + Math.pow(b_eff, -(N_MAX + 1));
         let V_SCALE_TARGET = P_FINAL / DYN_W;
-        let finestLogicalWidth = Math.pow(b_eff, -axes[TOTAL_STEPS - 1].exp);
-        return finestLogicalWidth * V_SCALE_TARGET * scale;
+        return Math.pow(b_eff, -targetExp) * V_SCALE_TARGET * scale;
     }
-    if (finestPixelWidth(0) >= thresholdPx) return 0;
-    if (finestPixelWidth(1) < thresholdPx) return 1;
-    let lo = 0, hi = 1;
-    for (let iter = 0; iter < 40; iter++) {
-        let mid = (lo + hi) / 2;
-        if (finestPixelWidth(mid) < thresholdPx) lo = mid; else hi = mid;
+    const STEPS = 100;
+    let bestT = 0, bestWidth = widthAt(0);
+    if (bestWidth >= thresholdPx) return 0;
+    for (let i = 1; i <= STEPS; i++) {
+        let t = i / STEPS;
+        let w = widthAt(t);
+        if (w > bestWidth) { bestWidth = w; bestT = t; }
+        if (w >= thresholdPx) return t; // kleinster ausreichender Wert gefunden
     }
-    return hi;
+    return bestT; // Ziel im gesamten [0,1]-Bereich unerreichbar - bester Kompromiss statt hartem Clamp auf 1
 }
 
 function renderFrame() {
@@ -674,11 +727,15 @@ function renderFrame() {
 
     // Auto-Zoom: "größerer Wert gewinnt" - der Regler (u_mode_AB) kann die
     // Verzerrung erhöhen, Auto-Zoom kann sie ebenfalls erhöhen (falls die
-    // feinste Stelle sonst unter AUTO_ZOOM_MIN_PX Pixel fiele), aber nie
-    // verringern. Der Regler selbst bleibt dabei unverändert (siehe
-    // modeSliderAB.value) - nur die tatsächlich fürs Layout benutzte
-    // effektive Verzerrung wird übersteuert.
-    let autoZoomTAB = computeAutoZoomTAB(AUTO_ZOOM_MIN_PX, scale);
+    // aktuell tiefste sichtbare Stelle sonst unter AUTO_ZOOM_MIN_PX Pixel
+    // fiele), aber nie verringern. Der Regler selbst bleibt dabei unverändert
+    // (siehe modeSliderAB.value) - nur die tatsächlich fürs Layout benutzte
+    // effektive Verzerrung wird übersteuert. Das Ziel (welcher Exponent
+    // gerade "die tiefste sichtbare Stelle" ist) wandert mit der Animation
+    // mit (getSmoothedAutoZoomExp) - Auto-Zoom macht nur dynamisch Sinn,
+    // siehe Kommentar dort.
+    let autoZoomTargetExp = getSmoothedAutoZoomExp(u_time);
+    let autoZoomTAB = computeAutoZoomTAB(AUTO_ZOOM_MIN_PX, scale, autoZoomTargetExp);
     let effective_t_AB = Math.max(u_mode_AB, autoZoomTAB);
     updateAutoZoomIndicator(autoZoomTAB, effective_t_AB > u_mode_AB + 1e-9);
 
