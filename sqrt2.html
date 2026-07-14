@@ -79,13 +79,11 @@
         <div class="control-group" style="margin-top: 5px;">
             <label>Transformation (Flug-Modus)</label>
             <select id="transformMode">
-                <!-- Z (Zerschneiden) und R (Rotieren) vorübergehend entfernt -
-                     beide hatten Bugs, aktuell wird nur mit S getestet.
-                     Für spätere Neuimplementierung siehe Kommentare im JS.
-                <option value="Z">Z: Zerschneiden (Montessori)</option>
-                <option value="R">R: Rotieren (Festkörper)</option>
-                -->
                 <option value="S">S: Strecken (Morphing)</option>
+                <option value="Z">Z: Zerschneiden (Montessori) - Rück-Verschmelzung noch buggy</option>
+                <!-- R (Rotieren) weiterhin deaktiviert - eigener, unabhängiger
+                     Bug (falsche Zielgröße bei R_macro), siehe README
+                     Abschnitt 8. Für Neuimplementierung siehe Kommentare im JS. -->
             </select>
         </div>
 
@@ -119,7 +117,7 @@
 </div>
 
 <script type="module">
-import { createBankSimulation, buildTickTimeMapping } from './bank-core.js';
+import { buildSystem, buildTickTimeMapping } from './bank-core.js';
 
 const COLORS = ["#cbd5e1", "#ef476f", "#ffd166", "#06d6a0", "#118ab2", "#8338ec", "#f78c6b", "#ff006e", "#3a86ff", "#fb5607", "#ffbe0b"];
 
@@ -171,8 +169,16 @@ function compileSystem() {
         document.getElementById('perfWarning').style.display = N_MAX > 5 ? 'block' : 'none';
 
         // Beste validierte Kombination fest einprogrammiert (siehe README) -
-        // das Haupttool bietet bewusst keine Auswahl dafür an.
-        let sim = createBankSimulation(BASE, N_MAX, 'fixed');
+        // das Haupttool bietet dafür bewusst keine eigene Auswahl an (nur
+        // den Flug-Modus, siehe unten). Die Schalen-Konstruktion selbst
+        // (welche/wie viele Stücke pro Gitterzelle) kommt jetzt ebenfalls
+        // aus bank-core.js (buildSystem) - gemeinsam mit dem Test-Tool
+        // genutzt, statt einer eigenen Kopie der Schalen-Schleife hier.
+        // cellMode 'morph' (S: Strecken) nimmt ein Stück direkt, 'subdivide'
+        // (Z: Zerschneiden) BASE Stücke der nächsten Ebene pro Rand-Zelle -
+        // siehe bank-core.js für Details.
+        let cellMode = transformMode === 'Z' ? 'subdivide' : 'morph';
+        let { sim, events } = buildSystem(BASE, N_MAX, 'fixed', cellMode);
         axes = sim.axes;
         TOTAL_STEPS = sim.TOTAL_STEPS;
         bank_pieces = sim.bank_pieces;
@@ -209,48 +215,55 @@ function compileSystem() {
         const SHELL_GAP = 1.0;
         let shell_start_time = new Array(TOTAL_STEPS).fill(0);
 
-        for (let S = 1; S < TOTAL_STEPS; S++) {
-            let pieces_in_shell = [];
-            for (let v = 0; v < S; v++) pieces_in_shell.push({ u: S, v: v, is_top: false });
-            for (let u = 0; u < S; u++) pieces_in_shell.push({ u: u, v: S, is_top: true });
-            pieces_in_shell.push({ u: S, v: S, is_top: false }); 
+        // events (aus bank-core.js buildSystem) sind bereits in der exakten
+        // Entnahme-Reihenfolge sortiert. Eine Rand-Zelle im Zerschneiden-
+        // Modus erscheint als `count` aufeinanderfolgende Events mit
+        // derselben Gitterposition (u,v) - diese werden hier zu EINER
+        // Zerschneiden-Gruppe (Z_source/Z_ghost/Z_micro) zusammengefasst,
+        // die anderen (count===1) direkt zu S_macro/Z_direct.
+        let lastS = 0;
+        let idx = 0;
+        while (idx < events.length) {
+            let e = events[idx];
+            let S = Math.max(e.u, e.v);
+            if (S !== lastS) {
+                global_time += SHELL_GAP;
+                shell_start_time[S] = global_time;
+                lastS = S;
+            }
 
-            global_time += SHELL_GAP;
-            shell_start_time[S] = global_time;
-            
-            for (let sp of pieces_in_shell) {
-                let k = axes[sp.u].exp + axes[sp.v].exp;
-                let needs_chop = sp.is_top;
-
-                // Morphing-Modus (S): nimmt direkt EIN passendes Stück der
-                // Ebene k aus der Bank und streckt/morpht es in die Zielzelle
-                // - keine Unterteilung in BASE Stücke der Ebene k+1.
-                //
-                // PATCH V41 (rückgängig gemacht): hatte hier probeweise auf
-                // BASE Stücke der Ebene k+1 umgestellt (wie buildSystem() im
-                // Test-Tool), um Tick-genau mit dem Test-Tool vergleichbar zu
-                // sein. Das war aber ein Rückschritt: es passte das Haupttool
-                // an den (noch unfertigen) Zerschneiden-Modus des Test-Tools
-                // an, obwohl dessen Rück-Verschmelzung beim Zurückspulen
-                // (b Teile der Ebene n+1 -> 1 Teil der Ebene n) dort noch gar
-                // nicht animiert ist - sichtbar buggy beim Scrubben rückwärts.
-                // Die BASE-Unterteilung an sich ist eine interessante
-                // Erkenntnis (hält den Rest kompakter, siehe README) - das
-                // gehört aber zum separaten, noch offenen Thema "Z/R-Modi neu
-                // aufbauen" (Abschnitt 8), nicht zum Morphing-Modus. Bank-
-                // Algorithmus (Auswahl/Schneiden) bleibt trotzdem gemeinsam
-                // aus bank-core.js - nur die Zellen-Anforderung (1 vs. BASE
-                // Stücke) unterscheidet sich hier bewusst vom Test-Tool.
+            if (e.count === 1) {
                 let t_fly = global_time;
-                let { piece: bp, tick } = sim.getPieceFromBank(k);
-                tickTimePairs.push({ tick, time: t_fly });
-                if (needs_chop) {
-                    render_pipeline.push({ type: 'S_macro', bp: bp, u: sp.u, v: sp.v, time_fly: t_fly });
+                tickTimePairs.push({ tick: e.tick, time: t_fly });
+                if (e.is_top) {
+                    render_pipeline.push({ type: 'S_macro', bp: e.piece, u: e.u, v: e.v, time_fly: t_fly });
                 } else {
-                    render_pipeline.push({ type: 'Z_direct', bp: bp, u: sp.u, v: sp.v, time_fly: t_fly });
+                    render_pipeline.push({ type: 'Z_direct', bp: e.piece, u: e.u, v: e.v, time_fly: t_fly });
                 }
                 local_max_time = Math.max(local_max_time, t_fly + 1.0);
                 global_time += 0.15;
+                idx++;
+            } else {
+                // Zerschneiden-Gruppe: das ganze Elternstück wird sichtbar
+                // "aufgeschnitten" (Z_source -> Z_micro) und beim
+                // Zurückspulen wieder "verschmolzen" (Z_ghost). BEKANNTER
+                // OFFENER BUG (siehe README Abschnitt 8): die Rück-
+                // Verschmelzung ist noch nicht vollständig animiert/verifiziert
+                // - absichtlich noch nicht weiter gefixt, siehe Gespräch.
+                let group = events.slice(idx, idx + e.count);
+                let t_cut = global_time - 0.5;
+                let t_fly = global_time;
+                let t_fuse = global_time + 1.0;
+                let parent_bp = bank_pieces.find(p => p.id === group[0].piece.parent_id);
+                render_pipeline.push({ type: 'Z_source', bp: parent_bp, u: e.u, v: e.v, time_cut: t_cut });
+                render_pipeline.push({ type: 'Z_ghost', bp: parent_bp, u: e.u, v: e.v, time_fuse: t_fuse });
+                for (let g of group) {
+                    tickTimePairs.push({ tick: g.tick, time: t_cut });
+                    render_pipeline.push({ type: 'Z_micro', bp: g.piece, u: e.u, v: e.v, i: g.i, time_cut: t_cut, time_fly: t_fly, time_fuse: t_fuse });
+                }
+                local_max_time = Math.max(local_max_time, t_fuse + 0.5);
+                global_time += 0.15;
+                idx += e.count;
             }
         }
 

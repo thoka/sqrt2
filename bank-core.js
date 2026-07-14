@@ -153,16 +153,34 @@ function createBankSimulation(BASE, N_MAX, squareSplit) {
 // echten Aufbau des Ziel-Quadrats schalenweise).
 // ---------------------------------------------------------------------------
 //
-// Fuer Positionen am "oberen Rand" einer Schale (is_top) wird nicht die
-// Schalengroesse k selbst entnommen, sondern BASE Stuecke der NAECHSTEN,
-// feineren Ebene (k+1) - der Rand einer Schale entspricht immer der
-// naechsten Ziffern-Stelle (siehe README Abschnitt 6). Wird das ausgelassen
-// (wie einst versehentlich beim Portieren auf bank-core.js passiert),
-// verschiebt sich die gesamte Entnahme-Reihenfolge und das Ergebnis sieht
-// spuerbar "unruhiger" aus, obwohl der Auswahl-/Schneide-Algorithmus selbst
-// unveraendert ist.
-export function buildSystem(BASE, N_MAX, squareSplit) {
+// Fuer Positionen am "oberen Rand" einer Schale (is_top) gibt es zwei
+// Betriebsarten, ueber cellMode gewaehlt - beide nutzen denselben
+// Auswahl-/Schneide-Algorithmus, unterscheiden sich nur darin, WIE VIELE
+// Stuecke pro Rand-Zelle aus der Bank geholt werden:
+//
+//  - 'subdivide' (Default, "Zerschneiden"/Montessori-Stil): es werden BASE
+//    Stuecke der NAECHSTEN, feineren Ebene (k+1) entnommen statt eines
+//    einzelnen Stuecks der Ebene k - der Rand einer Schale entspricht immer
+//    der naechsten Ziffern-Stelle (siehe README Abschnitt 6). Wird das
+//    ausgelassen (wie einst versehentlich beim Portieren auf bank-core.js
+//    passiert), verschiebt sich die gesamte Entnahme-Reihenfolge und das
+//    Ergebnis sieht spuerbar "unruhiger" aus, obwohl der Auswahl-/
+//    Schneide-Algorithmus selbst unveraendert ist. Das ist der Modus, den
+//    das Algorithmus-Spiel-Tool (selection_strategy_prototype.html) nutzt.
+//  - 'morph' ("Strecken"): nimmt ein einzelnes Stueck der Ebene k direkt aus
+//    der Bank (keine Unterteilung) - das Stueck wird beim Rendern in die
+//    Zielzelle gestreckt/gemorpht. Das nutzt das Haupttool im Morphing-
+//    Flugmodus (siehe sqrt2.html).
+//
+// Jeder getPieceFromBank()-Aufruf wird als "Event" mit Gitterposition (u,v),
+// Gruppengroesse (count) und Index innerhalb der Gruppe (i) zurueckgegeben -
+// das gibt Aufrufern (z.B. dem Haupttool) genug Information, um daraus ihre
+// eigene Animations-/Render-Pipeline zu bauen, ohne die Schalen-Konstruktion
+// selbst zu duplizieren.
+export function buildSystem(BASE, N_MAX, squareSplit, cellMode) {
+    cellMode = cellMode || 'subdivide';
     let sim = createBankSimulation(BASE, N_MAX, squareSplit);
+    let events = [];
     for (let S = 1; S < sim.TOTAL_STEPS; S++) {
         let shell = [];
         for (let v = 0; v < S; v++) shell.push({ u: S, v: v, is_top: false });
@@ -170,12 +188,19 @@ export function buildSystem(BASE, N_MAX, squareSplit) {
         shell.push({ u: S, v: S, is_top: false });
         for (let sp of shell) {
             let k = sim.axes[sp.u].exp + sim.axes[sp.v].exp;
-            if (sp.is_top) { for (let i = 0; i < BASE; i++) sim.getPieceFromBank(k + 1); }
-            else { sim.getPieceFromBank(k); }
+            if (sp.is_top && cellMode === 'subdivide') {
+                for (let i = 0; i < BASE; i++) {
+                    let { piece, tick } = sim.getPieceFromBank(k + 1);
+                    events.push({ u: sp.u, v: sp.v, is_top: true, k: k + 1, piece, tick, i, count: BASE });
+                }
+            } else {
+                let { piece, tick } = sim.getPieceFromBank(k);
+                events.push({ u: sp.u, v: sp.v, is_top: sp.is_top, k, piece, tick, i: 0, count: 1 });
+            }
         }
     }
     let local_max_time = sim.currentTick - 1;
-    return { sim, local_max_time };
+    return { sim, local_max_time, events };
 }
 
 // ---------------------------------------------------------------------------

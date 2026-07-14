@@ -40,19 +40,24 @@ Ursprünglich lief das Verhalten des Rests im Haupttool "komplett anders" als im
 
 ### Wie die Anbindung funktioniert
 
-`bank-core.js` wird per ES-Modul-Import in beide HTML-Dateien eingebunden (kein Kopier-Build-Schritt mehr nötig, siehe `vite.config.js`). Das Haupttool nutzt das low-level `createBankSimulation(BASE, N_MAX, squareSplit)` (statt des höheren `buildSystem()`), weil es die Schalen-Konstruktion selbst durchläuft, um dabei parallel seine eigene kontinuierliche Animationszeit (`global_time`/`t_fly`) mitzuführen. Aus jedem `sim.getPieceFromBank(k)`-Aufruf wird `(tick, t_fly)` gesammelt; nach dem vollständigen Durchlauf übersetzt `buildTickTimeMapping()` alle `born_time`/`cut_time`/`taken_time`-Felder der Bank-Stücke (die `bank-core.js` nur als Integer-Tick führt) zurück in die kontinuierliche Zeitachse.
+`bank-core.js` wird per ES-Modul-Import in beide HTML-Dateien eingebunden (kein Kopier-Build-Schritt mehr nötig, siehe `vite.config.js`). Beide Tools nutzen jetzt dieselbe Schalen-Orchestrierung `buildSystem(BASE, N_MAX, squareSplit, cellMode)` aus `bank-core.js` - keine eigene Kopie der Schalen-Schleife mehr in einem der beiden Tools. `cellMode` steuert, WIE VIELE Stücke pro Rand-Zelle (`is_top`) geholt werden:
+
+- `'morph'` (Default im Haupttool, Flug-Modus **S: Strecken**): ein einzelnes, passendes Stück der Ebene `k` direkt aus der Bank, das in die Zielzelle gemorpht/gestreckt wird.
+- `'subdivide'` (Default beim Aufruf ohne 4. Parameter, damit abwärtskompatibel zum Test-Tool; Haupttool-Flug-Modus **Z: Zerschneiden**): `BASE` Stücke der nächsten, feineren Ebene `k+1` - der Rand einer Schale entspricht der nächsten Ziffern-Stelle (siehe Abschnitt 6).
+
+`buildSystem()` liefert dafür zusätzlich zu `sim`/`local_max_time` ein `events`-Array (ein Eintrag pro `getPieceFromBank()`-Aufruf, mit Gitterposition `u`/`v`, `is_top`, `k`, `piece`, `tick`, sowie `i`/`count` für Zerschneiden-Gruppen) - genug Information, damit ein Aufrufer daraus seine eigene Render-Pipeline bauen kann, ohne die Schalen-Konstruktion selbst zu duplizieren. Das Haupttool durchläuft `events` linear, vergibt dabei seine eigene kontinuierliche Animationszeit (`global_time`/`t_fly`, `SHELL_GAP` zwischen Schalen) und sammelt `(tick, t_fly)`-Paare; `buildTickTimeMapping()` übersetzt daraus am Ende alle `born_time`/`cut_time`/`taken_time`-Felder der Bank-Stücke (die `bank-core.js` nur als Integer-Tick führt) zurück in diese Zeitachse. Das Test-Tool braucht das nicht (seine Zeitachse ist der Tick selbst) und ignoriert `events`.
+
+### Zerschneiden-Modus im Haupttool (Z) - bekannter offener Bug
+
+Der Flug-Modus **Z: Zerschneiden** ist im Haupttool jetzt wählbar (Dropdown "Transformation") und nutzt denselben `subdivide`-Pfad wie das Test-Tool. **Bekannter, noch nicht behobener Bug:** die Rück-Verschmelzung beim Zurückspulen (`BASE` Stücke der Ebene `n+1` fusionieren visuell zurück zu einem Stück der Ebene `n`, `Z_ghost`) ist nicht vollständig/korrekt animiert. Bewusst noch nicht gefixt - siehe Abschnitt 8. Da beide Tools jetzt dieselbe `buildSystem()`-Funktion mit `cellMode: 'subdivide'` nutzen, lässt sich der Bug an einer einzigen Stelle beheben und wirkt sich automatisch auf beide Tools aus.
+
+**Beobachtung am Rande:** die `BASE`-Stücke-Zerlegung (Zerschneiden) hält den Rest sichtbar kompakter (weniger verstreute Einzelstücke) als die Ein-Stück-Variante (Morphing) - vermutlich ein echter Vorteil, aber getrennt vom Rück-Verschmelzungs-Bug zu bewerten.
 
 ### Tick-Vergleich mit dem Test-Tool (Zeitstrahl-Regler "Tick")
 
-Unterhalb des normalen Zeitstrahl-Reglers zeigt das Haupttool zusätzlich den zum aktuellen Zeitpunkt passenden **Tick** an (und lässt ihn direkt eintippen) - für den Zustandsvergleich mit dem Test-Tool. Zwei Dinge dabei, eines behoben, eines bewusst NICHT (mehr):
+Unterhalb des normalen Zeitstrahl-Reglers zeigt das Haupttool zusätzlich den zum aktuellen Zeitpunkt passenden **Tick** an (und lässt ihn direkt eintippen). Im Zerschneiden-Modus (`cellMode: 'subdivide'`, identisch zum Test-Tool) zeigt derselbe Tick in beiden Tools denselben Bank-Zustand. Im Morphing-Modus (Haupttool-Default) ist die Tick-Zählung dagegen bewusst anders als im Test-Tool (weniger, dafür größere Entnahmen) - der Regler bleibt trotzdem nützlich zum exakten Ansteuern von Entnahme-Zeitpunkten innerhalb des Haupttools selbst.
 
-1. **Rand-Zellen: EIN Stück (Morphing), nicht BASE Stücke.** Kurzzeitig wurde hier probeweise auf dieselbe BASE-Stücke-Anforderung wie `buildSystem()` (Test-Tool, Zerschneiden-Modus) umgestellt, um Tick-genaue Vergleichbarkeit zu erreichen. Das war ein Fehler in die falsche Richtung: das Haupttool wurde damit an einen im Test-Tool selbst noch unfertigen Modus angepasst - die Rück-Verschmelzung beim Zurückspulen (`b` Teile der Ebene `n+1` fusionieren zu einem Teil der Ebene `n`) ist dort noch gar nicht animiert, das Ergebnis war sichtbar buggy. **Zurückgesetzt:** Rand-Zellen nehmen im Haupttool wieder EIN passendes Stück der Ebene `k` direkt aus der Bank und morphen/strecken es in die Zielzelle - genau wie vor der bank-core.js-Migration. Damit sind Haupttool und Test-Tool (im Zerschneiden-Modus) wieder NICHT Tick-für-Tick identisch - der Tick-Regler im Haupttool bleibt trotzdem nützlich (exaktes Ansteuern von Entnahme-Zeitpunkten), zeigt aber nicht mehr zwangsläufig denselben Bank-Zustand wie das Test-Tool bei gleichem Tick.
-   - **Beobachtung, die dabei hängen geblieben ist:** die BASE-Stücke-Zerlegung hält den Rest sichtbar kompakter (weniger verstreute Einzelstücke) als die Ein-Stück-Variante - das ist vermutlich ein echter Vorteil des Zerschneiden-Ansatzes, aber getrennt vom eigentlichen Bug (fehlende Rück-Animation) zu bewerten. Gehört zum offenen Thema "Z/R-Modi neu aufbauen" (Abschnitt 8), **nicht** hier vorschnell mit übernehmen.
-2. **Der visuelle Vorlauf von `cut_time`/`born_time` konnte die Tick-Reihenfolge verfälschen** (unabhängig von Punkt 1, weiterhin behoben). Der alte Versatz war `-0.4` Zeiteinheiten; da Ticks nur `0.15` Zeiteinheiten auseinanderliegen, konnte ein Schnitt-Ereignis aus einem *späteren* Tick durch den `-0.4`-Versatz vor die Entnahme eines *nahen, aber früheren* Ticks rutschen. Fix: Versatz auf `0.1` verkleinert (nachweislich kleiner als der minimal mögliche Tick-Abstand von `0.15`, siehe Kommentar `CUT_BORN_LEAD` in `compileSystem()`) - eine solche Umsortierung ist damit mathematisch ausgeschlossen, unabhängig von Punkt 1.
-
-### Offene Frage: eine gemeinsame Schalen-Orchestrierung in bank-core.js?
-
-Der Hin-und-Her oben zeigt: nicht nur der Auswahl-/Schneide-Algorithmus (`createBankSimulation`, bereits geteilt) driftet auseinander, sondern auch die SCHALEN-ORCHESTRIERUNG (welche/wie viele Stücke pro Gitterzelle angefordert werden - `buildSystem()` im Test-Tool vs. die eigene Schleife im Haupttool) ist zwei separate Implementierungen, die genau dieselbe Art von Verwechslung wieder ermöglichen. Denkbare Lösung: `buildSystem()` in `bank-core.js` um einen Modus-Parameter erweitern (z.B. `cellMode: 'morph' | 'subdivide'`), sodass beide Tools dieselbe Orchestrierungs-Funktion mit unterschiedlicher Einstellung nutzen, statt eigener Kopien. Noch nicht umgesetzt - offene Entscheidung, siehe Abschnitt 10.
+Ein subtiler, unabhängig davon behobener Fehler bei der Tick→Zeit-Umrechnung: der visuelle Vorlauf von `cut_time`/`born_time` konnte die Tick-Reihenfolge verfälschen. Der alte Versatz war `-0.4` Zeiteinheiten; da Ticks nur `0.15` Zeiteinheiten auseinanderliegen, konnte ein Schnitt-Ereignis aus einem *späteren* Tick durch den `-0.4`-Versatz vor die Entnahme eines *nahen, aber früheren* Ticks rutschen. Fix: Versatz auf `0.1` verkleinert (nachweislich kleiner als der minimal mögliche Tick-Abstand von `0.15`, siehe Kommentar `CUT_BORN_LEAD` in `compileSystem()`) - eine solche Umsortierung ist damit mathematisch ausgeschlossen.
 
 ## 6. Wichtige mathematische Erkenntnisse (nicht neu herleiten müssen!)
 
@@ -94,13 +99,13 @@ Auswahl-/Schneide-Heuristiken, die getestet, aber **keine** Verbesserung brachte
 - Rollout/Lookahead mit fixierter Fortsetzungs-Politik - als "Kaninchenbau" identifiziert und bewusst NICHT umgesetzt (zu rechenintensiv für den Nutzen)
 - Bewegungs-Schwellwert für Kompaktierungs-Wegpunkte (siehe 6.2) - verursacht Einfrier-Bug bei extremen Werten, wieder entfernt
 
-## 8. Z/R-Transformationsmodi (separates, noch offenes Thema)
+## 8. Z/R-Transformationsmodi (Z jetzt wählbar, aber bekannt buggy; R weiterhin deaktiviert)
 
-Im Haupttool gibt es historisch drei Flug-Animationsmodi für die Ziel-Seite: **Z** (Zerschneiden/Montessori-Stil), **R** (Rotieren/Festkörper), **S** (Strecken/Morphing). Z und R hatten Bugs (teilweise gefixt: Doppel-Zeichnung bei Z_source, falsche Zielgröße bei R_macro), wurden aber auf Wunsch des Nutzers **komplett deaktiviert** (nur noch S in der UI wählbar), da nur noch mit S getestet wurde. Der Code für Z/R ist im Haupttool als Kommentar erhalten (nicht gelöscht), für eine spätere Neuimplementierung.
+Im Haupttool gibt es historisch drei Flug-Animationsmodi für die Ziel-Seite: **Z** (Zerschneiden/Montessori-Stil), **R** (Rotieren/Festkörper), **S** (Strecken/Morphing). Z und R hatten Bugs (teilweise gefixt: Doppel-Zeichnung bei Z_source, falsche Zielgröße bei R_macro) und wurden zwischenzeitlich komplett deaktiviert (nur S in der UI wählbar). **Z ist jetzt wieder wählbar** (nutzt die gemeinsame `buildSystem(..., 'subdivide')` aus `bank-core.js`, siehe Abschnitt 5) - **R bleibt deaktiviert**, das ist ein separater, unabhängiger Bug.
+
+**Bekannter, noch offener Bug in Z (Zerschneiden):** beim Zurückspulen wird die Rück-Verschmelzung von `BASE` Stücken der Ebene `n+1` zurück in ein Stück der Ebene `n` (`Z_ghost`) nicht korrekt/vollständig animiert. Da Haupttool und Test-Tool jetzt dieselbe `buildSystem()`-Orchestrierung nutzen, betrifft der Bug (und sein künftiger Fix) automatisch beide Tools - es lohnt sich nicht mehr, ihn an zwei Stellen zu suchen.
 
 **Anforderung für die Neuimplementierung (vom Nutzer explizit genannt):** Alle Übergänge müssen **C¹-stetig** sein (Ableitung stetig, kein "Stop-and-Go"). Erkenntnis dazu: Die Positions-Interpolation nutzte bereits Smoothstep (gut), aber die Alpha-Ein-/Ausblendungen bei Z (Z_source ausblenden, Z_micro ein-/ausblenden, Z_ghost einblenden) nutzten **lineare** Rampen (`Math.min`/`Math.max`) - das erzeugt Geschwindigkeitssprünge an den Rändern. Lösung (angedacht, noch nicht umgesetzt): alle Alpha-Übergänge auf Smoothstep umstellen, mit überlappenden Crossfade-Fenstern (z.B. 0.3 Zeiteinheiten) zwischen Z_source→Z_micro und Z_micro→Z_ghost, statt harter Cutoffs.
-
-**Zusätzlich gefundener Bug (Zerschneiden-Modus, Test-Tool):** beim Zurückspulen wird die Rück-Verschmelzung von `BASE` Stücken der Ebene `n+1` zurück in ein Stück der Ebene `n` nicht animiert - sichtbar buggy. Vor einer Neuimplementierung im Haupttool zuerst hier debuggen (siehe Abschnitt 5, Tick-Vergleich).
 
 ## 9. Zukünftige Vision (noch nicht begonnen)
 
@@ -111,9 +116,9 @@ Im Haupttool gibt es historisch drei Flug-Animationsmodi für die Ziel-Seite: **
 ## 10. Empfohlene nächste Schritte (Priorität)
 
 1. ~~Test-Tool im Browser verifizieren~~ - erledigt.
-2. ~~Haupttool auf `bank-core.js` umstellen~~ - erledigt (Kompaktierung dabei bewusst ausgeklammert, siehe Punkt 3 unten; Schalen-Orchestrierung bleibt Morphing/Ein-Stück, siehe Punkt 6).
+2. ~~Haupttool auf `bank-core.js` umstellen~~ - erledigt (Kompaktierung dabei bewusst ausgeklammert, siehe Punkt 3 unten).
 3. Haupttool: Kompaktierung ergänzen (analog zum Test-Tool, verbunden mit der bijektiven Tick↔Zeit-Abbildung, die das Haupttool jetzt schon nutzt).
 4. Tiefe-Standardwert im Haupttool klären/synchronisieren.
-5. Test-Tool: Rück-Verschmelzung im Zerschneiden-Modus debuggen (fehlende Animation beim Zurückspulen, siehe Abschnitt 8) - **davor** keine weitere Angleichung des Haupttools an diesen Modus versuchen.
-6. Offene Architekturfrage klären: gemeinsame Schalen-Orchestrierung (`buildSystem()` mit Modus-Parameter) in `bank-core.js`, statt eigener Kopien in beiden Tools? (siehe Abschnitt 5)
-7. Erst danach: Z/R-Transformationsmodi neu aufbauen (C¹-stetig, siehe Abschnitt 8) - eigenständiges Thema, nicht mit den Punkten oben vermischen.
+5. ~~Gemeinsame Schalen-Orchestrierung in `bank-core.js`~~ - erledigt: `buildSystem()` hat jetzt einen `cellMode`-Parameter (`'morph'`/`'subdivide'`), beide Tools nutzen dieselbe Funktion (siehe Abschnitt 5).
+6. Rück-Verschmelzung im Zerschneiden-Modus debuggen (fehlende/fehlerhafte Animation beim Zurückspulen, betrifft jetzt beide Tools gemeinsam über `buildSystem()`, siehe Abschnitt 8) - höchste Priorität für die Z/R-Neuimplementierung.
+7. Erst danach: Z/R-Transformationsmodi vollständig neu aufbauen (C¹-stetig, siehe Abschnitt 8) - eigenständiges Thema, nicht mit den Punkten oben vermischen.
