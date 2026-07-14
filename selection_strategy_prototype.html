@@ -93,6 +93,7 @@
 
 <script type="module">
 import { buildSystem, computeCompactionWaypoints, getSmoothedCompactedRect } from './bank-core.js';
+import { buildMonotoneSplineBundle } from './smoothing.js';
 
 let BASE = 10, N_MAX = 10;
 let sim = null; // aktuelle Bank-Simulations-Instanz (aus createBankSimulation)
@@ -103,6 +104,7 @@ let compactionWaypointsCache = [];
 
 // ==================== Zoom (Bounding-Box-Fit mit Schwellwert) ====================
 let checkpointTimes = [], checkpointZoom = [];
+let zoomSpline = null; // per compileSystem()/computeZoomCheckpoints() gebaut, siehe getBankTransform()
 function computeZoomCheckpoints() {
     let times = new Set([0]);
     for (let p of sim.bank_pieces) {
@@ -132,28 +134,20 @@ function computeZoomCheckpoints() {
         let z = Math.min(0.5/halfW, 0.5/halfH);
         return {z, cx, cy};
     });
+    // Offset wird HIER (pro Checkpoint) aus cx/z vorberechnet und direkt
+    // interpoliert, statt cx und z getrennt zu interpolieren und erst danach
+    // zu kombinieren - nur so bleibt jeder Zwischenwert eine echte Konvex-
+    // kombination bereits sicherer (Zielrahmen-)Positionen, siehe sqrt2.html.
+    let points = checkpointTimes.map((t,i) => ({
+        t, z: checkpointZoom[i].z,
+        offsetX: 0.5 - checkpointZoom[i].cx*checkpointZoom[i].z,
+        offsetY: 0.5 - checkpointZoom[i].cy*checkpointZoom[i].z,
+    }));
+    zoomSpline = buildMonotoneSplineBundle(points, ['z','offsetX','offsetY']);
 }
 function getBankTransform(time) {
     if (checkpointZoom.length===0) return {z:1, offsetX:0, offsetY:0};
-    let TAU = Math.max(local_max_time * 0.03, 0.5);
-    let k = 1/TAU;
-    function F(tp) { return Math.exp(-k*(time-tp)); }
-    let n = 0;
-    for (let i=1;i<checkpointTimes.length;i++) { if (time>=checkpointTimes[i]) n=i; else break; }
-    let s0 = checkpointZoom[0];
-    let wFirst = F(checkpointTimes[0]);
-    let z = s0.z*wFirst, offsetX=(0.5-s0.cx*s0.z)*wFirst, offsetY=(0.5-s0.cy*s0.z)*wFirst;
-    for (let i=0;i<n;i++) {
-        let w = F(checkpointTimes[i+1]) - F(checkpointTimes[i]);
-        z += checkpointZoom[i].z*w;
-        offsetX += (0.5-checkpointZoom[i].cx*checkpointZoom[i].z)*w;
-        offsetY += (0.5-checkpointZoom[i].cy*checkpointZoom[i].z)*w;
-    }
-    let wLast = F(time) - F(checkpointTimes[n]);
-    z += checkpointZoom[n].z*wLast;
-    offsetX += (0.5-checkpointZoom[n].cx*checkpointZoom[n].z)*wLast;
-    offsetY += (0.5-checkpointZoom[n].cy*checkpointZoom[n].z)*wLast;
-    return {z, offsetX, offsetY};
+    return zoomSpline.at(time);
 }
 
 const canvas = document.getElementById('c');
@@ -180,7 +174,7 @@ function render() {
     for (let p of visible) {
         let zx, zy, zw, zh;
         if (compactionEnabled) {
-            let r = getSmoothedCompactedRect(p, compactionWaypointsCache, u_time, Math.max(local_max_time * 0.03, 0.5));
+            let r = getSmoothedCompactedRect(p, compactionWaypointsCache, u_time);
             zx = r.x; zy = r.y; zw = r.w; zh = r.h;
         } else {
             zx = p.x*T.z + T.offsetX; zy = p.y*T.z + T.offsetY; zw = p.w*T.z; zh = p.h*T.z;

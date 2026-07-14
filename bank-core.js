@@ -17,6 +17,8 @@
 // existieren, ohne sich gegenseitig zu stoeren.
 // ============================================================================
 
+import { buildMonotoneSplineBundle } from './smoothing.js';
+
 // ---------------------------------------------------------------------------
 // TEIL 1: Bank-Algorithmus (Auswahl-Strategie "isolation" + Schneide-Strategie
 // "centroid_far" + Streifen-Enden-Filter - die im Algorithmus-Spiel-Tool
@@ -275,25 +277,15 @@ export function compactedRectAt(piece, waypoint) {
     return { x: zx, y: zy, w: cw * waypoint.z, h: ch * waypoint.z };
 }
 
-export function getSmoothedCompactedRect(piece, waypoints, time, TAU) {
+// Glättet den Kompaktierungs-Sprung zwischen Waypoints per monotoner
+// kubischer Hermite-Interpolation (siehe smoothing.js) statt eines eigenen
+// Exponentialkerns - kein TAU-Parameter mehr nötig (keine Zeitkonstante,
+// exakte Interpolation statt Abkling-Filter) und C¹- statt nur C⁰-stetig.
+export function getSmoothedCompactedRect(piece, waypoints, time) {
     if (waypoints.length === 0) return null;
-    let k = 1 / TAU;
-    function F(tp) { return Math.exp(-k * (time - tp)); }
-    let n = 0;
-    for (let i = 1; i < waypoints.length; i++) { if (time >= waypoints[i].t) n = i; else break; }
-
-    let wFirst = F(waypoints[0].t);
-    let r0 = compactedRectAt(piece, waypoints[0]);
-    let ax = r0.x * wFirst, ay = r0.y * wFirst, aw = r0.w * wFirst, ah = r0.h * wFirst;
-    for (let i = 0; i < n; i++) {
-        let w = F(waypoints[i + 1].t) - F(waypoints[i].t);
-        let r = compactedRectAt(piece, waypoints[i]);
-        ax += r.x * w; ay += r.y * w; aw += r.w * w; ah += r.h * w;
-    }
-    let rN = compactedRectAt(piece, waypoints[n]);
-    let wLast = F(time) - F(waypoints[n].t);
-    ax += rN.x * wLast; ay += rN.y * wLast; aw += rN.w * wLast; ah += rN.h * wLast;
-    return { x: ax, y: ay, w: aw, h: ah };
+    let points = waypoints.map(wp => ({ t: wp.t, ...compactedRectAt(piece, wp) }));
+    let bundle = buildMonotoneSplineBundle(points, ['x', 'y', 'w', 'h']);
+    return bundle.at(time);
 }
 
 // ---------------------------------------------------------------------------

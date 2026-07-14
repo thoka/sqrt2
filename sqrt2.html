@@ -96,6 +96,13 @@
         .control-row { display: flex; gap: 10px; }
         .control-row > div { flex: 1; }
         input[type=range], input[type=number], select { width: 100%; cursor: pointer; background: #1e293b; color: #fff; border: 1px solid #334155; border-radius: 4px; padding: 6px; box-sizing: border-box;}
+
+        .settings-btn {
+            width: 100%; cursor: pointer; background: #1e293b; color: #fff; border: 1px solid #334155;
+            border-radius: 4px; padding: 8px 6px; box-sizing: border-box; font-size: 0.85em; transition: background 0.15s ease;
+        }
+        .settings-btn:hover { background: #334155; }
+        .settings-btn.copied { background: #06d6a0; color: #0b1120; border-color: #06d6a0; }
         
         .warning { color: #f59e0b; font-size: 0.8em; margin-top: -5px; }
         .error-msg { color: #ef476f; font-weight: bold; font-size: 0.9em; display: none; }
@@ -120,7 +127,7 @@
     <div style="font-weight: bold; margin-bottom: 5px; color: #3b82f6;">System-Compiler</div>
     <div class="control-row">
         <div class="control-group"><label>Basis (b)</label><input type="number" id="baseInput" min="2" max="16" value="10"></div>
-        <div class="control-group"><label>Tiefe ($n_{max}$)</label><input type="number" id="depthInput" min="1" max="100" value="3"></div>
+        <div class="control-group"><label>Tiefe ($n_{max}$)</label><input type="number" id="depthInput" min="1" max="100" value="16"></div>
     </div>
     <div class="warning" id="perfWarning">Tiefe > 5 kann Leistung beeinträchtigen.</div>
     <div class="error-msg" id="errorMsg"></div>
@@ -150,7 +157,7 @@
     </div>
     <div class="control-group" style="margin-top:6px;">
         <label>Auto-Zoom: Mindestbreite feinste Stelle (Pixel, 0 = aus)</label>
-        <input type="number" id="autoZoomMinPxInput" min="0" max="200" step="1" value="0">
+        <input type="number" id="autoZoomMinPxInput" min="0" max="200" step="1" value="3">
     </div>
 
     <div class="control-group" style="margin-top:10px;">
@@ -180,6 +187,23 @@
         <label>Linienbreite (dicker = weniger Flirren, kaum Performance-Kosten) — <span class="zoom-readout" id="lineWidthLabel">0,3px</span></label>
         <input type="range" id="lineWidthInput" min="0" max="4" step="0.1" value="0.3">
     </div>
+
+    <hr style="border: 1px solid #334155; margin: 10px 0;">
+
+    <div class="control-group">
+        <label>Wiedergabe: Wartezeit an Anfang &amp; Ende (Sekunden)</label>
+        <input type="number" id="pauseDurationInput" min="0" max="10" step="0.1" value="1.5">
+    </div>
+
+    <hr style="border: 1px solid #334155; margin: 10px 0;">
+
+    <div class="control-group">
+        <label>Aktuellen Zustand teilen (kopiert in die Zwischenablage)</label>
+        <div class="control-row">
+            <button type="button" class="settings-btn" id="copyUrlBtn">Als URL kopieren</button>
+            <button type="button" class="settings-btn" id="copyParamsBtn">Nur Parameter kopieren</button>
+        </div>
+    </div>
 </div>
 
 <div id="bottomBar">
@@ -190,13 +214,39 @@
 
 <script type="module">
 import { buildSystem, buildTickTimeMapping } from './bank-core.js';
+import { buildMonotoneSpline, buildMonotoneSplineBundle } from './smoothing.js';
 
 const COLORS = ["#cbd5e1", "#ef476f", "#ffd166", "#06d6a0", "#118ab2", "#8338ec", "#f78c6b", "#ff006e", "#3a86ff", "#fb5607", "#ffbe0b"];
 // Schaltet die Wort-Präfixe ("Länge ", "Fläche ", "Rest ") im Zahlen-Panel
 // oben rechts an/aus - Standard aus (nur kurze Symbole l/l²/R).
 const NUMBER_PANEL_VERBOSE = false;
 
-let N_MAX = 3; let BASE = 10;
+// === URL-Parameter: Einstellungen (für Tests/Links) ===
+// Werden GANZ AM ANFANG direkt auf die zugehörigen <input>/<select>-Elemente
+// geschrieben (roher DOM-Zugriff über getElementById, ohne auf die weiter
+// unten deklarierten JS-Konstanten zu warten) - jeder spätere Code, der
+// .value von diesen Elementen liest (compileSystem(), die Init-Blöcke von
+// lineWidthInput/pauseDurationInput/autoZoomMinPxInput weiter unten, ...),
+// bekommt den überschriebenen Wert dadurch automatisch, ohne eigene
+// Sonderbehandlung. Wiedergabe-Position (time/tick) und Modus-B-Regler
+// (modeab) hängen dagegen von der erst noch zu kompilierenden Simulation ab
+// (MAX_TIME/GLOBAL_TTM) und werden daher separat, NACH compileSystem() am
+// Ende dieses Scripts angewendet (siehe dort). Das Gegenstück (Button "Als
+// URL kopieren") baut denselben Parameter-Satz, siehe buildStateParams().
+const URL_PARAMS = new URLSearchParams(window.location.search);
+const URL_FIELD_MAP = {
+    base: 'baseInput', depth: 'depthInput', mode: 'transformMode',
+    zoomthresh: 'zoomThresholdInput', autozoom: 'autoZoomMinPxInput',
+    linewidth: 'lineWidthInput', pause: 'pauseDurationInput',
+};
+for (let param in URL_FIELD_MAP) {
+    if (URL_PARAMS.has(param)) {
+        let el = document.getElementById(URL_FIELD_MAP[param]);
+        if (el) el.value = URL_PARAMS.get(param);
+    }
+}
+
+let N_MAX = 16; let BASE = 10;
 let TOTAL_STEPS = 0; let MAX_TIME = 0; let P_FINAL = 0;
 let render_pipeline = []; let bank_pieces = []; let axes = [];
 
@@ -213,6 +263,10 @@ let GLOBAL_BANK_ZOOM = [];
 // Feine Checkpoint-Zeitpunkte (ein Eintrag pro Entnahme-Ereignis, nicht nur
 // pro Schale) - Basis für GLOBAL_BANK_ZOOM, siehe compileSystem().
 let GLOBAL_BANK_ZOOM_TIMES = [];
+// Aus GLOBAL_BANK_ZOOM/GLOBAL_BANK_ZOOM_TIMES gebaute Glättungs-Splines
+// (siehe smoothing.js) - einmal pro compileSystem(), von getBankTransform()
+// nur noch ausgewertet.
+let GLOBAL_BANK_ZOOM_SPLINE = null;
 // Zoom-Schwellwert (in Potenzen von BASE): 0 = alle Stücke fließen ins
 // Framing ein (bisheriges Verhalten). Siehe compileSystem() für Details.
 let BANK_ZOOM_THRESHOLD_POWERS = 0;
@@ -226,10 +280,14 @@ let GLOBAL_TTM = null;
 // Auto-Zoom braucht während der Animation ein bewegliches Ziel: der
 // Exponent der tiefsten gerade sichtbaren Ziffern-Stelle wächst schalenweise
 // (axes[S].exp), nicht erst fix bei N_MAX. Ein Eintrag pro Schale S
-// ({t: Schalen-Startzeit, exp: axes[S].exp}) - Rohdaten für die gedämpfte
-// Überblendung in getSmoothedAutoZoomExp() (Muster identisch zu
+// ({t: Schalen-Startzeit, exp: axes[S].exp}) - Rohdaten für die Glättung in
+// getSmoothedAutoZoomExp() (Muster identisch zu
 // GLOBAL_BANK_ZOOM/getBankTransform() weiter unten).
 let GLOBAL_AUTO_ZOOM_CHECKPOINTS = [];
+// Aus GLOBAL_AUTO_ZOOM_CHECKPOINTS gebaute Glättungs-Spline (siehe
+// smoothing.js) - einmal pro compileSystem(), von getSmoothedAutoZoomExp()
+// nur noch ausgewertet.
+let GLOBAL_AUTO_ZOOM_SPLINE = null;
 
 // === SYSTEM A: COMPILER ===
 //
@@ -378,10 +436,33 @@ function compileSystem() {
         // in dieser Schale neu sichtbaren Ziffern-Stelle - wächst mit der
         // Animation von 0 (nur Basisquadrat) bis N_MAX, nicht von Anfang an
         // fix auf N_MAX. Siehe getSmoothedAutoZoomExp() weiter unten.
+        //
+        // Nutzt buildMonotoneSpline() (siehe smoothing.js) statt eines
+        // kausalen Filters: die Kurve trifft an JEDEM Checkpoint GENAU den
+        // dortigen Exponenten - kein Nachhinken mehr, das (frühere Version)
+        // erst per künstlichem Zeitvorlauf UND einer zusätzlichen "harten"
+        // Sicherheits-Kopie in renderFrame() kompensiert werden musste. Für
+        // eine monoton wachsende Stützpunkt-Folge bleibt die Spline
+        // zwischen zwei Checkpoints garantiert innerhalb von deren Werten
+        // (Monotonie-Erhalt, siehe smoothing.js) - das allein reicht bereits
+        // als Sichtbarkeits-Garantie, siehe smoothing.test.js.
+        //
+        // { onlyChanges: true }: axes[S].exp wiederholt sich über mehrere
+        // Schalen hinweg (bei Basis 10/Tiefe 16 sind nur 15 von 56 Schalen
+        // echte Wertwechsel, siehe Gesprächsverlauf) - ohne diese Option
+        // erzwingt jeder Wiederholungspunkt eine Nulltangente (siehe
+        // smoothing.js), was jeden Wertwechsel zu einer isolierten Mini-
+        // Rampe zwischen "toten" Haltepunkten macht ("weiche Stufen" statt
+        // durchgehender Bewegung). Die Sichtbarkeits-Garantie bleibt dabei
+        // erhalten (siehe smoothing.test.js/auto-zoom-visibility.test.js).
         GLOBAL_AUTO_ZOOM_CHECKPOINTS = [];
         for (let S = 0; S < TOTAL_STEPS; S++) {
             GLOBAL_AUTO_ZOOM_CHECKPOINTS.push({ t: shell_start_time[S], exp: axes[S].exp });
         }
+        GLOBAL_AUTO_ZOOM_SPLINE = buildMonotoneSpline(
+            GLOBAL_AUTO_ZOOM_CHECKPOINTS.map(c => ({ t: c.t, v: c.exp })),
+            { onlyChanges: true }
+        );
 
         // PATCH V32: Auto-Zoom für die Bank - grundlegend überarbeitet.
         //
@@ -465,6 +546,10 @@ function compileSystem() {
         }
         GLOBAL_BANK_ZOOM_TIMES = eventTimes;
         GLOBAL_BANK_ZOOM = bank_zoom_states;
+        GLOBAL_BANK_ZOOM_SPLINE = buildMonotoneSplineBundle(
+            eventTimes.map((t, i) => ({ t, ...bank_zoom_states[i] })),
+            ['z', 'offsetX', 'offsetY', 'area']
+        );
 
         MAX_TIME = local_max_time;
         document.getElementById('timeSlider').max = MAX_TIME;
@@ -521,15 +606,21 @@ function updateDynamicLayout(t_AB) {
     DYN_TARGET_W = sumA + nextDigitMargin;
 }
 
-let current_hud_hash = "";
-function updateHUD(time) {
-    // Step = höchste Schale S, deren Startzeit bereits erreicht ist.
-    // (ersetzt die alte, nicht mehr gültige Annahme fester 3.0-Zeitblöcke)
+// Step = höchste Schale S, deren Startzeit bereits erreicht ist (harter,
+// ungeglätteter Wert - im Gegensatz zu getSmoothedAutoZoomExp() weiter unten,
+// das für dieselbe Größe eine BEWUSST verzögerte/geglättete Version liefert).
+// Von updateHUD() UND vom Auto-Zoom (renderFrame(), siehe dort) genutzt.
+function getShellStepAt(time) {
     let Step = 0;
     for (let S = 1; S < GLOBAL_SHELL_START.length; S++) {
         if (time >= GLOBAL_SHELL_START[S]) Step = S; else break;
     }
-    Step = Math.max(0, Math.min(TOTAL_STEPS - 1, Step));
+    return Math.max(0, Math.min(TOTAL_STEPS - 1, Step));
+}
+
+let current_hud_hash = "";
+function updateHUD(time) {
+    let Step = getShellStepAt(time);
     let counts = new Array(Math.min(2 * N_MAX + 1, 50)).fill(0);
     for (let p of bank_pieces) {
         if (p.k < counts.length && time >= p.born_time && time < p.cut_time && time < p.taken_time) counts[p.k]++;
@@ -702,127 +793,38 @@ function resizeCanvas() {
 }
 window.addEventListener('resize', resizeCanvas);
 
-// PATCH V32: Liefert die Auto-Zoom-Transformation der Bank für Zeitpunkt
-// "time" - Zentrum UND Zoom wandern jetzt mit dem tatsächlichen Rest mit
-// (statt eines festen Zentrums, das beim asymmetrisch abgebauten Rest
-// "hängen blieb").
+// Liefert die Auto-Zoom-Transformation der Bank für Zeitpunkt "time" -
+// Zentrum UND Zoom wandern mit dem tatsächlichen Rest mit (statt eines
+// festen Zentrums, das beim asymmetrisch abgebauten Rest "hängen blieb").
+// Transformation pro Checkpoint: T(x) = 0.5 + (x - cx) * z, als affine
+// Funktion T(x) = x*z + (0.5 - cx*z) - offsetX/offsetY sind daher schon bei
+// der Konstruktion in compileSystem() vorberechnete Werte, keine cx/z-Rohdaten
+// (siehe dort) - wichtig, denn NUR wenn direkt diese fertigen T(x)-Werte
+// geglättet werden (statt cx und z getrennt), bleibt jeder Zwischenwert
+// beweisbar eine Konvexkombination bereits sicherer Positionen (siehe
+// smoothing.js: monotone Interpolation bewegt sich nie außerhalb der
+// Stützwerte).
 //
-// Transformation pro Checkpoint: T(x) = 0.5 + (x - cx) * z (Box-Mitte cx
-// wird auf die Bildschirm-Mitte 0.5 abgebildet). Umgeformt als affine
-// Funktion: T(x) = x*z + (0.5 - cx*z).
-//
-// PATCH V33: "Mechanisch träger" Zoom statt stückweiser Smoothstep-
-// Überblendung. Das Problem an Smoothstep zwischen JEDEM der bis zu 400
-// Checkpoints: die Kurve hat an JEDEM Checkpoint Ableitung exakt Null (sie
-// bremst komplett ab und beschleunigt neu) - das erzeugt einen sichtbaren
-// Stop-and-Go-Rhythmus statt einer gleichmäßigen Trägheit ("wackelig").
-//
-// Neu: ein KAUSALER Tiefpassfilter (Exponentialkern), wie ein gedämpftes
-// mechanisches System (Feder-Dämpfer 1. Ordnung). Mathematisch:
-//   Z(t) = k * Integral_{-unendlich}^{t} Ziel(t') * exp(-k*(t-t')) dt'
-// Da "Ziel" hier stückweise konstant ist (ein Checkpoint-Wert gilt bis zum
-// nächsten), lässt sich das Integral analytisch als Teleskopsumme über
-// F(t') = exp(-k*(t-t')) auswerten (siehe Schleife unten) - keine Iteration
-// über die Zeit nötig, funktioniert exakt für JEDEN Zeitpunkt (auch beim
-// Zurückspulen/Scrubben am Zeitstrahl).
-//
-// Sicherheit: Für einen Punkt x, der zur Zeit "time" sichtbar ist, gilt
-// seine Box ist Teilmenge JEDER früheren Box (Box schrumpft monoton). Damit
-// ist die Transformation JEDES einzelnen früheren Checkpoints für x sicher
-// (Ergebnis in [0,1]). Der Filter bildet eine gewichtete Summe dieser
-// Transformationen mit nicht-negativen Gewichten, die sich zu 1 aufsummieren
-// (Beweis: die Gewichte F(t_{i+1})-F(t_i) teleskopieren exakt zu 1). Eine
-// solche Konvexkombination sicherer Werte ist wieder sicher - unabhängig
-// von der Zeitkonstante TAU. TAU beeinflusst nur, wie "träge" der Zoom auf
-// neue Checkpoints reagiert, nie die Sicherheit.
-//
-// Monotonie: da alle Checkpoint-Werte z_i monoton wachsen (Box kann pro
-// Achse nur schrumpfen) und der Filter ein gewichteter Mittelwert mit wandernd
-// mehr Gewicht auf neueren (größeren) Werten ist, bleibt auch Z(t) monoton
-// wachsend - bewiesen und getestet (siehe Analyse im Gespräch).
+// Nutzt buildMonotoneSpline() (siehe smoothing.js, GLOBAL_BANK_ZOOM_SPLINE in
+// compileSystem()) statt eines selbstgebauten Kerns - C¹-stetig, kein
+// Nachhinken, für monoton wachsende Werte (z, area) garantiert monoton.
 function getBankTransform(time) {
     if (GLOBAL_BANK_ZOOM.length === 0) return { z: 1, offsetX: 0, offsetY: 0, area: 1 };
-    let times = GLOBAL_BANK_ZOOM_TIMES;
-    let states = GLOBAL_BANK_ZOOM;
-
-    // Zeitkonstante: 3% der Gesamtlaufzeit - spürbar träge, aber reagiert
-    // noch innerhalb einer überschaubaren Spanne auf neue Checkpoints.
-    let TAU = Math.max(MAX_TIME * 0.03, 0.5);
-    let k = 1 / TAU;
-    function F(tp) { return Math.exp(-k * (time - tp)); }
-
-    let n = 0;
-    for (let i = 1; i < times.length; i++) { if (time >= times[i]) n = i; else break; }
-
-    // Beitrag der Zeit vor t=0 (Zustand des allerersten Checkpoints,
-    // gedanklich unendlich weit in die Vergangenheit fortgesetzt)
-    let s0 = states[0];
-    let wFirst = F(times[0]);
-    let z = s0.z * wFirst, offsetX = s0.offsetX * wFirst, offsetY = s0.offsetY * wFirst, area = s0.area * wFirst;
-
-    for (let i = 0; i < n; i++) {
-        let w = F(times[i + 1]) - F(times[i]);
-        z += states[i].z * w;
-        offsetX += states[i].offsetX * w;
-        offsetY += states[i].offsetY * w;
-        area += states[i].area * w;
-    }
-    let wLast = F(time) - F(times[n]);
-    z += states[n].z * wLast;
-    offsetX += states[n].offsetX * wLast;
-    offsetY += states[n].offsetY * wLast;
-    area += states[n].area * wLast;
-
-    return { z, offsetX, offsetY, area };
+    return GLOBAL_BANK_ZOOM_SPLINE.at(time);
 }
 
 // Auto-Zoom macht nur dynamisch Sinn: die tiefste gerade sichtbare
 // Ziffern-Stelle wächst mit der Animation (Schale für Schale von exp=0 bis
 // exp=N_MAX), nicht von Anfang an fix auf N_MAX. getSmoothedAutoZoomExp()
-// liefert den geglätteten Ziel-Exponenten für Zeitpunkt "time".
-//
-// PATCH: NICHT der einfache Exponentialkern aus getBankTransform() (1.
-// Ordnung, "F(t)=exp(-k*(time-t))") - der ist zwar stetig im WERT, aber
-// NICHT in der ABLEITUNG: an jedem Checkpoint springt die Steigung
-// sprunghaft von ~0 auf einen Wert proportional zur Sprunghöhe (numerisch
-// nachgewiesen, siehe Gesprächsverlauf - Finite-Differenzen-Test zeigte
-// z.B. 0.000 -> 0.250 exakt am Checkpoint). Bei Dutzenden bis Hunderten
-// Checkpoints (eine pro Schale) macht sich das als spürbares "Ruckeln"
-// bemerkbar. Auto-Zoom braucht aber wirklich C¹-Stetigkeit (stetige
-// Ableitung über die GESAMTE Animation), da es jeden Frame live ins Layout
-// eingreift - anders als der Bank-Zoom, der optisch tolerant genug ist,
-// dass die Unstetigkeit dort bisher nicht aufgefallen ist (hat denselben
-// Webfehler, siehe TODO-Notiz unten).
-//
-// Fix: statt eines Kerns 1. Ordnung wird jeder Checkpoint-Sprung als
-// Sprungantwort eines KRITISCH GEDÄMPFTEN Systems 2. Ordnung eingebracht
-// (Standardformel, z.B. aus RLC-Kreisen: h(τ) = 1 - exp(-k·τ)·(1+k·τ) für
-// τ>0, sonst 0). Diese Sprungantwort startet MIT WERT UND STEIGUNG NULL
-// (h(0)=0 UND h'(0)=0, geschlossen nachrechenbar) und wächst erst danach
-// glatt an - die Summe (Superposition) mehrerer solcher Sprungantworten
-// ist deshalb über die gesamte Zeitachse C¹-stetig, auch an den
-// Checkpoints selbst. Ebenfalls kausal und für JEDEN Zeitpunkt exakt
-// auswertbar (kein Zustand, keine Integration über die Zeit nötig) -
-// funktioniert daher genauso beim Scrubben/Zurückspulen wie der alte Kern.
-//
-// TODO (nicht Teil dieser Änderung, nur notiert): getBankTransform() hat
-// denselben C⁰-statt-C¹-Fehler. Bisher nicht als Problem aufgefallen
-// (weniger Checkpoints in der Bank-relevanten Zoom-Bewegung, subtiler),
-// aber bei Bedarf mit derselben Technik reparierbar.
+// liefert den Ziel-Exponenten für Zeitpunkt "time" - ausgewertet über
+// GLOBAL_AUTO_ZOOM_SPLINE (siehe smoothing.js/compileSystem()): C¹-stetig
+// UND trifft an jedem Checkpoint exakt dessen Exponenten, ohne das
+// Nachhinken, das die frühere kausale Filter-Version hatte (siehe
+// CLAUDE.md, "Automatisierte Parameteränderungen", und smoothing.test.js
+// für den direkten Regressionstest zu diesem Bug).
 function getSmoothedAutoZoomExp(time) {
-    let cps = GLOBAL_AUTO_ZOOM_CHECKPOINTS;
-    if (cps.length === 0) return 0;
-    let TAU = Math.max(MAX_TIME * 0.03, 0.5);
-    let k = 1 / TAU;
-    function h(tau) {
-        if (tau <= 0) return 0;
-        return 1 - Math.exp(-k * tau) * (1 + k * tau);
-    }
-    let exp = cps[0].exp;
-    for (let i = 1; i < cps.length; i++) {
-        exp += (cps[i].exp - cps[i - 1].exp) * h(time - cps[i].t);
-    }
-    return exp;
+    if (GLOBAL_AUTO_ZOOM_CHECKPOINTS.length === 0) return 0;
+    return GLOBAL_AUTO_ZOOM_SPLINE(time);
 }
 
 // Auto-Zoom: findet den KLEINSTEN Modus-B-Wert t_AB, bei dem eine Ziffern-
@@ -929,8 +931,16 @@ function renderFrame() {
     // gerade "die tiefste sichtbare Stelle" ist) wandert mit der Animation
     // mit (getSmoothedAutoZoomExp) - Auto-Zoom macht nur dynamisch Sinn,
     // siehe Kommentar dort.
+    //
+    // getSmoothedAutoZoomExp() trifft (seit der Umstellung auf
+    // buildMonotoneSpline(), siehe smoothing.js) den Exponenten jeder Schale
+    // GENAU an deren Startzeit - kein Nachhinken mehr wie beim früheren
+    // kausalen Filter, das hier zusätzlich einen "harten", ungeglätteten
+    // Exponenten als Sicherheitsnetz brauchte (siehe smoothing.test.js und
+    // auto-zoom-visibility.test.js für die Verifikation dieser Garantie).
     let autoZoomTargetExp = getSmoothedAutoZoomExp(u_time);
     let autoZoomTAB = computeAutoZoomTAB(AUTO_ZOOM_MIN_PX, scale, autoZoomTargetExp);
+
     let effective_t_AB = Math.max(u_mode_AB, autoZoomTAB);
     updateAutoZoomIndicator(autoZoomTAB, effective_t_AB > u_mode_AB + 1e-9);
 
@@ -1249,7 +1259,9 @@ autoZoomMinPxInput.addEventListener('input', (e) => { AUTO_ZOOM_MIN_PX = parseFl
 
 const lineWidthInput = document.getElementById('lineWidthInput');
 const lineWidthLabel = document.getElementById('lineWidthLabel');
-lineWidthInput.value = LINE_WIDTH_PX;
+// Liest (statt wie vorher zu schreiben) aus dem Feld - respektiert damit den
+// HTML-Default UND einen eventuellen URL-Parameter-Override (siehe oben).
+LINE_WIDTH_PX = parseFloat(lineWidthInput.value) || 0;
 lineWidthLabel.innerText = LINE_WIDTH_PX.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + 'px';
 lineWidthInput.addEventListener('input', (e) => {
     LINE_WIDTH_PX = parseFloat(e.target.value);
@@ -1304,33 +1316,103 @@ document.addEventListener('mousemove', (e) => {
     settingsPanel.classList.toggle('open', nearTopRight || overSettingsPanel);
 });
 
+const pauseDurationInput = document.getElementById('pauseDurationInput');
+let ANIM_PAUSE_DURATION = parseFloat(pauseDurationInput.value) || 0;
+pauseDurationInput.addEventListener('input', (e) => { ANIM_PAUSE_DURATION = parseFloat(e.target.value) || 0; });
+
+// Baut denselben Parameter-Satz, den URL_FIELD_MAP (siehe ganz oben im
+// Script) beim Laden zurückliest - Gegenstück zu den "Zustand teilen"-
+// Buttons unten. modeab/time kommen NICHT aus URL_FIELD_MAP (das deckt nur
+// die Compiler-Einstellungen ab), sondern direkt aus dem laufenden Zustand.
+function buildStateParams() {
+    let p = new URLSearchParams();
+    for (let param in URL_FIELD_MAP) {
+        p.set(param, document.getElementById(URL_FIELD_MAP[param]).value);
+    }
+    p.set('modeab', u_mode_AB.toFixed(4));
+    p.set('time', u_time.toFixed(3));
+    return p;
+}
+
+// Kurzes visuelles Feedback auf dem geklickten Button ("Kopiert!" für 1.2s)
+// statt eines separaten Toasts - hält es einfach, reicht für die reine
+// Test-/Link-Nutzung dieser Buttons.
+function flashCopied(btn) {
+    let original = btn.textContent;
+    btn.textContent = 'Kopiert ✓';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = original; btn.classList.remove('copied'); }, 1200);
+}
+
+document.getElementById('copyUrlBtn').addEventListener('click', (e) => {
+    let url = location.origin + location.pathname + '?' + buildStateParams().toString();
+    navigator.clipboard.writeText(url).then(() => flashCopied(e.target));
+});
+document.getElementById('copyParamsBtn').addEventListener('click', (e) => {
+    navigator.clipboard.writeText(buildStateParams().toString()).then(() => flashCopied(e.target));
+});
+
+let lastTime = performance.now();
 const playBtn = document.getElementById('playBtn');
 playBtn.addEventListener('click', () => {
     isPlaying = !isPlaying;
     playBtn.textContent = isPlaying ? '⏸' : '▶';
-    if (isPlaying) requestAnimationFrame(loop);
+    if (isPlaying) {
+        // Bugfix: lastTime blieb sonst auf dem Stand des letzten Loop-Aufrufs
+        // (vor der Pause) stehen. Beim Wiederstart berechnete der erste Frame
+        // dt dann aus der GESAMTEN Pausendauer (oft mehrere Sekunden/Minuten)
+        // - u_time sprang dadurch sofort weit über die Slider-Position hinaus
+        // (meist direkt auf MAX_TIME), was wie ein Ruck aussah UND wie eine
+        // ignorierte Slider-Position. Reset hier stellt sicher, dass der
+        // erste Frame nach dem Start ein normal kleines dt sieht.
+        lastTime = performance.now();
+        requestAnimationFrame(loop);
+    }
 });
 
-let lastTime = performance.now();
 function loop(now) {
     if (!isPlaying) return;
     let dt = (now - lastTime) / 1000.0; lastTime = now;
-    
+
     if (animPause > 0) {
         animPause -= dt;
     } else {
         u_time += dt * 2.0 * animDirection;
         if (u_time >= MAX_TIME) {
-            u_time = MAX_TIME; animDirection = -1; animPause = 1.5;
+            u_time = MAX_TIME; animDirection = -1; animPause = ANIM_PAUSE_DURATION;
         } else if (u_time <= 0) {
-            u_time = 0; animDirection = 1; animPause = 1.5;
+            u_time = 0; animDirection = 1; animPause = ANIM_PAUSE_DURATION;
         }
-        timeSlider.value = u_time; updateOutputs(); 
+        timeSlider.value = u_time; updateOutputs();
     }
     requestAnimationFrame(loop);
 }
 
 resizeCanvas();  compileSystem();
+
+// URL-Parameter für die Wiedergabe-Position (siehe URL_FIELD_MAP weiter
+// oben für die Compiler-Einstellungen) - erst HIER anwendbar, weil sie von
+// der gerade kompilierten Simulation abhängen (MAX_TIME/GLOBAL_TTM).
+// "time" hat Vorrang vor "tick", falls beide angegeben sind.
+{
+    let touched = false;
+    if (URL_PARAMS.has('modeab')) {
+        u_mode_AB = Math.max(0, Math.min(1, parseFloat(URL_PARAMS.get('modeab')) || 0));
+        modeSliderAB.value = u_mode_AB;
+        touched = true;
+    }
+    if (URL_PARAMS.has('time')) {
+        u_time = Math.max(0, Math.min(MAX_TIME, parseFloat(URL_PARAMS.get('time')) || 0));
+        timeSlider.value = u_time;
+        touched = true;
+    } else if (URL_PARAMS.has('tick') && GLOBAL_TTM) {
+        let tick = Math.max(0, Math.min(GLOBAL_TTM.maxTick, Math.round(parseFloat(URL_PARAMS.get('tick')) || 0)));
+        u_time = GLOBAL_TTM.tickToTime(tick);
+        timeSlider.value = u_time;
+        touched = true;
+    }
+    if (touched) updateOutputs();
+}
 </script>
 </body>
 </html>
