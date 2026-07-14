@@ -34,7 +34,7 @@
 // nichts wissen, er liefert nur die Tick-Nummer jeder Entnahme mit zurueck.
 
 function createBankSimulation(BASE, N_MAX, squareSplit) {
-    squareSplit = squareSplit || 'fixed'; // 'fixed' oder 'alternating' - rein stilistisch, kein Effektivitätsunterschied (siehe Gespraechsverlauf)
+    squareSplit = squareSplit || 'fixed'; // 'fixed' oder 'alternating'
     let baseBig = BigInt(BASE);
     let n_arr = [1]; let P_int = 1n;
     for (let m = 1; m <= N_MAX; m++) {
@@ -53,10 +53,8 @@ function createBankSimulation(BASE, N_MAX, squareSplit) {
 
     let global_id = 0;
     let bank_pieces = [{ id: global_id++, parent_id: null, k: 0, x: 0, y: 0, w: 1, h: 1, born_time: 0, cut_time: Infinity, taken_time: Infinity, children: [] }];
-    let tick = 1; // Tick 0 = Zustand vor der ersten Entnahme (siehe compileSystem-Aufrufer)
-    let lastEndPerParent = new Map();
+    let tick = 1;
 
-    // Nie aus der Mitte eines zusammenhaengenden Streifens waehlen - nur von
     // den Enden (siehe Gespraechsverlauf: verhindert unnoetige Loecher).
     function filterToStripEnds(candidates) {
         let byParent = new Map();
@@ -88,16 +86,13 @@ function createBankSimulation(BASE, N_MAX, squareSplit) {
         return touch;
     }
 
-    // Liefert das naechste zu entnehmende/schneidende Stueck fuer Groesse
-    // target_k. Gibt {piece, tick, wasCut} zurueck - "tick" ist der Tick,
-    // bei dem die ENTNAHME (nicht das Schneiden) stattfand.
     function getPieceFromBank(target_k) {
         let available = filterToStripEnds(bank_pieces.filter(p => p.k === target_k && p.taken_time === Infinity && p.cut_time === Infinity));
         if (available.length > 0) {
             available.sort((a, b) => isolationScore(a, tick) - isolationScore(b, tick));
             let chosen = available[0];
             chosen.taken_time = tick;
-            if (chosen.__stripEnd) lastEndPerParent.set(chosen.parent_id, chosen.__stripEnd);
+
             let usedTick = tick;
             tick++;
             return { piece: chosen, tick: usedTick };
@@ -117,14 +112,9 @@ function createBankSimulation(BASE, N_MAX, squareSplit) {
         }
         parents.sort((a, b) => (b.k - a.k) || (edgeDist(b) - edgeDist(a))); // am weitesten vom Schwerpunkt zuerst
         let best_parent = parents[0];
-        if (best_parent.__stripEnd) lastEndPerParent.set(best_parent.parent_id, best_parent.__stripEnd);
 
-        best_parent.cut_time = tick; // kein "-0.4"-Versatz noetig: Tick ist bereits eindeutig monoton
+        best_parent.cut_time = tick;
 
-        // Robuste Schnittrichtung: schneide immer die LAENGERE Seite (nicht
-        // nach k-Paritaet) - noetig, sobald bei einem exakten Quadrat frei
-        // gewaehlt wird, sonst wuerden nachfolgende Schnitte falsch herum
-        // gehen und die Stellenwert-Groessen kaputt machen.
         const EPS = 1e-9;
         let is_vert_cut;
         if (best_parent.w > best_parent.h + EPS) is_vert_cut = true;
@@ -132,7 +122,7 @@ function createBankSimulation(BASE, N_MAX, squareSplit) {
         else {
             // Exaktes Quadrat: echte freie Wahl, keine Groessenauswirkung.
             if (squareSplit === 'fixed') is_vert_cut = true;
-            else is_vert_cut = ((best_parent.k / 2) % 2 === 0); // 'alternating': haengt an k, nicht an zeitlicher Reihenfolge
+            else is_vert_cut = ((best_parent.k / 2) % 2 === 0);
         }
         let cw = is_vert_cut ? best_parent.w / BASE : best_parent.w;
         let ch = is_vert_cut ? best_parent.h : best_parent.h / BASE;
@@ -158,12 +148,43 @@ function createBankSimulation(BASE, N_MAX, squareSplit) {
 }
 
 // ---------------------------------------------------------------------------
+// TEIL 1b: Shell-Konstruktion (bestimmt, in welcher Reihenfolge und mit
+// welcher Ziel-Groesse getPieceFromBank aufgerufen wird - simuliert den
+// echten Aufbau des Ziel-Quadrats schalenweise).
+// ---------------------------------------------------------------------------
+//
+// Fuer Positionen am "oberen Rand" einer Schale (is_top) wird nicht die
+// Schalengroesse k selbst entnommen, sondern BASE Stuecke der NAECHSTEN,
+// feineren Ebene (k+1) - der Rand einer Schale entspricht immer der
+// naechsten Ziffern-Stelle (siehe README Abschnitt 6). Wird das ausgelassen
+// (wie einst versehentlich beim Portieren auf bank-core.js passiert),
+// verschiebt sich die gesamte Entnahme-Reihenfolge und das Ergebnis sieht
+// spuerbar "unruhiger" aus, obwohl der Auswahl-/Schneide-Algorithmus selbst
+// unveraendert ist.
+export function buildSystem(BASE, N_MAX, squareSplit) {
+    let sim = createBankSimulation(BASE, N_MAX, squareSplit);
+    for (let S = 1; S < sim.TOTAL_STEPS; S++) {
+        let shell = [];
+        for (let v = 0; v < S; v++) shell.push({ u: S, v: v, is_top: false });
+        for (let u = 0; u < S; u++) shell.push({ u: u, v: S, is_top: true });
+        shell.push({ u: S, v: S, is_top: false });
+        for (let sp of shell) {
+            let k = sim.axes[sp.u].exp + sim.axes[sp.v].exp;
+            if (sp.is_top) { for (let i = 0; i < BASE; i++) sim.getPieceFromBank(k + 1); }
+            else { sim.getPieceFromBank(k); }
+        }
+    }
+    let local_max_time = sim.currentTick - 1;
+    return { sim, local_max_time };
+}
+
+// ---------------------------------------------------------------------------
 // TEIL 2: Kompaktierung ("Zeilen/Spalten ausblenden")
 // ---------------------------------------------------------------------------
 // Reine Funktionen, keine Abhaengigkeit von einer bestimmten Bank-Instanz -
 // nehmen bank_pieces jeweils als Parameter entgegen.
 
-function buildCompactionMap(pieces, axis) {
+export function buildCompactionMap(pieces, axis) {
     let intervals = pieces.map(p => axis === 'x' ? [p.x, p.x + p.w] : [p.y, p.y + p.h]);
     intervals.sort((a, b) => a[0] - b[0]);
     let merged = [];
@@ -183,7 +204,7 @@ function buildCompactionMap(pieces, axis) {
     return { compact, totalOccupied: Math.max(prefix[prefix.length - 1], 1e-9) };
 }
 
-function computeCompactionAt(bank_pieces, tickValue) {
+export function computeCompactionAt(bank_pieces, tickValue) {
     let visible = bank_pieces.filter(p => tickValue >= p.born_time && tickValue < p.cut_time && tickValue < p.taken_time);
     if (visible.length === 0) return { mapX: x => x, mapY: y => y, totalW: 1, totalH: 1 };
     let mapX = buildCompactionMap(visible, 'x');
@@ -191,12 +212,7 @@ function computeCompactionAt(bank_pieces, tickValue) {
     return { mapX: mapX.compact, mapY: mapY.compact, totalW: mapX.totalOccupied, totalH: mapY.totalOccupied };
 }
 
-// Wegpunkte: einer pro Tick, an dem sich die kompaktierte Flaeche verkleinert
-// (Schwellwert=0 hat sich als voellig ausreichend fuer ruhiges Verhalten
-// herausgestellt - siehe Gespraechsverlauf; ein Bewegungs-Schwellwert-Regler
-// wurde bewusst NICHT eingebaut, weil er bei extremen Werten das erste
-// Intervall "einfrieren" liess).
-function computeCompactionWaypoints(bank_pieces, maxTick) {
+export function computeCompactionWaypoints(bank_pieces, maxTick) {
     let allTicks = new Set([0]);
     for (let p of bank_pieces) {
         if (isFinite(p.taken_time)) allTicks.add(p.taken_time);
@@ -225,7 +241,7 @@ function computeCompactionWaypoints(bank_pieces, maxTick) {
     return waypoints;
 }
 
-function compactedRectAt(piece, waypoint) {
+export function compactedRectAt(piece, waypoint) {
     let cx = waypoint.mapX(piece.x), cy = waypoint.mapY(piece.y);
     let cw = waypoint.mapX(piece.x + piece.w) - cx;
     let ch = waypoint.mapY(piece.y + piece.h) - cy;
@@ -234,12 +250,7 @@ function compactedRectAt(piece, waypoint) {
     return { x: zx, y: zy, w: cw * waypoint.z, h: ch * waypoint.z };
 }
 
-// Gedaempfte Ueberblendung (kausaler Exponentialkern, wie beim Zoom) ueber
-// ALLE Wegpunkte - fuer JEDES Stueck mit denselben Gewichten (nicht auf seine
-// eigene Sichtbarkeit beschraenkt!). Das ist entscheidend fuer Ordnungstreue:
-// zwei Stuecke, die an jedem Wegpunkt eine bestimmte Reihenfolge haben,
-// behalten diese nach der gewichteten Mischung garantiert bei.
-function getSmoothedCompactedRect(piece, waypoints, time, TAU) {
+export function getSmoothedCompactedRect(piece, waypoints, time, TAU) {
     if (waypoints.length === 0) return null;
     let k = 1 / TAU;
     function F(tp) { return Math.exp(-k * (time - tp)); }
@@ -268,8 +279,7 @@ function getSmoothedCompactedRect(piece, waypoints, time, TAU) {
 // aus einer Liste von (tick, action_time)-Paaren (in der Reihenfolge, in der
 // getPieceFromBank sie geliefert hat) eine bijektive Abbildung in beide
 // Richtungen.
-function buildTickTimeMapping(tickTimePairs) {
-    // tickTimePairs: [{tick, time}, ...] - nach tick sortiert (1,2,3,...)
+export function buildTickTimeMapping(tickTimePairs) {
     let sorted = tickTimePairs.slice().sort((a, b) => a.tick - b.tick);
     let tickToTimeArr = [0]; // Index 0 = Tick 0 = Zeitpunkt 0 (vor der ersten Entnahme)
     for (let p of sorted) tickToTimeArr[p.tick] = p.time;
@@ -282,7 +292,6 @@ function buildTickTimeMapping(tickTimePairs) {
         return tickToTimeArr[lo] + (tickToTimeArr[hi] - tickToTimeArr[lo]) * frac;
     }
 
-    // Inverse: gegebene Animationszeit -> aequivalenter (ggf. gebrochener) Tick
     function timeToTick(time) {
         // binäre Suche im monoton wachsenden tickToTimeArr
         let lo = 0, hi = tickToTimeArr.length - 1;
@@ -300,10 +309,12 @@ function buildTickTimeMapping(tickTimePairs) {
     return { tickToTime, timeToTick, maxTick: tickToTimeArr.length - 1 };
 }
 
+export { createBankSimulation };
+
 // Fuer Node-Tests (require) UND direkte Einbindung per <script> gleichermassen nutzbar:
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
-        createBankSimulation, buildCompactionMap, computeCompactionAt,
+        createBankSimulation, buildSystem, buildCompactionMap, computeCompactionAt,
         computeCompactionWaypoints, compactedRectAt, getSmoothedCompactedRect,
         buildTickTimeMapping
     };
