@@ -222,37 +222,35 @@ function compileSystem() {
                 let k = axes[sp.u].exp + axes[sp.v].exp;
                 let needs_chop = sp.is_top;
 
-                // PATCH V41: Rand einer Schale (is_top) verlangt laut
-                // bank-core.js BASE Stuecke der naechsten, feineren Ebene
-                // (k+1) statt eines einzelnen Stuecks der Ebene k (siehe
-                // bank-core.js TEIL 1b, README Abschnitt 5) - exakt dieselbe
-                // Sequenz, die buildSystem() fuer das Test-Tool durchlaeuft.
-                // Bei der Migration auf bank-core.js wurde hier zunaechst nur
-                // EIN Stueck angefordert (das alte, von allen Transformmodi
-                // gemeinsam genutzte Verhalten) - das ergab zwar ein optisch
-                // plausibles, aber gegenueber dem Algorithmus zu "aufgeraeumtes"
-                // Bank-Bild und liess sich nicht mehr Tick-genau mit dem
-                // Test-Tool vergleichen. Jedes der BASE Stuecke bekommt einen
-                // eigenen Tick UND eigenen Zeitpunkt (statt alle gleichzeitig
-                // zu "poppen") - nur so bleibt auch die Bank-Ansicht (nicht
-                // nur das Zielquadrat) Tick-fuer-Tick vergleichbar.
+                // Morphing-Modus (S): nimmt direkt EIN passendes Stück der
+                // Ebene k aus der Bank und streckt/morpht es in die Zielzelle
+                // - keine Unterteilung in BASE Stücke der Ebene k+1.
+                //
+                // PATCH V41 (rückgängig gemacht): hatte hier probeweise auf
+                // BASE Stücke der Ebene k+1 umgestellt (wie buildSystem() im
+                // Test-Tool), um Tick-genau mit dem Test-Tool vergleichbar zu
+                // sein. Das war aber ein Rückschritt: es passte das Haupttool
+                // an den (noch unfertigen) Zerschneiden-Modus des Test-Tools
+                // an, obwohl dessen Rück-Verschmelzung beim Zurückspulen
+                // (b Teile der Ebene n+1 -> 1 Teil der Ebene n) dort noch gar
+                // nicht animiert ist - sichtbar buggy beim Scrubben rückwärts.
+                // Die BASE-Unterteilung an sich ist eine interessante
+                // Erkenntnis (hält den Rest kompakter, siehe README) - das
+                // gehört aber zum separaten, noch offenen Thema "Z/R-Modi neu
+                // aufbauen" (Abschnitt 8), nicht zum Morphing-Modus. Bank-
+                // Algorithmus (Auswahl/Schneiden) bleibt trotzdem gemeinsam
+                // aus bank-core.js - nur die Zellen-Anforderung (1 vs. BASE
+                // Stücke) unterscheidet sich hier bewusst vom Test-Tool.
+                let t_fly = global_time;
+                let { piece: bp, tick } = sim.getPieceFromBank(k);
+                tickTimePairs.push({ tick, time: t_fly });
                 if (needs_chop) {
-                    for (let i = 0; i < BASE; i++) {
-                        let t_fly = global_time;
-                        let { piece: bp, tick } = sim.getPieceFromBank(k + 1);
-                        tickTimePairs.push({ tick, time: t_fly });
-                        render_pipeline.push({ type: 'S_micro', bp: bp, u: sp.u, v: sp.v, i: i, time_fly: t_fly });
-                        local_max_time = Math.max(local_max_time, t_fly + 1.0);
-                        global_time += 0.15;
-                    }
+                    render_pipeline.push({ type: 'S_macro', bp: bp, u: sp.u, v: sp.v, time_fly: t_fly });
                 } else {
-                    let t_fly = global_time;
-                    let { piece: bp, tick } = sim.getPieceFromBank(k);
-                    tickTimePairs.push({ tick, time: t_fly });
                     render_pipeline.push({ type: 'Z_direct', bp: bp, u: sp.u, v: sp.v, time_fly: t_fly });
-                    local_max_time = Math.max(local_max_time, t_fly + 1.0);
-                    global_time += 0.15;
                 }
+                local_max_time = Math.max(local_max_time, t_fly + 1.0);
+                global_time += 0.15;
             }
         }
 
@@ -428,10 +426,7 @@ function updateHUD(time) {
         if (time >= GLOBAL_SHELL_START[S]) Step = S; else break;
     }
     Step = Math.max(0, Math.min(TOTAL_STEPS - 1, Step));
-    // Größtes vorkommendes k ist jetzt 2*N_MAX+1 (nicht mehr 2*N_MAX): der
-    // Rand einer Schale (is_top) fordert seit PATCH V41 Stücke der Ebene k+1
-    // an, siehe compileSystem(). Array muss also einen Platz mehr fassen.
-    let counts = new Array(Math.min(2 * N_MAX + 2, 50)).fill(0);
+    let counts = new Array(Math.min(2 * N_MAX + 1, 50)).fill(0);
     for (let p of bank_pieces) {
         if (p.k < counts.length && time >= p.born_time && time < p.cut_time && time < p.taken_time) counts[p.k]++;
     }
@@ -708,7 +703,7 @@ function renderFrame() {
         // die reguläre Schleife tatsächlich offen lässt - keine Änderung an
         // cut_time/taken_time selbst (das würde die Bank-Versorgung wieder
         // durcheinanderbringen, siehe Testprotokoll im Gespräch).
-        if (p.type === 'Z_direct' || p.type === 'S_macro' || p.type === 'R_macro' || p.type === 'S_micro') {
+        if (p.type === 'Z_direct' || p.type === 'S_macro' || p.type === 'R_macro') {
             if (u_time >= p.time_fly) is_visible = true;
         } else if (p.type === 'Z_source') {
             if (u_time >= p.bp.cut_time && u_time < p.time_cut) is_visible = true;
@@ -736,12 +731,7 @@ function renderFrame() {
         let b_eff = Math.pow(BASE, 1.0 - u_mode_AB);
         if (b_eff < 1.000001) b_eff = 1.000001;
 
-        if (p.type === 'Z_micro' || p.type === 'S_micro') {
-            // Rand-Zelle (is_top) wird aus BASE Stücken zusammengesetzt (siehe
-            // PATCH V41 in compileSystem) - jedes bekommt hier denselben
-            // Bruchteil der Zielzelle wie zuvor Z_micro (nur ohne dessen
-            // Schneiden/Verschmelzen-Choreografie, siehe S_micro-Sichtbarkeit
-            // oben: einfacher Direktflug wie Z_direct/S_macro).
+        if (p.type === 'Z_micro') {
             target_w = tw > th ? tw / b_eff : tw; target_h = tw > th ? th : th / b_eff;
             tx = tx + (tw > th ? p.i * target_w : 0);
             ty = ty + (tw > th ? 0 : p.i * target_h);
