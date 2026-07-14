@@ -5,27 +5,83 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Wurzel 2 - Area Model (Exact Integer Digit Math)</title>
     <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script>
+      // Display-Formeln (\[...\]) zentrieren sich per Default selbst - das
+      // begrenzt text-align:left auf #numberPanel nicht (das array{l} richtet
+      // nur INNERHALB der Formel aus). displayAlign muss vor dem Laden des
+      // MathJax-Scripts gesetzt werden.
+      window.MathJax = { chtml: { displayAlign: 'left' } };
+    </script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     
     <style>
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; font-family: system-ui, sans-serif; background: #0b1120; overflow: hidden; }
         canvas { display: block; width: 100%; height: 100%; }
 
-        #right-panel {
-            position: absolute; top: 20px; right: 20px; width: 400px;
-            display: flex; flex-direction: column; gap: 15px; max-height: calc(100vh - 40px); z-index: 10; pointer-events: none; 
-            transition: transform 0.35s ease;
+        #numberPanel {
+            position: fixed; top: 24px; right: 150px; z-index: 10; pointer-events: none; width: 700px;
+            color: #94a3b8; font-size: 1.6em; line-height: 1.6; text-align: left;
         }
-        #right-panel.collapsed { transform: translateX(calc(100% - 14px)); }
+        #numberPanelInner {
+            display: inline-block; transform-origin: left top;
+        }
+        #bankPanel {
+            position: fixed; top: 0; bottom: 0; right: 20px; z-index: 10; pointer-events: none;
+            width: 150px; display: flex; flex-direction: column; justify-content: center;
+        }
+        #bankPanelInner {
+            display: flex; flex-direction: column; gap: 5px; transform-origin: right center;
+        }
 
-        .collapse-tab {
-            position: absolute; left: -22px; top: 50%; transform: translateY(-50%);
-            width: 22px; height: 60px; background: rgba(15,23,42,0.85); border: 1px solid rgba(255,255,255,0.15);
-            border-right: none; border-radius: 8px 0 0 8px; display: flex; align-items: center; justify-content: center;
-            cursor: pointer; pointer-events: auto; color: #64748b; font-size: 0.8em; user-select: none;
-            transition: color 0.2s, background 0.2s;
+        .bank-row { display: flex; align-items: center; gap: 8px; font-family: monospace; }
+        .bank-bar { flex-grow: 1; display: flex; justify-content: flex-end; align-items: center; gap: 2px; height: 24px; overflow: hidden; }
+        .bank-exp { width: 24px; text-align: right; font-weight: bold; font-size: 1.95em; flex-shrink: 0; }
+
+        #settingsPanel {
+            position: fixed; top: 20px; right: 20px; width: 400px;
+            max-height: calc(100vh - 40px); overflow-y: auto; z-index: 20;
+            opacity: 0; transform: translateY(-8px) scale(0.98); pointer-events: none;
+            transition: opacity 0.25s ease, transform 0.25s ease;
         }
-        .collapse-tab:hover { color: #f8fafc; background: rgba(30,41,59,0.95); }
+        #settingsPanel.open { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+
+        #bottomBar {
+            position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+            display: flex; align-items: center; gap: 14px;
+            padding: 10px 20px; pointer-events: none;
+        }
+        #bottomBar #playBtn {
+            opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+            background: none; border: none; color: #f8fafc; font-size: 1.3em; cursor: pointer;
+            width: 32px; height: 32px; flex-shrink: 0; padding: 0;
+            display: flex; align-items: center; justify-content: center;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+        }
+        #bottomBar #timeReadout {
+            opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+            color: #cbd5e1; font-family: monospace; font-size: 0.85em; flex-shrink: 0;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.8); white-space: nowrap;
+        }
+        #bottomBar.visible #playBtn, #bottomBar.visible #timeReadout { opacity: 1; pointer-events: auto; }
+        #bottomBar #playBtn:hover { color: #3b82f6; }
+
+        #timeSlider {
+            flex-grow: 1; width: auto; border: none; -webkit-appearance: none; appearance: none;
+            height: 3px; border-radius: 2px; background-color: rgba(255,255,255,0.25);
+            background-clip: content-box; outline: none; cursor: pointer; pointer-events: auto;
+            padding: 10px 0; box-sizing: content-box;
+        }
+        #timeSlider::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%;
+            background: #fff; opacity: 0; transition: opacity 0.2s ease; cursor: pointer;
+        }
+        #timeSlider::-moz-range-thumb {
+            width: 12px; height: 12px; border-radius: 50%; border: none;
+            background: #fff; opacity: 0; transition: opacity 0.2s ease; cursor: pointer;
+        }
+        #timeSlider::-moz-range-track { height: 3px; border-radius: 2px; background: transparent; }
+        #bottomBar.visible #timeSlider::-webkit-slider-thumb,
+        #bottomBar.visible #timeSlider::-moz-range-thumb { opacity: 1; }
 
         .overlay-panel {
             background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(12px);
@@ -34,28 +90,13 @@
             pointer-events: auto; box-sizing: border-box; width: 100%; position: relative;
         }
         
-        #narrative { flex-grow: 1; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
-        
-        .phase-title { font-weight: bold; color: #3b82f6; font-size: 1.1em; border-bottom: 1px solid #334155; padding-bottom: 5px; }
-        .phase-desc { font-size: 0.9em; line-height: 1.4; color: #cbd5e1; }
-        
-        .inventory-box { background: rgba(0,0,0,0.4); border-radius: 8px; padding: 12px; border: 1px solid rgba(255,255,255,0.05); }
-        .inventory-title { font-size: 0.8em; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-bottom: 10px; font-weight: bold; }
-        .piece-row { display: flex; align-items: center; gap: 8px; font-size: 0.8em; margin-bottom: 7px; font-family: monospace; }
-        .piece-left { display: flex; align-items: center; gap: 8px; width: 78px; flex-shrink: 0; }
-        .color-swatch { width: 14px; height: 14px; border-radius: 3px; border: 1px solid rgba(255,255,255,0.3); flex-shrink: 0; }
-        .exp-label { color: #94a3b8; font-size: 0.95em; }
-        .piece-bar { flex-grow: 1; display: flex; align-items: center; gap: 2px; height: 14px; overflow: hidden; }
-        .piece-block { width: 6px; height: 12px; border-radius: 1px; flex-shrink: 0; }
-        .piece-count-text { width: 34px; text-align: right; flex-shrink: 0; font-weight: bold; }
-        
+        .piece-block { width: 15px; height: 20px; border-radius: 3px; flex-shrink: 0; }
+
         .control-group { display: flex; flex-direction: column; gap: 8px; font-size: 0.9em; margin-bottom: 5px;}
         .control-row { display: flex; gap: 10px; }
         .control-row > div { flex: 1; }
         input[type=range], input[type=number], select { width: 100%; cursor: pointer; background: #1e293b; color: #fff; border: 1px solid #334155; border-radius: 4px; padding: 6px; box-sizing: border-box;}
         
-        button.play { background: #3b82f6; color: white; border: none; padding: 10px; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top: 5px; transition: background 0.2s; }
-        button.play:hover { background: #2563eb; }
         .warning { color: #f59e0b; font-size: 0.8em; margin-top: -5px; }
         .error-msg { color: #ef476f; font-weight: bold; font-size: 0.9em; display: none; }
         .zoom-readout { color: #3b82f6; font-weight: bold; }
@@ -72,91 +113,88 @@
 
 <canvas id="glCanvas"></canvas>
 
-<div id="right-panel">
-    <div class="collapse-tab" id="collapseTab" title="Steuerung ein-/ausblenden">⟩</div>
-    <div class="overlay-panel" id="controls">
-        <div style="font-weight: bold; margin-bottom: 5px; color: #3b82f6;">System-Compiler</div>
-        <div class="control-row">
-            <div class="control-group"><label>Basis (b)</label><input type="number" id="baseInput" min="2" max="16" value="10"></div>
-            <div class="control-group"><label>Tiefe ($n_{max}$)</label><input type="number" id="depthInput" min="1" max="100" value="3"></div>
-        </div>
-        <div class="warning" id="perfWarning">Tiefe > 5 kann Leistung beeinträchtigen.</div>
-        <div class="error-msg" id="errorMsg"></div>
+<div id="numberPanel"><div id="numberPanelInner"></div></div>
+<div id="bankPanel"><div id="bankPanelInner"></div></div>
 
-        <div class="control-group" style="margin-top: 5px;">
-            <label>Transformation (Flug-Modus)</label>
-            <select id="transformMode">
-                <option value="S">S: Strecken (Morphing)</option>
-                <option value="Z">Z: Zerschneiden (Montessori) - Rück-Verschmelzung noch buggy</option>
-                <!-- R (Rotieren) weiterhin deaktiviert - eigener, unabhängiger
-                     Bug (falsche Zielgröße bei R_macro), siehe README
-                     Abschnitt 8. Für Neuimplementierung siehe Kommentare im JS. -->
-            </select>
-        </div>
+<div class="overlay-panel" id="settingsPanel">
+    <div style="font-weight: bold; margin-bottom: 5px; color: #3b82f6;">System-Compiler</div>
+    <div class="control-row">
+        <div class="control-group"><label>Basis (b)</label><input type="number" id="baseInput" min="2" max="16" value="10"></div>
+        <div class="control-group"><label>Tiefe ($n_{max}$)</label><input type="number" id="depthInput" min="1" max="100" value="3"></div>
+    </div>
+    <div class="warning" id="perfWarning">Tiefe > 5 kann Leistung beeinträchtigen.</div>
+    <div class="error-msg" id="errorMsg"></div>
 
-        <hr style="border: 1px solid #334155; margin: 10px 0;">
-
-        <div class="control-group"><label id="timeLabel">Zeitstrahl (0.0)</label><input type="range" id="timeSlider" min="0" max="10" step="0.01" value="0"></div>
-        <div class="control-group" style="margin-top:-4px;"><label id="tickLabel">Tick (Vergleich mit Test-Tool) — 0 / 0</label><input type="number" id="tickInput" min="0" step="1" value="0"></div>
-
-        <div class="control-group" style="margin-top:10px;">
-            <label>Modus B (Hypothetische Basis $b \to 1$)</label>
-            <div class="slider-with-marker">
-                <input type="range" id="modeSliderAB" min="0" max="1" step="0.01" value="0">
-                <div class="auto-zoom-marker" id="autoZoomMarker" title="Auto-Zoom-Mindestwert"></div>
-            </div>
-            <div class="auto-zoom-note" id="autoZoomNote">Auto-Zoom aktiv - übersteuert den Regler nach oben</div>
-        </div>
-        <div class="control-group" style="margin-top:6px;">
-            <label>Auto-Zoom: Mindestbreite feinste Stelle (Pixel, 0 = aus)</label>
-            <input type="number" id="autoZoomMinPxInput" min="0" max="200" step="1" value="0">
-        </div>
-
-        <div class="control-group" style="margin-top:10px;">
-            <label>Bank-Zoom (automatisch, reale Basis) — <span class="zoom-readout" id="bankZoomLabel">1,0×</span></label>
-            <label style="margin-top:-4px;">Restfläche der Bank — <span class="zoom-readout" id="bankAreaLabel">100%</span></label>
-        </div>
-        <div class="control-group" style="margin-top:6px;">
-            <label>Zoom-Schwellwert (Potenzen ignorieren)</label>
-            <input type="number" id="zoomThresholdInput" min="0" max="10" step="1" value="0">
-        </div>
-
-        <hr style="border: 1px solid #334155; margin: 10px 0;">
-
-        <!-- Auskommentiert: Linienbreite allein (0.3px) reicht bereits für
-        ein komplett ruhiges Bild - Supersampling und Blur bringen dann keinen
-        spürbaren Zusatznutzen mehr. Code bleibt für späteren Bedarf erhalten.
-        <div class="control-group">
-            <label>Render-Auflösung (Supersampling gegen Flirren, kostet Performance) — <span class="zoom-readout" id="renderScaleLabel">1,0×</span></label>
-            <input type="range" id="renderScaleInput" min="0.5" max="3" step="0.1" value="1">
-        </div>
-        <div class="control-group" style="margin-top:6px;">
-            <label>Kantenweichheit (Blur gegen Flirren) — <span class="zoom-readout" id="edgeBlurLabel">0px</span></label>
-            <input type="range" id="edgeBlurInput" min="0" max="2" step="0.1" value="0">
-        </div>
-        -->
-        <div class="control-group" style="margin-top:6px;">
-            <label>Linienbreite (dicker = weniger Flirren, kaum Performance-Kosten) — <span class="zoom-readout" id="lineWidthLabel">0,3px</span></label>
-            <input type="range" id="lineWidthInput" min="0" max="4" step="0.1" value="0.3">
-        </div>
-
-        <button class="play" id="playBtn">Play / Pause (Endlos)</button>
+    <div class="control-group" style="margin-top: 5px;">
+        <label>Transformation (Flug-Modus)</label>
+        <select id="transformMode">
+            <option value="S">S: Strecken (Morphing)</option>
+            <option value="Z">Z: Zerschneiden (Montessori) - Rück-Verschmelzung noch buggy</option>
+            <!-- R (Rotieren) weiterhin deaktiviert - eigener, unabhängiger
+                 Bug (falsche Zielgröße bei R_macro), siehe README
+                 Abschnitt 8. Für Neuimplementierung siehe Kommentare im JS. -->
+        </select>
     </div>
 
-    <div class="overlay-panel" id="narrative">
-        <div class="phase-title" id="hudTitle">Kompiliere...</div>
-        <div class="phase-desc" id="hudDesc"></div>
-        <div class="inventory-box">
-            <div class="inventory-title">Bank (Restfläche)</div>
-            <div id="hudInventory"></div>
+    <hr style="border: 1px solid #334155; margin: 10px 0;">
+
+    <div class="control-group"><label id="tickLabel">Tick (Vergleich mit Test-Tool) — 0 / 0</label><input type="number" id="tickInput" min="0" step="1" value="0"></div>
+
+    <div class="control-group" style="margin-top:10px;">
+        <label>Modus B (Hypothetische Basis $b \to 1$)</label>
+        <div class="slider-with-marker">
+            <input type="range" id="modeSliderAB" min="0" max="1" step="0.01" value="0">
+            <div class="auto-zoom-marker" id="autoZoomMarker" title="Auto-Zoom-Mindestwert"></div>
         </div>
+        <div class="auto-zoom-note" id="autoZoomNote">Auto-Zoom aktiv - übersteuert den Regler nach oben</div>
     </div>
+    <div class="control-group" style="margin-top:6px;">
+        <label>Auto-Zoom: Mindestbreite feinste Stelle (Pixel, 0 = aus)</label>
+        <input type="number" id="autoZoomMinPxInput" min="0" max="200" step="1" value="0">
+    </div>
+
+    <div class="control-group" style="margin-top:10px;">
+        <label>Bank-Zoom (automatisch, reale Basis) — <span class="zoom-readout" id="bankZoomLabel">1,0×</span></label>
+        <label style="margin-top:-4px;">Restfläche der Bank — <span class="zoom-readout" id="bankAreaLabel">100%</span></label>
+    </div>
+    <div class="control-group" style="margin-top:6px;">
+        <label>Zoom-Schwellwert (Potenzen ignorieren)</label>
+        <input type="number" id="zoomThresholdInput" min="0" max="10" step="1" value="0">
+    </div>
+
+    <hr style="border: 1px solid #334155; margin: 10px 0;">
+
+    <!-- Auskommentiert: Linienbreite allein (0.3px) reicht bereits für
+    ein komplett ruhiges Bild - Supersampling und Blur bringen dann keinen
+    spürbaren Zusatznutzen mehr. Code bleibt für späteren Bedarf erhalten.
+    <div class="control-group">
+        <label>Render-Auflösung (Supersampling gegen Flirren, kostet Performance) — <span class="zoom-readout" id="renderScaleLabel">1,0×</span></label>
+        <input type="range" id="renderScaleInput" min="0.5" max="3" step="0.1" value="1">
+    </div>
+    <div class="control-group" style="margin-top:6px;">
+        <label>Kantenweichheit (Blur gegen Flirren) — <span class="zoom-readout" id="edgeBlurLabel">0px</span></label>
+        <input type="range" id="edgeBlurInput" min="0" max="2" step="0.1" value="0">
+    </div>
+    -->
+    <div class="control-group" style="margin-top:6px;">
+        <label>Linienbreite (dicker = weniger Flirren, kaum Performance-Kosten) — <span class="zoom-readout" id="lineWidthLabel">0,3px</span></label>
+        <input type="range" id="lineWidthInput" min="0" max="4" step="0.1" value="0.3">
+    </div>
+</div>
+
+<div id="bottomBar">
+    <button id="playBtn" title="Play/Pause">▶</button>
+    <input type="range" id="timeSlider" min="0" max="10" step="0.01" value="0">
+    <span id="timeReadout">0.0 · 0/0</span>
 </div>
 
 <script type="module">
 import { buildSystem, buildTickTimeMapping } from './bank-core.js';
 
 const COLORS = ["#cbd5e1", "#ef476f", "#ffd166", "#06d6a0", "#118ab2", "#8338ec", "#f78c6b", "#ff006e", "#3a86ff", "#fb5607", "#ffbe0b"];
+// Schaltet die Wort-Präfixe ("Länge ", "Fläche ", "Rest ") im Zahlen-Panel
+// oben rechts an/aus - Standard aus (nur kurze Symbole l/l²/R).
+const NUMBER_PANEL_VERBOSE = false;
 
 let N_MAX = 3; let BASE = 10;
 let TOTAL_STEPS = 0; let MAX_TIME = 0; let P_FINAL = 0;
@@ -514,7 +552,7 @@ function updateHUD(time) {
     // Seitenlänge P
     let P_str = N.toString(BASE).toUpperCase();
     if (current_m > 0) P_str = P_str.slice(0, 1) + "." + P_str.slice(1);
-    
+
     // Fläche P^2
     let P2 = N * N;
     let P2_str = P2.toString(BASE).toUpperCase();
@@ -534,49 +572,100 @@ function updateHUD(time) {
         rem_str = "0." + rem_str.padStart(2*current_m, '0');
     }
     
-    let title = Step === 0 ? "Schritt 0: Startquadrat" : `Näherung (Tiefe $n=${current_m}$)`;
-    let desc = `
-        Seitenlänge $P = ${P_str}_{${BASE}}$<br>
-        Fläche $P^2 = ${P2_str}_{${BASE}}$<br>
-        Rest $R = ${rem_str}_{${BASE}}$
-    `;
-    
-    document.getElementById('hudTitle').innerHTML = title;
-    document.getElementById('hudDesc').innerHTML = desc;
-    
+    // Drei Zeilen: Länge, Fläche, Rest. Die Wort-Präfixe ("Länge ", "Fläche ",
+    // "Rest ") sind über NUMBER_PANEL_VERBOSE ein-/ausschaltbar (siehe Konstante
+    // oben) - Standard ist kurz (nur die Symbole l/l²/R).
+    let lengthLabel = NUMBER_PANEL_VERBOSE ? '\\text{Länge } l' : 'l';
+    let areaLabel = NUMBER_PANEL_VERBOSE ? '\\text{Fläche } l^2' : 'l^2';
+    let restLabel = NUMBER_PANEL_VERBOSE ? '\\text{Rest } R' : 'R';
+    // Weder "@{...}"-Spaltentrenner noch \arraycolsep-Zuweisung werden von
+    // MathJax unterstützt (beides landete als roter Fehlertext im Bild).
+    // "aligned" (AMS, wird von MathJax autoload nachgeladen) ist das dafür
+    // vorgesehene Werkzeug: richtet an "&" exakt aus, mit dem normalen,
+    // knappen Abstand um ein Relationszeichen wie "=" - nicht dem breiten
+    // array-Spaltenabstand.
+    let equation = `\\[ \\begin{aligned}
+        ${lengthLabel} &= ${P_str}_{${BASE}} \\\\
+        ${areaLabel} &= ${P2_str}_{${BASE}} \\\\
+        ${restLabel} &= ${rem_str}_{${BASE}}
+    \\end{aligned} \\]`;
+    numberPanelInner.innerHTML = equation;
+
     let inv_html = "";
     const BLOCK_CAP = 24; // ab hier wird die Bargraph-Darstellung zu einer "+N"-Kurzform verdichtet
     for (let k = 0; k < counts.length; k++) {
         let count = counts[k] || 0;
         let color = COLORS[k % COLORS.length];
-        let expLabel = k === 0 ? "$b^{0}$" : `$b^{-${k}}$`;
-        let shapeLabel = k === 0 ? "Quadrat" : (k % 2 === 0 ? "Quadrat" : "Streifen");
+        let expText = k === 0 ? "0" : `-${k}`;
 
         let barHtml = "";
         if (count === 0) {
-            barHtml = `<div class="piece-bar" style="opacity:0.25"></div>`;
+            barHtml = `<div class="bank-bar" style="opacity:0.25"></div>`;
         } else if (count <= BLOCK_CAP) {
             let blocks = "";
             for (let i = 0; i < count; i++) blocks += `<div class="piece-block" style="background:${color}"></div>`;
-            barHtml = `<div class="piece-bar">${blocks}</div>`;
+            barHtml = `<div class="bank-bar">${blocks}</div>`;
         } else {
             // Bei sehr vielen Stücken (z.B. tiefe Rekursion, Basis>2): kompakter
             // durchgehender Balken statt hunderter einzelner Blöckchen - bleibt
-            // trotzdem klar als "voller Bestand" erkennbar, plus exakte Zahl rechts.
-            barHtml = `<div class="piece-bar"><div style="flex-grow:1; height:12px; border-radius:2px; background:${color}"></div></div>`;
+            // trotzdem klar als "voller Bestand" erkennbar.
+            barHtml = `<div class="bank-bar"><div style="flex-grow:1; height:10px; border-radius:2px; background:${color}"></div></div>`;
         }
 
-        inv_html += `<div class="piece-row" style="opacity: ${count === 0 ? 0.45 : 1.0}" title="${shapeLabel}">
-            <div class="piece-left">
-                <div class="color-swatch" style="background:${color}"></div>
-                <span class="exp-label">${expLabel}</span>
-            </div>
+        inv_html += `<div class="bank-row" style="opacity: ${count === 0 ? 0.35 : 1.0}">
             ${barHtml}
-            <div class="piece-count-text">${count}×</div>
+            <div class="bank-exp" style="color:${color}">${expText}</div>
         </div>`;
     }
-    document.getElementById('hudInventory').innerHTML = inv_html;
-    if (window.MathJax) MathJax.typesetPromise([document.getElementById('narrative')]);
+    bankPanelInner.innerHTML = inv_html;
+    // MathJax rendert asynchron - die tatsächliche (finale) Breite der Formel
+    // steht erst nach Abschluss von typesetPromise() fest, daher die Skalierung
+    // erst im .then() anstoßen (nicht direkt danach synchron).
+    if (window.MathJax) {
+        MathJax.typesetPromise([numberPanelInner]).then(updateNumberPanelScale);
+    } else {
+        updateNumberPanelScale();
+    }
+    updateBankPanelScale();
+}
+
+// Bei tiefer Rekursion (z.B. N_MAX=30, Basis 2) werden die Ziffernketten in
+// der Formel so lang, dass sie die feste Breite von #numberPanel sprengen
+// würden - analog zu updateBankPanelScale() daher: Inhalt in #numberPanelInner
+// (eigene, freie Breite statt der festen 600px von #numberPanel - sonst
+// dasselbe Messproblem wie beim Bank-Zähler) natürlich messen und bei Bedarf
+// herunterskalieren. transform-origin "left top" hält dabei die linke
+// Startposition der Zahlen fest (soll sich laut Vorgabe nicht verschieben).
+function updateNumberPanelScale() {
+    numberPanelInner.style.transform = 'none';
+    let available = numberPanel.clientWidth;
+    let natural = numberPanelInner.scrollWidth;
+    let scale = Math.min(1, available / natural);
+    numberPanelInner.style.transform = `scale(${scale})`;
+}
+
+// Bei tiefer Rekursion (viele Ziffern-Stellen, also viele Zeilen im
+// Bank-Zähler) überragt die natürliche Höhe irgendwann die Fensterhöhe -
+// ohne Gegenmaßnahme würden die äußersten Zeilen oben/unten aus dem
+// sichtbaren Bereich laufen. Fix: Inhalt erst ungeskaliert messen, dann bei
+// Bedarf gleichmäßig auf die verfügbare Höhe herunterskalieren (nie
+// hochskalieren - Math.min mit 1). transform-origin "right center" (siehe
+// CSS) hält dabei den rechten Rand fest, der Zähler schrumpft nach links.
+//
+// WICHTIG: gemessen (und skaliert) wird #bankPanelInner, NICHT #bankPanel -
+// #bankPanel hat selbst eine feste Höhe (top:0/bottom:0, für die vertikale
+// Zentrierung über die volle Fensterhöhe). Ein Element mit fester Höhe und
+// Standard-overflow:visible liefert in scrollHeight einfach seine eigene
+// (feste) Höhe zurück, NICHT die tatsächliche, überlaufende Inhaltsgröße -
+// die Messung wäre also immer ≈ available und hätte nie ausgelöst.
+// #bankPanelInner dagegen hat keine eigene Höhenvorgabe (wächst frei mit dem
+// Inhalt), scrollHeight liefert dort zuverlässig die echte Wunschhöhe.
+function updateBankPanelScale() {
+    bankPanelInner.style.transform = 'none';
+    let available = window.innerHeight - 40;
+    let natural = bankPanelInner.scrollHeight;
+    let scale = Math.min(1, available / natural);
+    bankPanelInner.style.transform = `scale(${scale})`;
 }
 
 // === SYSTEM C: RENDER ENGINE ===
@@ -608,6 +697,7 @@ function resizeCanvas() {
     canvas.height = window.innerHeight * RENDER_SCALE;
     canvas.style.width = window.innerWidth + 'px';
     canvas.style.height = window.innerHeight + 'px';
+    updateBankPanelScale();
     renderFrame();
 }
 window.addEventListener('resize', resizeCanvas);
@@ -821,7 +911,13 @@ function renderFrame() {
     const SQRT2 = Math.SQRT2;
     const LOGICAL_MAX_W = SQRT2 + 0.1 + 1.0;
     const LOGICAL_MAX_H = SQRT2;
-    const renderAreaWidth = W - 450;
+    // Rechter Rand richtet sich NUR nach dem Bank-Zähler (feste Breite, siehe
+    // CSS) - die Zahlenanzeige (#numberPanel) hat bewusst keinen Einfluss auf
+    // die Render-Skala von Ziel/Rest, egal wie breit ihr Inhalt/ihre CSS-Breite
+    // gerade ist (Position und Breite von #numberPanel werden unabhängig davon
+    // manuell in der CSS gepflegt).
+    const rightEdgeStart = bankPanel.getBoundingClientRect().left;
+    const renderAreaWidth = rightEdgeStart - 40;
     const scale = Math.min(renderAreaWidth / LOGICAL_MAX_W, (H - 100) / LOGICAL_MAX_H);
 
     // Auto-Zoom: "größerer Wert gewinnt" - der Regler (u_mode_AB) kann die
@@ -1054,12 +1150,16 @@ const timeSlider = document.getElementById('timeSlider');
 const modeSliderAB = document.getElementById('modeSliderAB');
 const bankZoomLabel = document.getElementById('bankZoomLabel');
 const bankAreaLabel = document.getElementById('bankAreaLabel');
-const timeLabel = document.getElementById('timeLabel');
+const timeReadout = document.getElementById('timeReadout');
 const tickInput = document.getElementById('tickInput');
 const tickLabel = document.getElementById('tickLabel');
 const autoZoomMarker = document.getElementById('autoZoomMarker');
 const autoZoomNote = document.getElementById('autoZoomNote');
 const autoZoomMinPxInput = document.getElementById('autoZoomMinPxInput');
+const numberPanel = document.getElementById('numberPanel');
+const numberPanelInner = document.getElementById('numberPanelInner');
+const bankPanel = document.getElementById('bankPanel');
+const bankPanelInner = document.getElementById('bankPanelInner');
 // Browser stellen Formularfelder beim Neuladen oft aus der History wieder
 // her, unabhängig vom value-Attribut im HTML - AUTO_ZOOM_MIN_PX muss daher
 // beim Start aus dem tatsächlichen (ggf. wiederhergestellten) Feldwert
@@ -1084,7 +1184,13 @@ function updateAutoZoomIndicator(autoZoomTAB, isActive) {
 }
 
 function updateOutputs() {
-    timeLabel.innerText = `Zeitstrahl (${u_time.toFixed(1)})`;
+    // Die dünne weiße Fortschrittslinie ist kein separates Div, sondern ein
+    // Hart-Stop-Gradient auf dem Slider selbst (background-clip:content-box
+    // in der CSS hält ihn auf die 3px-Spur beschränkt, siehe dort) - so bleibt
+    // es EIN Element, das beim Hover einfach zusätzlich interaktiv wird.
+    let pct = MAX_TIME > 0 ? (u_time / MAX_TIME) * 100 : 0;
+    timeSlider.style.backgroundImage = `linear-gradient(to right, #fff ${pct}%, transparent ${pct}%)`;
+
     // Tick-Readout: zeigt zu jedem Zeitpunkt den passenden (auch gebrochenen)
     // Tick-Wert aus bank-core.js - der Bank-Zustand selbst ändert sich aber
     // immer nur an ganzzahligen Ticks. Solange das Feld nicht fokussiert ist
@@ -1094,6 +1200,9 @@ function updateOutputs() {
     }
     if (GLOBAL_TTM) {
         tickLabel.innerText = `Tick (Vergleich mit Test-Tool) — ${GLOBAL_TTM.timeToTick(u_time).toFixed(2)} / ${GLOBAL_TTM.maxTick}`;
+        timeReadout.innerText = `${u_time.toFixed(1)} · ${Math.round(GLOBAL_TTM.timeToTick(u_time))}/${GLOBAL_TTM.maxTick}`;
+    } else {
+        timeReadout.innerText = u_time.toFixed(1);
     }
     renderFrame(); updateHUD(u_time);
 }
@@ -1164,18 +1273,43 @@ tickInput.addEventListener('change', (e) => {
 // in renderFrame) - kein manueller Regler mehr, nur noch das Zahlen-Readout
 // (bankZoomLabel) wird pro Frame aktualisiert.
 
-// PATCH V29: dezent ausblendbare Steuerung - ein schmaler Tab am Rand
-// klappt das komplette Bedienpanel weg, ohne dass ein Klick auf die
-// eigentliche Visualisierung nötig ist. Für den Exponat-/Ausstellungs-
-// Kontext gedacht, in dem die Regler nicht permanent im Blick sein sollen.
-const rightPanel = document.getElementById('right-panel');
-const collapseTab = document.getElementById('collapseTab');
-collapseTab.addEventListener('click', () => {
-    rightPanel.classList.toggle('collapsed');
-    collapseTab.innerText = rightPanel.classList.contains('collapsed') ? '⟨' : '⟩';
+// Einstellungen: kein Icon mehr - öffnet per Maus-Nähe zur oberen rechten
+// Ecke, analog zum Zeitstrahl-Reveal unten. Blendet sich über Zahlen-Panel/
+// Bank-Zähler ein, statt sie zu verdrängen.
+const settingsPanel = document.getElementById('settingsPanel');
+const TOP_RIGHT_ZONE_PX = 160;
+
+// Zeitstrahl (inkl. Play/Pause) taucht am unteren Rand nur auf, wenn die
+// Maus weit genug unten ist - für den Exponat-/Ausstellungs-Kontext gedacht,
+// in dem der Regler nicht permanent im Blick sein soll.
+const bottomBar = document.getElementById('bottomBar');
+const BOTTOM_REVEAL_ZONE_PX = 90;
+document.addEventListener('mousemove', (e) => {
+    let nearBottom = window.innerHeight - e.clientY < BOTTOM_REVEAL_ZONE_PX;
+    bottomBar.classList.toggle('visible', nearBottom);
+
+    let nearTopRight = e.clientX > window.innerWidth - TOP_RIGHT_ZONE_PX
+        && e.clientY < TOP_RIGHT_ZONE_PX;
+    // Bugfix: die Ecken-Zone ist viel kleiner als das Panel selbst (400px
+    // breit, teils >600px hoch) - sobald die Maus zum Bedienen eines Reglers
+    // weiter unten/links ins Panel wandert, verlässt sie die Zone und das
+    // Panel schloss sich mitten in der Interaktion, sodass sich nichts mehr
+    // einstellen ließ. Fix: solange das Panel offen ist, zusätzlich prüfen,
+    // ob die Maus noch irgendwo über dem tatsächlichen Panel-Rechteck steht.
+    let overSettingsPanel = false;
+    if (settingsPanel.classList.contains('open')) {
+        let r = settingsPanel.getBoundingClientRect();
+        overSettingsPanel = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+    }
+    settingsPanel.classList.toggle('open', nearTopRight || overSettingsPanel);
 });
 
-document.getElementById('playBtn').addEventListener('click', () => { isPlaying = !isPlaying; if (isPlaying) requestAnimationFrame(loop); });
+const playBtn = document.getElementById('playBtn');
+playBtn.addEventListener('click', () => {
+    isPlaying = !isPlaying;
+    playBtn.textContent = isPlaying ? '⏸' : '▶';
+    if (isPlaying) requestAnimationFrame(loop);
+});
 
 let lastTime = performance.now();
 function loop(now) {
@@ -1196,7 +1330,7 @@ function loop(now) {
     requestAnimationFrame(loop);
 }
 
-resizeCanvas(); compileSystem();
+resizeCanvas();  compileSystem();
 </script>
 </body>
 </html>
