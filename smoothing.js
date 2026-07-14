@@ -216,3 +216,65 @@ export function computeSegmentBlend(times, time) {
     let s = raw * raw * (3 - 2 * raw);
     return { lo, hi, s };
 }
+
+// ============================================================================
+// buildDampedFilter - gedämpfter Tiefpassfilter mit fester Zeitkonstante
+// TAU, für Werte, die NUR träge/asymptotisch dem Zielwert folgen müssen
+// (z.B. eine Kamera-Zoomstufe), NICHT für Werte mit einer "muss an jedem
+// Stützpunkt exakt stimmen"-Garantie (dafür buildMonotoneSpline() nutzen -
+// siehe Einschränkung oben) und NICHT für mehrere Werte mit gegenseitiger
+// Ordnungsbeziehung (dafür computeSegmentBlend() nutzen).
+// ============================================================================
+// buildMonotoneSpline() reagiert auf JEDEN Stützpunkt SOFORT und EXAKT - bei
+// vielen, dicht aufeinanderfolgenden Stützpunkten (z.B. ein Stützpunkt pro
+// Bank-Entnahme, oft nur einen Tick auseinander) wirkt das dadurch unruhig/
+// zappelig: die Kurve "ruckt" bei jedem einzelnen Stützpunkt neu an, statt in
+// EINER durchgehend langsamen Bewegung zum Gesamttrend zu finden (siehe
+// Gesprächsverlauf, Bank-Zoom in sqrt2.html - Regression, nachdem
+// getBankTransform() auf buildMonotoneSpline() umgestellt wurde).
+//
+// buildDampedFilter() bringt bewusst wieder eine feste Zeitkonstante TAU
+// ins Spiel (wie der historische, inzwischen ersetzte Exponentialkernel),
+// aber C¹-stetig statt nur C⁰: jeder Stützpunkt-Sprung wird als Sprungantwort
+// eines KRITISCH GEDÄMPFTEN Systems 2. Ordnung eingebracht,
+// `h(τ) = 1 - exp(-k·τ)·(1+k·τ)` für `τ>0` (sonst 0, `k=1/TAU`) - startet mit
+// WERT UND STEIGUNG exakt Null, daher ist die Superposition mehrerer solcher
+// Antworten über die gesamte Zeitachse C¹-stetig, auch an den Stützpunkten
+// selbst. Nicht-kausal auswertbar (funktioniert für jeden Zeitpunkt exakt,
+// auch beim Scrubben/Zurückspulen), aber im Gegensatz zu
+// buildMonotoneSpline() NUR ASYMPTOTISCH (nie exakt) am jeweiligen
+// Zielwert - für "Sicherheit durch Konvexkombination"-Garantien (siehe
+// getBankTransform() in sqrt2.html) reicht das: der Filter ist eine
+// gewichtete Summe mit nicht-negativen, sich zu 1 aufsummierenden Gewichten
+// über bereits sichere Werte, das bleibt für JEDES TAU sicher.
+export function buildDampedFilter(points, tau) {
+    if (points.length === 0) return () => 0;
+    if (points.length === 1) { let v0 = points[0].v; return () => v0; }
+    let k = 1 / tau;
+    function h(tauElapsed) {
+        if (tauElapsed <= 0) return 0;
+        return 1 - Math.exp(-k * tauElapsed) * (1 + k * tauElapsed);
+    }
+    return function at(time) {
+        let v = points[0].v;
+        for (let i = 1; i < points.length; i++) {
+            v += (points[i].v - points[i - 1].v) * h(time - points[i].t);
+        }
+        return v;
+    };
+}
+
+// Komfort-Wrapper für mehrere Felder, die dieselbe Zeitachse UND dieselbe
+// Zeitkonstante teilen (z.B. {t, z, offsetX, offsetY, area}) - siehe
+// buildMonotoneSplineBundle() weiter oben für das Analogon ohne Dämpfung.
+export function buildDampedFilterBundle(points, keys, tau) {
+    let filters = {};
+    for (let k of keys) filters[k] = buildDampedFilter(points.map(p => ({ t: p.t, v: p[k] })), tau);
+    return {
+        at(time) {
+            let result = {};
+            for (let k of keys) result[k] = filters[k](time);
+            return result;
+        }
+    };
+}

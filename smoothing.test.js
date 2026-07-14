@@ -2,7 +2,7 @@
 // keine zusätzliche Abhängigkeit nötig, siehe package.json).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildMonotoneSpline, buildMonotoneSplineBundle, computeSegmentBlend } from './smoothing.js';
+import { buildMonotoneSpline, buildMonotoneSplineBundle, computeSegmentBlend, buildDampedFilter, buildDampedFilterBundle } from './smoothing.js';
 
 const EPS = 1e-9;
 
@@ -309,4 +309,87 @@ test('computeSegmentBlend: Randfälle (0/1 Stützpunkte, Zeit außerhalb des Ber
     assert.deepEqual(computeSegmentBlend([3], 5), { lo: 0, hi: 0, s: 0 });
     assert.deepEqual(computeSegmentBlend([3, 7], -100), { lo: 0, hi: 0, s: 0 });
     assert.deepEqual(computeSegmentBlend([3, 7], 100), { lo: 1, hi: 1, s: 0 });
+});
+
+// ---------------------------------------------------------------------------
+// buildDampedFilter
+// ---------------------------------------------------------------------------
+
+test('buildDampedFilter: konstant vor dem ersten Stützpunkt, nähert sich danach asymptotisch dem letzten Wert an', () => {
+    let pts = [{ t: 0, v: 1 }, { t: 5, v: 10 }];
+    let at = buildDampedFilter(pts, 1);
+    assert.equal(at(-10), 1);
+    assert.equal(at(0), 1);
+    // weit nach dem letzten Stützpunkt (viele Zeitkonstanten später) sehr
+    // nah am Zielwert, aber (bewusst, asymptotisch) nie exakt.
+    let farAfter = at(5 + 20);
+    assert.ok(Math.abs(farAfter - 10) < 1e-6);
+    assert.notEqual(farAfter, 10);
+});
+
+test('buildDampedFilter: C¹-stetig an jedem Stützpunkt (keine Ableitungssprünge, per finiter Differenz)', () => {
+    let pts = [{ t: 0, v: 0 }, { t: 2, v: 5 }, { t: 5, v: 5 }, { t: 9, v: -3 }];
+    let at = buildDampedFilter(pts, 1.5);
+    const h = 1e-6;
+    for (let p of pts) {
+        let left = (at(p.t) - at(p.t - h)) / h;
+        let right = (at(p.t + h) - at(p.t)) / h;
+        assert.ok(Math.abs(left - right) < 1e-3, `Ableitungssprung bei t=${p.t}: links=${left.toFixed(6)}, rechts=${right.toFixed(6)}`);
+    }
+});
+
+test('buildDampedFilter: bleibt für jedes TAU innerhalb der konvexen Hülle der Stützwerte (Sicherheits-Eigenschaft für Konvexkombinations-Beweise)', () => {
+    let pts = [{ t: 0, v: 2 }, { t: 3, v: 8 }, { t: 6, v: 1 }, { t: 10, v: 5 }];
+    let vMin = Math.min(...pts.map(p => p.v)), vMax = Math.max(...pts.map(p => p.v));
+    for (let tau of [0.1, 1, 5, 20]) {
+        let at = buildDampedFilter(pts, tau);
+        for (let t = -5; t <= 30; t += 0.5) {
+            let v = at(t);
+            assert.ok(v >= vMin - 1e-9 && v <= vMax + 1e-9, `TAU=${tau}: Wert ${v} bei t=${t} außerhalb [${vMin},${vMax}]`);
+        }
+    }
+});
+
+test('buildDampedFilter: größeres TAU bedeutet trägere (langsamere) Reaktion', () => {
+    let pts = [{ t: 0, v: 0 }, { t: 5, v: 10 }];
+    let atFast = buildDampedFilter(pts, 0.5);
+    let atSlow = buildDampedFilter(pts, 5);
+    // kurz nach dem Sprung sollte der "schnelle" Filter bereits weiter beim
+    // Zielwert sein als der "langsame".
+    assert.ok(atFast(6) > atSlow(6), `bei TAU klein sollte der Wert schneller aufholen: fast=${atFast(6)}, slow=${atSlow(6)}`);
+});
+
+test('buildDampedFilter: reagiert auf viele dicht aufeinanderfolgende Stützpunkte spürbar träger als buildMonotoneSpline (Kern des Bank-Zoom-Fixes)', () => {
+    // Simuliert das reale Muster: viele kleine, dicht getaktete Stützpunkte
+    // (ein Wegpunkt pro Bank-Entnahme, oft nur 1 Zeiteinheit auseinander).
+    let pts = [];
+    for (let i = 0; i <= 50; i++) pts.push({ t: i, v: i * 0.1 });
+    let dampedAt = buildDampedFilter(pts, 3);
+    let exactAt = buildMonotoneSpline(pts);
+    // Mitten in der Sequenz: der gedämpfte Filter hinkt spürbar hinter dem
+    // exakten Wert her (das IST die gewünschte "trägere" Bewegung).
+    let t = 25;
+    let lag = exactAt(t) - dampedAt(t);
+    assert.ok(lag > 0.3, `gedämpfter Filter sollte bei t=${t} spürbar hinter dem exakten Wert liegen, Differenz war nur ${lag.toFixed(3)}`);
+});
+
+test('buildDampedFilter: Sonderfälle (0/1 Stützpunkte)', () => {
+    assert.equal(buildDampedFilter([], 1)(5), 0);
+    let at1 = buildDampedFilter([{ t: 3, v: 42 }], 1);
+    assert.equal(at1(-10), 42);
+    assert.equal(at1(100), 42);
+});
+
+test('buildDampedFilterBundle: interpoliert mehrere Felder unabhängig, alle mit derselben Zeitkonstante', () => {
+    let points = [
+        { t: 0, z: 1, offsetX: 0 },
+        { t: 2, z: 2, offsetX: -0.5 },
+        { t: 4, z: 4, offsetX: -0.5 },
+    ];
+    let bundle = buildDampedFilterBundle(points, ['z', 'offsetX'], 1);
+    assert.equal(bundle.at(-5).z, 1);
+    assert.equal(bundle.at(-5).offsetX, 0);
+    let far = bundle.at(100);
+    assert.ok(Math.abs(far.z - 4) < 1e-6);
+    assert.ok(Math.abs(far.offsetX - (-0.5)) < 1e-6);
 });

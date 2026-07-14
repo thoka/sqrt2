@@ -218,7 +218,7 @@
 
 <script type="module">
 import { buildSystem, buildTickTimeMapping, computeCompactionWaypoints, makeCompactedRectLookup } from './bank-core.js';
-import { buildMonotoneSpline, buildMonotoneSplineBundle } from './smoothing.js';
+import { buildMonotoneSpline, buildDampedFilterBundle, buildDampedFilter } from './smoothing.js';
 
 const COLORS = ["#cbd5e1", "#ef476f", "#ffd166", "#06d6a0", "#118ab2", "#8338ec", "#f78c6b", "#ff006e", "#3a86ff", "#fb5607", "#ffbe0b"];
 // Schaltet die Wort-Präfixe ("Länge ", "Fläche ", "Rest ") im Zahlen-Panel
@@ -569,9 +569,22 @@ function compileSystem() {
         }
         GLOBAL_BANK_ZOOM_TIMES = eventTimes;
         GLOBAL_BANK_ZOOM = bank_zoom_states;
-        GLOBAL_BANK_ZOOM_SPLINE = buildMonotoneSplineBundle(
+        // buildDampedFilterBundle() statt buildMonotoneSplineBundle(): der
+        // Bank-Zoom hat bis zu MAX_CHECKPOINTS=400 dicht getaktete Wegpunkte
+        // (oft nur einen Tick auseinander, ein Wegpunkt pro Entnahme) - eine
+        // exakte Spline reagiert auf JEDEN davon sofort, was sich als
+        // unruhige/zappelige Bewegung zeigt (Regression, siehe
+        // Gesprächsverlauf). Der Bank-Zoom BRAUCHT diese Exaktheit auch gar
+        // nicht: sein Sicherheitsbeweis ("Konvexkombination bereits sicherer
+        // Positionen bleibt sicher") gilt für JEDE Zeitkonstante TAU, siehe
+        // README Abschnitt 6.1 - anders als beim Auto-Zoom-Exponenten
+        // (dort MUSS jeder Wegpunkt exakt getroffen werden, siehe
+        // getSmoothedAutoZoomExp() weiter unten).
+        const BANK_ZOOM_TAU = Math.max(local_max_time * 0.03, 0.5);
+        GLOBAL_BANK_ZOOM_SPLINE = buildDampedFilterBundle(
             eventTimes.map((t, i) => ({ t, ...bank_zoom_states[i] })),
-            ['z', 'offsetX', 'offsetY', 'area']
+            ['z', 'offsetX', 'offsetY', 'area'],
+            BANK_ZOOM_TAU
         );
 
         // Kompaktierung ("Zeilen/Spalten ausblenden", siehe bank-core.js
@@ -584,7 +597,12 @@ function compileSystem() {
         if (COMPACTION_ENABLED) {
             GLOBAL_COMPACTION_WAYPOINTS = computeCompactionWaypoints(bank_pieces, local_max_time);
             GLOBAL_COMPACTION_LOOKUP = makeCompactedRectLookup(GLOBAL_COMPACTION_WAYPOINTS);
-            GLOBAL_COMPACTION_ZOOM_SPLINE = buildMonotoneSpline(GLOBAL_COMPACTION_WAYPOINTS.map(wp => ({ t: wp.t, v: wp.z })));
+            // Nur das Zoom-Faktor-TEXT-Readout (bankZoomLabel) - NICHT
+            // GLOBAL_COMPACTION_LOOKUP (die tatsächlichen Stück-Positionen):
+            // die brauchen weiterhin computeSegmentBlend()s exakte,
+            // geteilte Gewichte für die Nichtüberlappungs-Garantie (siehe
+            // Abschnitt 6.2) - nur die Zahlenanzeige darf/soll träger sein.
+            GLOBAL_COMPACTION_ZOOM_SPLINE = buildDampedFilter(GLOBAL_COMPACTION_WAYPOINTS.map(wp => ({ t: wp.t, v: wp.z })), Math.max(local_max_time * 0.03, 0.5));
         } else {
             GLOBAL_COMPACTION_WAYPOINTS = [];
             GLOBAL_COMPACTION_LOOKUP = null;

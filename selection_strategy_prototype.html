@@ -93,7 +93,7 @@
 
 <script type="module">
 import { buildSystem, computeCompactionWaypoints, makeCompactedRectLookup } from './bank-core.js';
-import { buildMonotoneSpline, buildMonotoneSplineBundle } from './smoothing.js';
+import { buildDampedFilter, buildDampedFilterBundle } from './smoothing.js';
 
 let BASE = 10, N_MAX = 10;
 let sim = null; // aktuelle Bank-Simulations-Instanz (aus createBankSimulation)
@@ -149,7 +149,12 @@ function computeZoomCheckpoints() {
         offsetX: 0.5 - checkpointZoom[i].cx*checkpointZoom[i].z,
         offsetY: 0.5 - checkpointZoom[i].cy*checkpointZoom[i].z,
     }));
-    zoomSpline = buildMonotoneSplineBundle(points, ['z','offsetX','offsetY']);
+    // buildDampedFilterBundle() statt buildMonotoneSplineBundle(): viele
+    // dicht getaktete Checkpoints (oft ein Wegpunkt pro Entnahme) wirken mit
+    // einer exakten Spline unruhig/zappelig - der Zoom braucht diese
+    // Exaktheit nicht (Sicherheitsbeweis gilt für jede Zeitkonstante TAU,
+    // siehe sqrt2.html README-Historie/Gesprächsverlauf).
+    zoomSpline = buildDampedFilterBundle(points, ['z','offsetX','offsetY'], Math.max(local_max_time * 0.03, 0.5));
 }
 function getBankTransform(time) {
     if (checkpointZoom.length===0) return {z:1, offsetX:0, offsetY:0};
@@ -253,7 +258,10 @@ function recompile() {
         computeZoomCheckpoints();
         if (compactionEnabled) {
             compactionWaypointsCache = computeCompactionWaypoints(sim.bank_pieces, local_max_time);
-            compactionZoomSpline = buildMonotoneSpline(compactionWaypointsCache.map(wp => ({ t: wp.t, v: wp.z })));
+            // Nur das Zoom-Faktor-Readout - NICHT compactionRectLookup (die
+            // tatsächlichen Stück-Positionen brauchen weiterhin exakte,
+            // geteilte Gewichte für die Nichtüberlappungs-Garantie).
+            compactionZoomSpline = buildDampedFilter(compactionWaypointsCache.map(wp => ({ t: wp.t, v: wp.z })), Math.max(local_max_time * 0.03, 0.5));
             compactionRectLookup = makeCompactedRectLookup(compactionWaypointsCache);
         }
         let maxT = Math.ceil(local_max_time);
