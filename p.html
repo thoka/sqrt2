@@ -83,6 +83,14 @@
         <div class="row"><label>Kleine Stücke ab wie vielen Potenzen ignorieren (0 = alle einbeziehen)</label>
             <input type="number" id="thresholdPowers" value="0" min="0" max="10" step="1"></div>
         <p class="note">Stücke, die mehr als diese Anzahl Zehnerpotenzen (genauer: Potenzen von Basis) kleiner sind als das größte gerade sichtbare Stück, fließen NICHT ins Zoom-Framing ein - sie werden weiter gezeichnet, bestimmen aber nicht mehr, wie weit heraus- oder hineingezoomt wird. Soll verhindern, dass ein einzelner winziger Einzelgänger den Zoom aufhält.</p>
+
+        <h3>Kompaktierung ("Zeilen/Spalten ausblenden")</h3>
+        <div class="row" style="display:flex; align-items:center; gap:8px;">
+            <input type="checkbox" id="compactionEnabled" style="width:auto;">
+            <label style="margin:0;" for="compactionEnabled">Kompaktierung aktivieren</label>
+        </div>
+        <p class="note">Leere x/y-Bereiche (über die GESAMTE andere Achse hinweg unbelegt) werden zusammengezogen, wie das Ausblenden von Zeilen/Spalten in einer Tabelle - Stückgrößen bleiben exakt erhalten, keine Neuanordnung, keine Überschneidungen. Jeder Zeitpunkt, an dem sich die belegte Fläche verkleinert, wird als Wegpunkt genutzt; die gedämpfte Überblendung (derselbe Mechanismus wie beim Zoom) sorgt von allein für ruhige Bewegung.</p>
+
         <h3>Kennzahlen (live, echte Positionen)</h3>
         <div class="stat" id="statCount">Sichtbare Stücke: -</div>
         <div class="stat" id="statZoom">Zoom-Faktor: -</div>
@@ -325,6 +333,9 @@ function buildSystem(strategy, cutStrategy, alternateStrip, squareSplit) {
 // ---- Gedämpfter Auto-Zoom auf die ECHTE, unveränderte Bounding-Box ----
 let checkpointTimes = [], checkpointZoom = [];
 let thresholdPowers = 0; // 0 = alle Stücke einbeziehen (kein Filter)
+let compactionEnabled = false;
+let compactionThreshold = 0; // fest auf 0 - jede Verbesserung wird als Wegpunkt genutzt, das reicht bereits für ruhiges Verhalten (die gedämpfte Überblendung glättet den Rest)
+let compactionWaypoints = [];
 function computeZoomCheckpoints() {
     let times = new Set([0]);
     for (let p of bank_pieces) {
@@ -385,6 +396,93 @@ function getBankTransform(time) {
     return {z, offsetX, offsetY};
 }
 
+// ==================== KOMPAKTIERUNG ("Zeilen/Spalten ausblenden") ====================
+function buildCompactionMap(pieces, axis) {
+    let intervals = pieces.map(p => axis==='x' ? [p.x, p.x+p.w] : [p.y, p.y+p.h]);
+    intervals.sort((a,b) => a[0]-b[0]);
+    let merged = [];
+    for (let iv of intervals) {
+        if (merged.length===0 || iv[0] > merged[merged.length-1][1] + 1e-9) merged.push([iv[0], iv[1]]);
+        else merged[merged.length-1][1] = Math.max(merged[merged.length-1][1], iv[1]);
+    }
+    let prefix = [0];
+    for (let iv of merged) prefix.push(prefix[prefix.length-1] + (iv[1]-iv[0]));
+    function compact(coord) {
+        for (let i=0;i<merged.length;i++) {
+            if (coord >= merged[i][0]-1e-9 && coord <= merged[i][1]+1e-9) return prefix[i] + Math.max(0, coord - merged[i][0]);
+        }
+        for (let i=0;i<merged.length;i++) if (coord < merged[i][0]) return prefix[i];
+        return prefix[prefix.length-1];
+    }
+    return { compact, totalOccupied: Math.max(prefix[prefix.length-1], 1e-9) };
+}
+
+function computeCompactionAt(t) {
+    let visible = bank_pieces.filter(p => t>=p.born_time && t<p.cut_time && t<p.taken_time);
+    if (visible.length===0) return { mapX: x=>x, mapY: y=>y, totalW: 1, totalH: 1 };
+    let mapX = buildCompactionMap(visible, 'x');
+    let mapY = buildCompactionMap(visible, 'y');
+    return { mapX: mapX.compact, mapY: mapY.compact, totalW: mapX.totalOccupied, totalH: mapY.totalOccupied };
+}
+
+function computeCompactionWaypoints() {
+    let allCheckpoints = new Set([0]);
+    for (let p of bank_pieces) { if (isFinite(p.taken_time)) allCheckpoints.add(p.taken_time); if (isFinite(p.cut_time)) allCheckpoints.add(p.cut_time); }
+    allCheckpoints.add(local_max_time);
+    allCheckpoints = Array.from(allCheckpoints).sort((a,b)=>a-b);
+
+    let waypoints = [];
+    let lastArea = Infinity;
+    for (let t of allCheckpoints) {
+        let comp = computeCompactionAt(t);
+        let area = comp.totalW * comp.totalH;
+        if (waypoints.length === 0 || area < lastArea * (1 - compactionThreshold)) {
+            let z = Math.min(1/comp.totalW, 1/comp.totalH);
+            waypoints.push({ t, mapX: comp.mapX, mapY: comp.mapY, totalW: comp.totalW, totalH: comp.totalH, z });
+            lastArea = area;
+        }
+    }
+    let lastT = allCheckpoints[allCheckpoints.length-1];
+    if (waypoints.length === 0 || waypoints[waypoints.length-1].t !== lastT) {
+        let comp = computeCompactionAt(lastT);
+        let z = Math.min(1/comp.totalW, 1/comp.totalH);
+        waypoints.push({ t: lastT, mapX: comp.mapX, mapY: comp.mapY, totalW: comp.totalW, totalH: comp.totalH, z });
+    }
+    compactionWaypoints = waypoints;
+}
+
+function compactedRectAt(piece, wpIdx) {
+    let wp = compactionWaypoints[wpIdx];
+    let cx = wp.mapX(piece.x), cy = wp.mapY(piece.y);
+    let cw = wp.mapX(piece.x + piece.w) - cx;
+    let ch = wp.mapY(piece.y + piece.h) - cy;
+    let zx = 0.5 + (cx - wp.totalW/2) * wp.z;
+    let zy = 0.5 + (cy - wp.totalH/2) * wp.z;
+    return { x: zx, y: zy, w: cw*wp.z, h: ch*wp.z };
+}
+
+function getSmoothedCompactedRect(piece, time) {
+    if (compactionWaypoints.length === 0) return null;
+    let TAU = Math.max(local_max_time * 0.03, 0.5);
+    let k = 1/TAU;
+    function F(tp) { return Math.exp(-k*(time-tp)); }
+    let n = 0;
+    for (let i=1;i<compactionWaypoints.length;i++) { if (time>=compactionWaypoints[i].t) n=i; else break; }
+
+    let wFirst = F(compactionWaypoints[0].t);
+    let r0 = compactedRectAt(piece, 0);
+    let ax=r0.x*wFirst, ay=r0.y*wFirst, aw=r0.w*wFirst, ah=r0.h*wFirst;
+    for (let i=0;i<n;i++) {
+        let w = F(compactionWaypoints[i+1].t) - F(compactionWaypoints[i].t);
+        let r = compactedRectAt(piece, i);
+        ax += r.x*w; ay += r.y*w; aw += r.w*w; ah += r.h*w;
+    }
+    let rN = compactedRectAt(piece, n);
+    let wLast = F(time) - F(compactionWaypoints[n].t);
+    ax += rN.x*wLast; ay += rN.y*wLast; aw += rN.w*wLast; ah += rN.h*wLast;
+    return { x: ax, y: ay, w: aw, h: ah };
+}
+
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const COLORS = ["#cbd5e1", "#ef476f", "#ffd166", "#06d6a0", "#118ab2", "#8338ec", "#f78c6b", "#ff006e", "#3a86ff", "#fb5607", "#ffbe0b"];
@@ -407,7 +505,13 @@ function render() {
     let area=0, minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
     let nextTick = Math.floor(u_time) + 1;
     for (let p of visible) {
-        let zx = p.x*T.z + T.offsetX, zy = p.y*T.z + T.offsetY, zw = p.w*T.z, zh = p.h*T.z;
+        let zx, zy, zw, zh;
+        if (compactionEnabled) {
+            let r = getSmoothedCompactedRect(p, u_time);
+            zx = r.x; zy = r.y; zw = r.w; zh = r.h;
+        } else {
+            zx = p.x*T.z + T.offsetX; zy = p.y*T.z + T.offsetY; zw = p.w*T.z; zh = p.h*T.z;
+        }
         let px = offX + zx*scale, py = offY + (1-zy-zh)*scale, pw2 = zw*scale, ph2 = zh*scale;
         // Hervorhebung: dieses Stück wird im NÄCHSTEN Tick entnommen oder
         // geschnitten - macht sichtbar, WELCHES Stück die aktuelle Strategie
@@ -433,7 +537,23 @@ function render() {
 
     let bboxArea = (maxX>minX) ? (maxX-minX)*(maxY-minY) : 1;
     document.getElementById('statCount').innerText = "Sichtbare Stücke: " + visible.length;
-    document.getElementById('statZoom').innerText = "Zoom-Faktor: " + T.z.toFixed(2) + "×";
+    let displayZoom = T.z;
+    if (compactionEnabled && compactionWaypoints.length > 0) {
+        let TAU = Math.max(local_max_time * 0.03, 0.5);
+        let k = 1/TAU;
+        function F(tp) { return Math.exp(-k*(u_time-tp)); }
+        let n = 0;
+        for (let i=1;i<compactionWaypoints.length;i++) { if (u_time>=compactionWaypoints[i].t) n=i; else break; }
+        let wFirst = F(compactionWaypoints[0].t);
+        let z = compactionWaypoints[0].z*wFirst;
+        for (let i=0;i<n;i++) {
+            let w = F(compactionWaypoints[i+1].t) - F(compactionWaypoints[i].t);
+            z += compactionWaypoints[i].z*w;
+        }
+        z += compactionWaypoints[n].z*(F(u_time)-F(compactionWaypoints[n].t));
+        displayZoom = z;
+    }
+    document.getElementById('statZoom').innerText = "Zoom-Faktor: " + displayZoom.toFixed(2) + "×";
     document.getElementById('statFill').innerText = "Füllgrad (Fläche/BBox): " + (bboxArea>0 ? (area/bboxArea*100).toFixed(1) : "0") + "%";
 
     // Fragmentierung (Union-Find über Beruehrung)
@@ -478,10 +598,13 @@ function recompile() {
     let alternateStrip = false; // Streifen-Enden alternieren: kein Vorteil festgestellt, deaktiviert
     let squareSplit = document.getElementById('squareSplit').value;
     thresholdPowers = parseInt(document.getElementById('thresholdPowers').value) || 0;
+    compactionEnabled = document.getElementById('compactionEnabled').checked;
+    // compactionThreshold ist fest auf 0 (siehe Deklaration) - kein UI-Feld mehr noetig
     document.getElementById('strategyExplain').innerText = STRATEGY_NOTES[strategy];
     try {
         buildSystem(strategy, cutStrategy, alternateStrip, squareSplit);
         computeZoomCheckpoints();
+        if (compactionEnabled) computeCompactionWaypoints();
         let maxT = Math.ceil(local_max_time);
         document.getElementById('timeSlider').max = maxT;
         document.getElementById('timeNumberInput').max = maxT;
@@ -503,6 +626,8 @@ document.getElementById('cutStrategy').addEventListener('change', recompile);
 // (kein Listener mehr für alternateStrip - Element ist auskommentiert)
 document.getElementById('squareSplit').addEventListener('change', recompile);
 document.getElementById('thresholdPowers').addEventListener('change', recompile);
+document.getElementById('compactionEnabled').addEventListener('change', recompile);
+// (kein Listener mehr für compactionThresholdInput - Element wurde entfernt)
 document.getElementById('timeSlider').addEventListener('input', (e) => { u_time = parseFloat(e.target.value); render(); });
 
 function setTime(t) {
