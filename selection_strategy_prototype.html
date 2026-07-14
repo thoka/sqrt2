@@ -92,7 +92,7 @@
 </div>
 
 <script type="module">
-import { createBankSimulation, computeCompactionWaypoints, getSmoothedCompactedRect } from './bank-core.js';
+import { buildSystem, computeCompactionWaypoints, getSmoothedCompactedRect } from './bank-core.js';
 
 let BASE = 10, N_MAX = 10;
 let sim = null; // aktuelle Bank-Simulations-Instanz (aus createBankSimulation)
@@ -100,22 +100,6 @@ let local_max_time = 1;
 let thresholdPowers = 0;
 let compactionEnabled = false;
 let compactionWaypointsCache = [];
-
-function buildSystem(squareSplit) {
-    sim = createBankSimulation(BASE, N_MAX, squareSplit);
-    for (let S = 1; S < sim.TOTAL_STEPS; S++) {
-        let shell = [];
-        for (let v = 0; v < S; v++) shell.push({ u: S, v: v, is_top: false });
-        for (let u = 0; u < S; u++) shell.push({ u: u, v: S, is_top: true });
-        shell.push({ u: S, v: S, is_top: false });
-        for (let sp of shell) {
-            let k = sim.axes[sp.u].exp + sim.axes[sp.v].exp;
-            if (sp.is_top) { for (let i = 0; i < BASE; i++) sim.getPieceFromBank(k + 1); }
-            else { sim.getPieceFromBank(k); }
-        }
-    }
-    local_max_time = sim.currentTick - 1;
-}
 
 // ==================== Zoom (Bounding-Box-Fit mit Schwellwert) ====================
 let checkpointTimes = [], checkpointZoom = [];
@@ -280,7 +264,7 @@ function recompile() {
     thresholdPowers = parseInt(document.getElementById('thresholdPowers').value) || 0;
     compactionEnabled = document.getElementById('compactionEnabled').checked;
     try {
-        buildSystem(squareSplit);
+        ({ sim, local_max_time } = buildSystem(BASE, N_MAX, squareSplit));
         computeZoomCheckpoints();
         if (compactionEnabled) compactionWaypointsCache = computeCompactionWaypoints(sim.bank_pieces, local_max_time);
         let maxT = Math.ceil(local_max_time);
