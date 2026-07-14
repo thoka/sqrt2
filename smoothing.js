@@ -31,6 +31,15 @@
 // dieses Projekt, das ohnehin die komplette Animation vorab kompiliert und
 // beliebig scrubbar macht (kein Live-/Streaming-Kontext, in dem Kausalität
 // nötig wäre).
+//
+// WICHTIGE EINSCHRÄNKUNG: buildMonotoneSpline()/buildMonotoneSplineBundle()
+// optimieren die Tangente JEDES Wertes/Feldes UNABHÄNGIG. Sobald MEHRERE
+// Werte eine Ordnungsbeziehung ZUEINANDER einhalten müssen (z.B. "Objekt A
+// überlappt Objekt B nie"), reicht das NICHT - zwei unabhängig geglättete
+// Werte können zum selben Zeitpunkt unterschiedlich weit "fortgeschritten"
+// sein. Für diesen Fall siehe computeSegmentBlend() weiter unten (geteiltes
+// Blend-Gewicht) - siehe CLAUDE.md und README Abschnitt 6.2 für den realen
+// Bug, der aus dieser Verwechslung entstand (Kompaktierung in bank-core.js).
 // ============================================================================
 
 // Baut eine skalare Glättungsfunktion aus Stützpunkten { t, v }.
@@ -153,4 +162,57 @@ export function buildMonotoneSplineBundle(points, keys, opts) {
             return result;
         }
     };
+}
+
+// ============================================================================
+// computeSegmentBlend - GETEILTES Blend-Gewicht für mehrere, voneinander
+// ABHÄNGIGE Werte-Reihen (z.B. die Positionen mehrerer Objekte, deren
+// relative Reihenfolge/Nichtüberlappung erhalten bleiben MUSS).
+// ============================================================================
+// buildMonotoneSpline() oben optimiert JEDEN Wert unabhängig (eigene
+// Tangente pro Feld/Objekt) - das ist korrekt und erwünscht für einen
+// EINZELNEN, in sich geschlossenen Wert (Zoom-Faktor, Auto-Zoom-Exponent,
+// ...). Sobald aber MEHRERE Werte eine gemeinsame Invariante über ihre
+// RELATIVE Lage zueinander einhalten müssen (z.B. "Stück A überlappt Stück B
+// nie"), reicht unabhängige Optimierung NICHT: zwei unabhängige monotone
+// Splines können zu DEMSELBEN Zeitpunkt unterschiedlich weit "fortgeschritten"
+// sein (unterschiedliche Tangenten -> unterschiedliche effektive
+// Interpolations-Fortschritte), wodurch eine an den Stützpunkten selbst
+// korrekte (nicht überlappende) Anordnung ZWISCHEN den Stützpunkten
+// trotzdem kollidieren kann (siehe Kompaktierungs-Bug in
+// bank-core-compaction.test.js, Gesprächsverlauf - dort sichtbar geworden,
+// weil mehrere Stücke unabhängig voneinander geglättet wurden und eines
+// bereits "vorauseilte", während sein Nachbar noch an seiner alten Position
+// stand).
+//
+// Fix: EIN gemeinsamer Fortschritts-Wert s(t) ∈ [0,1] pro Zeitsegment,
+// identisch für ALLE beteiligten Werte - jeder Wert wird dann simpel LINEAR
+// mit demselben s geblendet: `v(t) = v_lo*(1-s) + v_hi*s`. Damit bleibt jede
+// Ordnungsbeziehung, die an BEIDEN Stützpunkten gilt (z.B. "a_rechteRand ≤
+// b_linkerRand" an w_lo UND an w_hi), automatisch auch für JEDES
+// Zwischen-s erhalten (gewichteter Mittelwert zweier Zahlen a≤b mit
+// DENSELBEN Gewichten ist wieder ≤ - Beweis analog zur Bank-Zoom-
+// Sicherheit in sqrt2.html). s selbst ist klassisches Smoothstep
+// (3s²-2s³) - hat an BEIDEN Segment-Enden exakt Steigung 0, daher C¹-stetig
+// über die gesamte Zeitachse UND (wichtig!) ohne jedes "Vorauseilen" ins
+// Nachbarsegment - anders als bei buildMonotoneSpline()s Tangenten, die
+// bewusst über Segmentgrenzen hinweg "Schwung" mitnehmen (dort erwünscht
+// für einen fließenden Verlauf, hier aber genau das Sicherheitsproblem).
+//
+// Rückgabe: { lo, hi, s } - lo/hi sind Indizes in `times` (bei time außerhalb
+// des Bereichs: lo===hi===0 bzw. lo===hi===letzter Index, s=0). Aufrufer
+// blenden ihre eigenen Werte an waypoints[lo]/waypoints[hi] selbst mit s.
+export function computeSegmentBlend(times, time) {
+    let n = times.length;
+    if (n === 0) return null;
+    if (n === 1 || time <= times[0]) return { lo: 0, hi: 0, s: 0 };
+    if (time >= times[n - 1]) return { lo: n - 1, hi: n - 1, s: 0 };
+    let lo = 0, hi = n - 1;
+    while (hi - lo > 1) {
+        let mid = (lo + hi) >> 1;
+        if (times[mid] <= time) lo = mid; else hi = mid;
+    }
+    let raw = (time - times[lo]) / (times[hi] - times[lo]);
+    let s = raw * raw * (3 - 2 * raw);
+    return { lo, hi, s };
 }

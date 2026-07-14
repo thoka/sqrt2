@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    createBankSimulation, buildSystem,
+    buildSystem,
     buildCompactionMap, computeCompactionAt, computeCompactionWaypoints,
     compactedRectAt, getSmoothedCompactedRect, makeCompactedRectLookup,
 } from './bank-core.js';
@@ -184,22 +184,41 @@ test('getSmoothedCompactedRect: trifft an jedem Waypoint exakt dessen compactedR
 // an einem realen System statt nur an synthetischen Einzelfällen.
 // ---------------------------------------------------------------------------
 
-test('Integration (echter Bank-Algorithmus): kompaktierte, gleichzeitig sichtbare Stücke überlappen sich nie', () => {
-    let sim = createBankSimulation(10, 6, 'fixed');
-    let { local_max_time } = buildSystem(10, 6, 'fixed', 'subdivide');
+function overlaps(a, b) {
+    const EPS = 1e-6;
+    return a.x < b.x + b.w - EPS && b.x < a.x + a.w - EPS && a.y < b.y + b.h - EPS && b.y < a.y + a.h - EPS;
+}
+
+// REGRESSIONSTEST für einen real reproduzierten Bug (Gesprächsverlauf):
+// "wird hier zu früh losgeschoben (wenn das entsprechende Teil noch
+// angezeigt wird), es kommt so zu Überlappungen". Ursache war zweigeteilt:
+// (1) computeCompactionWaypoints() ließ Ticks aus (siehe dort, jetzt
+// gefixt), UND (2) die frühere buildMonotoneSplineBundle()-basierte
+// Umsetzung gab jedem Stück ein UNABHÄNGIGES Blend-Gewicht - ein Nachbar
+// konnte dadurch schon in Richtung einer neuen Position rutschen, WÄHREND
+// das Stück, das den Platz erst freimacht, noch sichtbar war.
+//
+// WICHTIG für diesen Test: grobes Sampling (z.B. nur alle 0.5 Zeiteinheiten)
+// hätte den Bug NICHT zuverlässig gefangen, weil das Überlappungsfenster
+// auf einzelne, kurze Segmente zwischen zwei Waypoints begrenzt ist -
+// zwischen den Stützstellen des groben Rasters hätte es oft "zufällig"
+// wieder vorbei sein können. Deshalb hier zusätzlich zum groben Sweep noch
+// eine DICHTE Abtastung in einem kleinen Fenster um JEDEN echten
+// Sichtbarkeits-Wechsel (born_time/cut_time/taken_time) herum - genau dort,
+// wo ein Nachbarstück "vorauseilen" könnte.
+test('Integration (echter Bank-Algorithmus): kompaktierte, gleichzeitig sichtbare Stücke überlappen sich nie (dichtes Sampling um jedes Event)', () => {
+    // Tiefe 4 statt 6: der ursprüngliche Bug war massiv reproduzierbar (über
+    // 100.000 Verletzungen bei dichtem Sampling, siehe Gesprächsverlauf) -
+    // für einen zuverlässigen Regressionstest reicht eine deutlich kleinere,
+    // schnell laufende Tiefe locker aus; Tiefe 6 ließ den Test wegen der
+    // O(sichtbare Stücke)-Filterung pro Sample auf >10s anwachsen.
+    let { sim, local_max_time } = buildSystem(10, 4, 'fixed', 'subdivide');
     let waypoints = computeCompactionWaypoints(sim.bank_pieces, local_max_time);
+    let lookup = makeCompactedRectLookup(waypoints); // times einmalig extrahiert statt pro Aufruf, siehe dort
 
-    function overlaps(a, b) {
-        const EPS = 1e-6;
-        return a.x < b.x + b.w - EPS && b.x < a.x + a.w - EPS && a.y < b.y + b.h - EPS && b.y < a.y + a.h - EPS;
-    }
-
-    // Stichprobenartig über die Zeitachse prüfen (jeder Tick + ein paar
-    // Zwischenwerte fürs Scrubben) - bei lokal begrenzter lokaler Tiefe (6)
-    // performant genug für einen Test.
-    for (let t = 0; t <= local_max_time; t += 0.5) {
+    function checkAt(t) {
         let visible = sim.bank_pieces.filter(p => t >= p.born_time && t < p.cut_time && t < p.taken_time);
-        let rects = visible.map(p => getSmoothedCompactedRect(p, waypoints, t));
+        let rects = visible.map(p => lookup(p, t));
         for (let i = 0; i < rects.length; i++) {
             for (let j = i + 1; j < rects.length; j++) {
                 assert.ok(!overlaps(rects[i], rects[j]),
@@ -207,11 +226,29 @@ test('Integration (echter Bank-Algorithmus): kompaktierte, gleichzeitig sichtbar
             }
         }
     }
+
+    // Grober Sweep über die gesamte Zeitachse.
+    for (let t = 0; t <= local_max_time; t += 0.5) checkAt(t);
+
+    // Dichter Sweep um JEDEN echten Event-Zeitpunkt herum - fängt genau das
+    // kurze, leicht überspringbare Überlappungsfenster, das den Bug
+    // ursprünglich verursacht hat (der Bug war massiv, ±0.2 in 0.05er-
+    // Schritten reicht bequem, ohne den Test unnötig zu verlangsamen).
+    let eventTicks = new Set();
+    for (let p of sim.bank_pieces) {
+        if (isFinite(p.taken_time)) eventTicks.add(p.taken_time);
+        if (isFinite(p.cut_time)) eventTicks.add(p.cut_time);
+    }
+    for (let eventT of eventTicks) {
+        for (let dt = -0.2; dt <= 0.2; dt += 0.05) {
+            let t = eventT + dt;
+            if (t >= 0 && t <= local_max_time) checkAt(t);
+        }
+    }
 });
 
 test('Integration: kompaktierte Rechtecke bleiben innerhalb des sichtbaren [0,1]x[0,1]-Rahmens', () => {
-    let sim = createBankSimulation(10, 6, 'fixed');
-    let { local_max_time } = buildSystem(10, 6, 'fixed', 'subdivide');
+    let { sim, local_max_time } = buildSystem(10, 6, 'fixed', 'subdivide');
     let waypoints = computeCompactionWaypoints(sim.bank_pieces, local_max_time);
     const EPS = 1e-6;
     for (let t = 0; t <= local_max_time; t += 1) {
@@ -259,24 +296,24 @@ test('makeCompactedRectLookup: leere Waypoints liefern null (wie getSmoothedComp
     assert.equal(lookup(piece(0, 0, 1, 1), 0), null);
 });
 
-test('makeCompactedRectLookup: cacht wirklich - wiederholte Abfragen für dasselbe Stück bauen die Spline nicht neu', () => {
-    let calls = 0;
-    let bank_pieces = [piece(0, 0, 0.5, 0.5, { born_time: 0, cut_time: Infinity, taken_time: Infinity })];
-    // Zählt indirekt: waypoints.map() im Ernstfall ruft compactedRectAt() pro
-    // Waypoint auf - hier stattdessen ein Spy per Proxy um mapX zu zählen.
+test('makeCompactedRectLookup: extrahiert times einmalig statt bei jedem Aufruf (Performance, siehe Kommentar an der Funktion)', () => {
+    let bank_pieces = [
+        piece(0, 0, 0.5, 0.5, { born_time: 0, cut_time: Infinity, taken_time: Infinity }),
+        piece(0.5, 0, 0.5, 0.5, { born_time: 0, cut_time: Infinity, taken_time: Infinity }),
+    ];
     let waypoints = computeCompactionWaypoints(bank_pieces, 10);
-    let originalMapX = waypoints[0].mapX;
-    waypoints[0].mapX = (x) => { calls++; return originalMapX(x); };
+    let mapCalls = 0;
+    let originalMap = waypoints.map.bind(waypoints);
+    waypoints.map = (fn) => { mapCalls++; return originalMap(fn); };
 
     let lookup = makeCompactedRectLookup(waypoints);
-    lookup(bank_pieces[0], 1);
-    let callsAfterFirst = calls;
-    assert.ok(callsAfterFirst > 0, 'erster Aufruf sollte die Spline aufbauen (mapX benutzen)');
+    assert.equal(mapCalls, 1, 'makeCompactedRectLookup sollte waypoints.map() genau einmal aufrufen (times einmalig extrahieren)');
 
-    lookup(bank_pieces[0], 2);
+    lookup(bank_pieces[0], 1);
+    lookup(bank_pieces[1], 2);
     lookup(bank_pieces[0], 5);
-    lookup(bank_pieces[0], 9);
-    assert.equal(calls, callsAfterFirst, 'Folgeaufrufe für dasselbe Stück dürfen mapX nicht erneut aufrufen (Cache-Treffer)');
+    lookup(bank_pieces[1], 9);
+    assert.equal(mapCalls, 1, 'einzelne Abfragen dürfen waypoints.map() nicht erneut aufrufen (times bleibt gecacht)');
 });
 
 test('Integration (echter Bank-Algorithmus, Performance): gecachte Lookups sind bei Tiefe 16 weit unter dem 60fps-Frame-Budget', () => {

@@ -17,7 +17,7 @@
 // existieren, ohne sich gegenseitig zu stoeren.
 // ============================================================================
 
-import { buildMonotoneSplineBundle } from './smoothing.js';
+import { computeSegmentBlend } from './smoothing.js';
 
 // ---------------------------------------------------------------------------
 // TEIL 1: Bank-Algorithmus (Auswahl-Strategie "isolation" + Schneide-Strategie
@@ -239,6 +239,27 @@ export function computeCompactionAt(bank_pieces, tickValue) {
     return { mapX: mapX.compact, mapY: mapY.compact, totalW: mapX.totalOccupied, totalH: mapY.totalOccupied };
 }
 
+// BUGFIX (Überlappungen): baute früher nur dann einen Waypoint, wenn die
+// GESAMTE Bounding-Box-Fläche gegenüber dem letzten Waypoint SCHRUMPFTE
+// ("area < lastArea") - gedacht als reine Effizienzmaßnahme (weniger
+// Wegpunkte für den Zoom-Faktor). Das übersieht aber, dass sich die
+// Kompaktierungs-Abbildung (mapX/mapY) für EINZELNE Stücke bereits ändern
+// kann, OHNE dass sich die GESAMTE Fläche ändert (z.B. wenn ein entferntes
+// Stück auf einer Achse bereits von einem anderen, weiterhin sichtbaren
+// Stück "verdeckt" war) - ein übersprungener Tick lässt dann ein Segment
+// entstehen, das einen echten Sichtbarkeits-Wechsel eines nur LOKAL
+// betroffenen Nachbarstücks gar nicht als eigenen Wegpunkt kennt. Kombiniert
+// mit geteiltem Blend-Gewicht (computeSegmentBlend, siehe getSmoothedCompactedRect)
+// reicht das für Sicherheit nicht aus: das Nachbarstück müsste currently
+// noch exakt an SEINER alten Position stehen, obwohl das breite Segment
+// längst in Richtung der neuen Anordnung unterwegs ist - siehe
+// bank-core-compaction.test.js für den (mit dichtem Zeit-Sampling
+// reproduzierten) Regressionstest.
+//
+// Fix: JEDER Tick, an dem sich die Sichtbarkeit irgendeines Stücks ändert,
+// wird zum Wegpunkt (kein Filter mehr) - dank computeSegmentBlend()s
+// O(log Wegpunkte)-Auswertung (statt einer vollen Spline-Neuberechnung pro
+// Aufruf) ist das performant genug, siehe Messung im Gesprächsverlauf.
 export function computeCompactionWaypoints(bank_pieces, maxTick) {
     let allTicks = new Set([0]);
     for (let p of bank_pieces) {
@@ -248,24 +269,11 @@ export function computeCompactionWaypoints(bank_pieces, maxTick) {
     allTicks.add(maxTick);
     allTicks = Array.from(allTicks).sort((a, b) => a - b);
 
-    let waypoints = [];
-    let lastArea = Infinity;
-    for (let t of allTicks) {
+    return allTicks.map(t => {
         let comp = computeCompactionAt(bank_pieces, t);
-        let area = comp.totalW * comp.totalH;
-        if (waypoints.length === 0 || area < lastArea) {
-            let z = Math.min(1 / comp.totalW, 1 / comp.totalH);
-            waypoints.push({ t, mapX: comp.mapX, mapY: comp.mapY, totalW: comp.totalW, totalH: comp.totalH, z });
-            lastArea = area;
-        }
-    }
-    let lastT = allTicks[allTicks.length - 1];
-    if (waypoints.length === 0 || waypoints[waypoints.length - 1].t !== lastT) {
-        let comp = computeCompactionAt(bank_pieces, lastT);
         let z = Math.min(1 / comp.totalW, 1 / comp.totalH);
-        waypoints.push({ t: lastT, mapX: comp.mapX, mapY: comp.mapY, totalW: comp.totalW, totalH: comp.totalH, z });
-    }
-    return waypoints;
+        return { t, mapX: comp.mapX, mapY: comp.mapY, totalW: comp.totalW, totalH: comp.totalH, z };
+    });
 }
 
 export function compactedRectAt(piece, waypoint) {
@@ -277,43 +285,60 @@ export function compactedRectAt(piece, waypoint) {
     return { x: zx, y: zy, w: cw * waypoint.z, h: ch * waypoint.z };
 }
 
-// Glättet den Kompaktierungs-Sprung zwischen Waypoints per monotoner
-// kubischer Hermite-Interpolation (siehe smoothing.js) statt eines eigenen
-// Exponentialkerns - kein TAU-Parameter mehr nötig (keine Zeitkonstante,
-// exakte Interpolation statt Abkling-Filter) und C¹- statt nur C⁰-stetig.
+// Glättet den Kompaktierungs-Sprung zwischen Waypoints per computeSegmentBlend()
+// (siehe smoothing.js) - NICHT per buildMonotoneSpline()/buildMonotoneSplineBundle()
+// wie andere Stellen in diesem Projekt (getBankTransform, getSmoothedAutoZoomExp).
+//
+// Grund (wichtige Ausnahme, siehe CLAUDE.md "Automatisierte Parameteränderungen"):
+// Kompaktierung positioniert MEHRERE, voneinander abhängige Stücke, deren
+// gegenseitige Nichtüberlappung erhalten bleiben MUSS. buildMonotoneSpline()
+// optimiert die Tangente JEDES Feldes/Stücks UNABHÄNGIG - zwei Stücke können
+// dadurch zum selben Zeitpunkt unterschiedlich weit "fortgeschritten" sein.
+// Das brach hier tatsächlich etwas: die ORIGINALE Kompaktierungs-Umsetzung
+// (siehe p.html-Historie) nutzte einen kausalen Exponentialkern, dessen
+// Gewichte NUR von der Zeit abhängen (nicht vom Stück) - alle Stücke nutzten
+// dadurch "for free" dieselben Gewichte. Die Migration auf
+// buildMonotoneSplineBundle() (frühere Version dieser Funktion) hat diese
+// Eigenschaft gebrochen und zu real reproduzierbaren Überlappungen geführt
+// (Regressionstest: bank-core-compaction.test.js).
+//
+// computeSegmentBlend() stellt das geteilte Gewicht wieder her (EIN s(t) für
+// alle Stücke/Felder) - ist dabei aber, anders als der alte Kernel, C¹-stetig
+// UND trifft jeden Waypoint exakt (kein TAU/Abkling-Verhalten mehr nötig).
+// Voraussetzung: `waypoints` muss WIRKLICH jeden relevanten Tick enthalten
+// (siehe computeCompactionWaypoints() - hat früher gefiltert, das war Teil
+// desselben Bugs).
 export function getSmoothedCompactedRect(piece, waypoints, time) {
     if (waypoints.length === 0) return null;
-    let points = waypoints.map(wp => ({ t: wp.t, ...compactedRectAt(piece, wp) }));
-    let bundle = buildMonotoneSplineBundle(points, ['x', 'y', 'w', 'h']);
-    return bundle.at(time);
+    return blendCompactedRect(piece, waypoints, waypoints.map(wp => wp.t), time);
 }
 
-// getSmoothedCompactedRect() baut bei JEDEM Aufruf die komplette Spline neu
-// (O(Waypoints) Tangentenberechnung) - beim Rendern (ein Aufruf pro
-// sichtbarem Stück, pro Frame) gemessen ein echtes Performance-Problem, kein
-// Fall von vorzeitiger Optimierung: bei Tiefe 16 kostete das ~15-24ms für
-// nur 46-64 sichtbare Stücke - über dem 16.7ms-Budget für 60fps (siehe
-// Gesprächsverlauf/CLAUDE.md "Measure before optimizing").
-//
-// makeCompactedRectLookup(waypoints) baut die Spline pro Stück nur EINMAL
-// (beim ersten Abfragen, per piece.id gecacht) und wertet sie danach nur
-// noch aus (O(log Waypoints) statt O(Waypoints) pro Frame) - Waypoints
-// bleiben dabei fest (ein neuer Lookup pro Kompilierung/computeCompaction-
-// Waypoints()-Aufruf, siehe Aufrufer). Bewusst NICHT eager für alle
-// bank_pieces vorberechnet (könnte bei tiefer Rekursion hunderte MB
-// belegen, siehe Messung oben) - nur tatsächlich abgefragte (also
-// tatsächlich gerenderte) Stücke bekommen eine Spline.
+function blendCompactedRect(piece, waypoints, times, time) {
+    let { lo, hi, s } = computeSegmentBlend(times, time);
+    let rA = compactedRectAt(piece, waypoints[lo]);
+    let rB = compactedRectAt(piece, waypoints[hi]);
+    return {
+        x: rA.x * (1 - s) + rB.x * s, y: rA.y * (1 - s) + rB.y * s,
+        w: rA.w * (1 - s) + rB.w * s, h: rA.h * (1 - s) + rB.h * s,
+    };
+}
+
+// getSmoothedCompactedRect() leitet `times` (die reinen Zeitpunkte der
+// Waypoints, für computeSegmentBlend()s binäre Suche) bei JEDEM Aufruf neu
+// aus `waypoints` ab - bei tausenden Waypoints (jetzt der Normalfall, siehe
+// computeCompactionWaypoints() ohne Filter) gemessen ein echtes
+// Performance-Problem: 16.4ms/Frame statt 0.075ms/Frame bei 64 sichtbaren
+// Stücken und ~17000 Waypoints (Tiefe 16, Zerschneiden-Modus) - der
+// eigentliche pro-Aufruf-Blend selbst ist dagegen mit O(log Waypoints)
+// vernachlässigbar (siehe CLAUDE.md/Memory "Measure before optimizing").
+// makeCompactedRectLookup(waypoints) berechnet `times` nur EINMAL (nicht
+// mehr pro Stück wie die frühere, komplexere Cache-Variante - hier reicht
+// das, weil computeSegmentBlend() selbst schon O(log n) ist).
 export function makeCompactedRectLookup(waypoints) {
-    let cache = new Map();
+    if (waypoints.length === 0) return () => null;
+    let times = waypoints.map(wp => wp.t);
     return function (piece, time) {
-        if (waypoints.length === 0) return null;
-        let bundle = cache.get(piece.id);
-        if (!bundle) {
-            let points = waypoints.map(wp => ({ t: wp.t, ...compactedRectAt(piece, wp) }));
-            bundle = buildMonotoneSplineBundle(points, ['x', 'y', 'w', 'h']);
-            cache.set(piece.id, bundle);
-        }
-        return bundle.at(time);
+        return blendCompactedRect(piece, waypoints, times, time);
     };
 }
 

@@ -2,7 +2,7 @@
 // keine zusätzliche Abhängigkeit nötig, siehe package.json).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildMonotoneSpline, buildMonotoneSplineBundle } from './smoothing.js';
+import { buildMonotoneSpline, buildMonotoneSplineBundle, computeSegmentBlend } from './smoothing.js';
 
 const EPS = 1e-9;
 
@@ -239,4 +239,74 @@ test('buildMonotoneSplineBundle: onlyChanges wird pro Feld unabhängig angewende
     // 'changing' bekommt trotzdem seine eigene, unabhängige Deduplizierung.
     assert.ok(Math.abs(bundle.at(0).changing - 0) < 1e-6);
     assert.ok(Math.abs(bundle.at(4).changing - 2) < 1e-6);
+});
+
+// ---------------------------------------------------------------------------
+// computeSegmentBlend
+// ---------------------------------------------------------------------------
+
+test('computeSegmentBlend: s=0 exakt an jedem Stützpunkt (Pass-Through wie buildMonotoneSpline)', () => {
+    let times = [0, 2, 5, 5.5, 10];
+    for (let t of times) {
+        let { lo, hi, s } = computeSegmentBlend(times, t);
+        assert.equal(s, 0, `s bei t=${t} sollte 0 sein (exakt an Stützpunkt), war ${s}`);
+        assert.equal(times[lo] === t || times[hi] === t, true);
+    }
+});
+
+test('computeSegmentBlend: Nullsteigung an BEIDEN Segmenträndern (kein Übergreifen ins Nachbarsegment)', () => {
+    let times = [0, 1, 3, 7, 10];
+    const h = 1e-6;
+    for (let i = 1; i < times.length - 1; i++) {
+        let t0 = times[i];
+        // s selbst hat an den Segmenträndern Steigung 0 (klassisches
+        // Smoothstep) - numerisch über eine finite Differenz direkt VOR und
+        // NACH dem Stützpunkt geprüft.
+        let sBefore = computeSegmentBlend(times, t0 - h).s;
+        let sAfter = computeSegmentBlend(times, t0 + h).s;
+        // sBefore ist s im VORHERIGEN Segment kurz vor Erreichen von 1,
+        // sAfter ist s im NÄCHSTEN Segment kurz nach dem Start bei 0 -
+        // beide Änderungsraten (ds/dt) müssen nahe 0 sein.
+        let dsBefore = (1 - sBefore) / h; // wie schnell nähert sich s von unten der 1
+        let dsAfter = sAfter / h; // wie schnell wächst s von 0 weg
+        assert.ok(dsBefore < 0.01, `Steigung vor Stützpunkt ${t0} zu groß: ${dsBefore}`);
+        assert.ok(dsAfter < 0.01, `Steigung nach Stützpunkt ${t0} zu groß: ${dsAfter}`);
+    }
+});
+
+test('computeSegmentBlend: kein Vorauseilen - für t knapp VOR einem Stützpunkt bleibt s praktisch 0', () => {
+    // Kernanforderung aus dem Kompaktierungs-Bug: ein Wert darf sich NICHT
+    // schon Richtung des nächsten Stützpunkts bewegen, bevor dessen Segment
+    // überhaupt beginnt (hätte bei buildMonotoneSpline durch Tangenten mit
+    // "Schwung" aus dem Vorsegment passieren können).
+    let times = [0, 1, 1.001, 5]; // sehr kurzes Segment [1, 1.001], dann langes [1.001, 5]
+    let { s } = computeSegmentBlend(times, 1.0005); // Mitte des kurzen Segments
+    assert.ok(s > 0.4 && s < 0.6, `Mitte des kurzen Segments sollte s~0.5 sein, war ${s}`);
+    // Kurz VOR t=1 (im Segment [0,1]) darf s (für DIESES Segment) noch
+    // nicht nennenswert auf das kommende kurze Segment reagieren.
+    let justBefore = computeSegmentBlend(times, 0.9999);
+    assert.ok(justBefore.hi === 1); // gehört noch zu Segment [0,1]
+    assert.ok(justBefore.s > 0.99, `s direkt vor dem Stützpunkt sollte nahe 1 sein (Ende SEINES EIGENEN Segments), war ${justBefore.s}`);
+});
+
+test('computeSegmentBlend: geteiltes Gewicht erhält Ordnungsbeziehungen zwischen zwei unabhängigen Werte-Reihen (Kern der Überlappungs-Sicherheit)', () => {
+    // a bleibt an beiden Stützpunkten links von b (a_rechts <= b_links) -
+    // die Behauptung: das gilt dann automatisch für JEDEN Zeitpunkt
+    // dazwischen, weil beide mit demselben s geblendet werden.
+    let times = [0, 10];
+    let aRight = [0.4, 0.9]; // a's rechter Rand wandert nach rechts
+    let bLeft = [0.5, 0.9]; // b's linker Rand wandert auch, bleibt aber immer >= a
+    for (let t = 0; t <= 10; t += 0.1) {
+        let { lo, hi, s } = computeSegmentBlend(times, t);
+        let aR = aRight[lo] * (1 - s) + aRight[hi] * s;
+        let bL = bLeft[lo] * (1 - s) + bLeft[hi] * s;
+        assert.ok(aR <= bL + 1e-9, `Ordnung verletzt bei t=${t}: a_rechts=${aR} > b_links=${bL}`);
+    }
+});
+
+test('computeSegmentBlend: Randfälle (0/1 Stützpunkte, Zeit außerhalb des Bereichs)', () => {
+    assert.equal(computeSegmentBlend([], 5), null);
+    assert.deepEqual(computeSegmentBlend([3], 5), { lo: 0, hi: 0, s: 0 });
+    assert.deepEqual(computeSegmentBlend([3, 7], -100), { lo: 0, hi: 0, s: 0 });
+    assert.deepEqual(computeSegmentBlend([3, 7], 100), { lo: 1, hi: 1, s: 0 });
 });
