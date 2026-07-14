@@ -10,6 +10,11 @@ import {
     compactedRectAt, getSmoothedCompactedRect, makeCompactedRectLookup,
 } from './bank-core.js';
 
+// Muss mit GAP_CLOSE_DELAY_TICKS in bank-core.js übereinstimmen (nicht
+// exportiert - bewusst über das beobachtbare Verhalten getestet statt über
+// eine interne Konstante, siehe Tests unten).
+const GAP_CLOSE_DELAY_TICKS = 1;
+
 // id ist Pflicht für makeCompactedRectLookup (Cache-Schlüssel) - echte
 // bank_pieces haben immer eine eindeutige id (siehe createBankSimulation),
 // daher hier ebenfalls automatisch eine eindeutige vergeben.
@@ -332,4 +337,82 @@ test('Integration (echter Bank-Algorithmus, Performance): gecachte Lookups sind 
     }
     let msPerFrame = (performance.now() - t0) / FRAMES;
     assert.ok(msPerFrame < 5, `Gecachter Lookup zu langsam: ${msPerFrame.toFixed(3)}ms/Frame für ${visible.length} Stücke (Budget 16.7ms, hier grosszügige 5ms-Grenze für Testrechner-Schwankungen)`);
+});
+
+// ---------------------------------------------------------------------------
+// Lücken-Schließ-Verzögerung (GAP_CLOSE_DELAY_TICKS)
+// ---------------------------------------------------------------------------
+// Regressionstest für einen zweiten, subtileren Nachfolge-Bug (Gesprächsverlauf,
+// nach dem ersten Überlappungs-Fix): "Teile verschwinden immer noch zu früh."
+// Ein einzelner Wegpunkt GAP_CLOSE_DELAY_TICKS nach der Entnahme reicht NICHT
+// aus, um JEDE Bewegung bis dahin zu verhindern, weil computeSegmentBlend()
+// STETIG zwischen zwei Wegpunkten überblendet - ein Segment [T, T+1] zeigt
+// selbst dann schon Bewegung, wenn der Zielwert erst bei T+1 "fertig" ist.
+// Fix: der Zustand bei T+GAP_CLOSE_DELAY_TICKS muss IDENTISCH zum Zustand
+// unmittelbar nach der Entnahme sein (siehe computeCompactionAt()) - erst
+// danach, in einem eigenen, ANSCHLIESSENDEN Segment, findet die eigentliche
+// Überblendung statt.
+//
+// WICHTIGE LEKTION beim Verifizieren (Gesprächsverlauf): "prüfe, ob sich
+// IRGENDEIN Nachbarstück im Fenster [T, T+1] von Q bewegt" ist bei diesem
+// Bank-Algorithmus KEIN gültiger Test - durch die vielen, oft nur einen
+// Tick auseinanderliegenden Entnahme-Ereignisse (siehe cellMode 'subdivide':
+// nach einem Zerschneiden werden oft alle BASE Kinder in schneller Folge
+// entnommen) überlappt das Prüffenster für Q fast immer mit dem LEGITIMEN
+// Schließen einer GANZ ANDEREN Lücke - das erzeugte zunächst scheinbare,
+// tatsächlich aber falsch zugeordnete "Verletzungen". Der korrekte,
+// unverwechselbare Test prüft stattdessen DIREKT, ob JEDES einzelne Stück
+// in computeCompactionAt() exakt bis zu seinem EIGENEN, erwarteten Tick
+// (und nicht früher) als "noch vorhanden" gezählt wird.
+test('computeCompactionAt: ein entnommenes Stück bleibt bis GAP_CLOSE_DELAY_TICKS+1 nach seiner Entnahme als Platzhalter gezählt, keinen Tick früher', () => {
+    let { sim, local_max_time } = buildSystem(10, 6, 'fixed', 'subdivide');
+    let checked = 0;
+    for (let Q of sim.bank_pieces) {
+        if (!isFinite(Q.taken_time)) continue;
+        let T = Q.taken_time;
+        let closesAt = T + GAP_CLOSE_DELAY_TICKS + 1;
+        if (closesAt > local_max_time) continue;
+        checked++;
+        for (let t = T; t < closesAt; t++) {
+            let comp = computeCompactionAt(sim.bank_pieces, t);
+            let visible = sim.bank_pieces.filter(p => t >= p.born_time && t < p.cut_time && t < p.taken_time + GAP_CLOSE_DELAY_TICKS + 1);
+            assert.ok(visible.some(p => p.id === Q.id),
+                `Stück ${Q.id} (entnommen bei T=${T}) sollte bei t=${t} noch als Platzhalter gezählt werden (schließt erst bei ${closesAt})`);
+        }
+    }
+    assert.ok(checked > 100, `Zu wenige Fälle geprüft (${checked}) - Test würde bei einer strukturellen Änderung des Systems still versagen`);
+});
+
+// Isolierter, synthetischer Fall statt des echten (dicht verschachtelten)
+// Bank-Algorithmus: A/Q/B liegen nebeneinander auf der x-Achse, NUR Q wird
+// entnommen (bei T=5), A und B bleiben für immer. Damit gibt es GARANTIERT
+// kein zweites, zufällig überlappendes Ereignis, das die Messung verfälschen
+// könnte (siehe Kommentar am vorigen Test zur Verwechslungsgefahr) - der
+// einzige Grund, warum sich B's Position überhaupt ändern könnte, ist Q's
+// eigene Entnahme.
+test('getSmoothedCompactedRect: B bewegt sich erst ab T+GAP_CLOSE_DELAY_TICKS (isolierter Fall, keine Nachbar-Interferenz)', () => {
+    let A = piece(0, 0, 0.2, 1, { taken_time: Infinity });
+    let Q = piece(0.2, 0, 0.3, 1, { taken_time: 5 });
+    let B = piece(0.5, 0, 0.5, 1, { taken_time: Infinity });
+    let bank_pieces = [A, Q, B];
+    let maxTick = 20;
+    let waypoints = computeCompactionWaypoints(bank_pieces, maxTick);
+    let lookup = makeCompactedRectLookup(waypoints);
+
+    let T = 5;
+    let rAtT = lookup(B, T);
+    // Während des GESAMTEN Hold-Fensters [T, T+GAP_CLOSE_DELAY_TICKS] darf
+    // sich B keinen Millimeter bewegen - nicht nur an den Rändern, sondern
+    // bei JEDEM Zwischenwert (das ist genau der Bug, der den einzelnen
+    // Wegpunkt bei T+1 allein nicht behoben hatte).
+    for (let t = T; t <= T + GAP_CLOSE_DELAY_TICKS; t += 0.1) {
+        let r = lookup(B, t);
+        assert.ok(Math.abs(r.x - rAtT.x) < 1e-9 && Math.abs(r.w - rAtT.w) < 1e-9,
+            `B bewegte sich bei t=${t.toFixed(1)} (innerhalb des Hold-Fensters [${T},${T + GAP_CLOSE_DELAY_TICKS}]): x=${r.x} statt ${rAtT.x}`);
+    }
+    // Danach (in der eigentlichen Überblendung) bewegt sich B tatsächlich -
+    // sonst würde der Test auch bei komplett kaputter Kompaktierung "grün"
+    // bleiben (leerer Beweis).
+    let rAfter = lookup(B, T + GAP_CLOSE_DELAY_TICKS + 1);
+    assert.ok(Math.abs(rAfter.x - rAtT.x) > 1e-6, 'B sollte sich NACH dem Hold-Fenster tatsächlich Richtung der Lücke bewegen');
 });

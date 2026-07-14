@@ -231,8 +231,30 @@ export function buildCompactionMap(pieces, axis) {
     return { compact, totalOccupied: Math.max(prefix[prefix.length - 1], 1e-9) };
 }
 
+// BUGFIX (Teile rutschen zu früh nach): ein einzelner Wegpunkt-Tick
+// GAP_CLOSE_DELAY_TICKS nach dem Entstehen einer Lücke reicht NICHT, um
+// jede Bewegung bis dahin zu verhindern - computeSegmentBlend() blendet
+// STETIG zwischen zwei benachbarten Wegpunkten, d.h. selbst ein Segment
+// [T, T+1] (offen -> geschlossen) zeigt schon WÄHREND dieses einen Ticks
+// spürbare Bewegung, nicht erst ab T+1 (Steigung ist nur GENAU bei s=0
+// exakt Null, für jedes s>0 schon spürbar von Null verschieden). Für "gar
+// keine Bewegung, bis mindestens ein Tick vergangen ist" braucht es
+// STATTDESSEN zwei Wegpunkte mit IDENTISCHEM ("noch offen") Zustand im
+// Abstand GAP_CLOSE_DELAY_TICKS - ein Segment zwischen zwei GLEICHEN
+// Zuständen bleibt exakt flach (Blend-Ergebnis hängt nicht von s ab, wenn
+// Start- und Endwert gleich sind), UNABHÄNGIG davon wie breit es ist.
+// Die eigentliche (weiterhin sanfte) Überblendung findet erst DANACH statt,
+// im Segment [T+GAP_CLOSE_DELAY_TICKS, T+GAP_CLOSE_DELAY_TICKS+1].
+//
+// Das entnommene Stück selbst bleibt bis zum Schließen als "Platzhalter"
+// reserviert (rein rechnerisch für die Kompaktierung - es wird dabei NICHT
+// tatsächlich gezeichnet, siehe die Sichtbarkeits-Prüfung in
+// sqrt2.html/selection_strategy_prototype.html, die weiterhin exakt bei
+// taken_time endet).
+const GAP_CLOSE_DELAY_TICKS = 1;
+
 export function computeCompactionAt(bank_pieces, tickValue) {
-    let visible = bank_pieces.filter(p => tickValue >= p.born_time && tickValue < p.cut_time && tickValue < p.taken_time);
+    let visible = bank_pieces.filter(p => tickValue >= p.born_time && tickValue < p.cut_time && tickValue < p.taken_time + GAP_CLOSE_DELAY_TICKS + 1);
     if (visible.length === 0) return { mapX: x => x, mapY: y => y, totalW: 1, totalH: 1 };
     let mapX = buildCompactionMap(visible, 'x');
     let mapY = buildCompactionMap(visible, 'y');
@@ -263,7 +285,23 @@ export function computeCompactionAt(bank_pieces, tickValue) {
 export function computeCompactionWaypoints(bank_pieces, maxTick) {
     let allTicks = new Set([0]);
     for (let p of bank_pieces) {
-        if (isFinite(p.taken_time)) allTicks.add(p.taken_time);
+        // Zwei Wegpunkte pro entnommenem Stück - siehe die ausführliche
+        // Begründung an computeCompactionAt() weiter oben:
+        //  - T+GAP_CLOSE_DELAY_TICKS: Zustand "noch offen/reserviert" -
+        //    IDENTISCH zum Zustand direkt nach der Entnahme (T), pinnt
+        //    also das gesamte Segment davor (egal wie breit) auf exakt
+        //    keine Bewegung.
+        //  - T+GAP_CLOSE_DELAY_TICKS+1 (geclampt auf maxTick): Zustand
+        //    "geschlossen" - hier (und erst hier) findet die eigentliche,
+        //    weiterhin sanfte Überblendung statt, in einem eigenen,
+        //    genau ein Tick breiten Segment DANACH.
+        // Ein Wegpunkt exakt bei T selbst ist NICHT nötig (der Zustand
+        // dort ist identisch zu T+GAP_CLOSE_DELAY_TICKS, siehe Filter in
+        // computeCompactionAt() - beide liegen im "noch reserviert"-Fenster).
+        if (isFinite(p.taken_time)) {
+            allTicks.add(p.taken_time + GAP_CLOSE_DELAY_TICKS);
+            allTicks.add(Math.min(p.taken_time + GAP_CLOSE_DELAY_TICKS + 1, maxTick));
+        }
         if (isFinite(p.cut_time)) allTicks.add(p.cut_time);
     }
     allTicks.add(maxTick);
