@@ -650,27 +650,49 @@ function getBankTransform(time) {
 // Auto-Zoom macht nur dynamisch Sinn: die tiefste gerade sichtbare
 // Ziffern-Stelle wächst mit der Animation (Schale für Schale von exp=0 bis
 // exp=N_MAX), nicht von Anfang an fix auf N_MAX. getSmoothedAutoZoomExp()
-// liefert den (gedämpft geglätteten) Ziel-Exponenten für Zeitpunkt "time" -
-// exakt dasselbe Muster wie getBankTransform() oben (Checkpoints + kausaler
-// Exponentialkern), nur für einen Skalar (Exponent) statt {z,cx,cy}.
+// liefert den geglätteten Ziel-Exponenten für Zeitpunkt "time".
+//
+// PATCH: NICHT der einfache Exponentialkern aus getBankTransform() (1.
+// Ordnung, "F(t)=exp(-k*(time-t))") - der ist zwar stetig im WERT, aber
+// NICHT in der ABLEITUNG: an jedem Checkpoint springt die Steigung
+// sprunghaft von ~0 auf einen Wert proportional zur Sprunghöhe (numerisch
+// nachgewiesen, siehe Gesprächsverlauf - Finite-Differenzen-Test zeigte
+// z.B. 0.000 -> 0.250 exakt am Checkpoint). Bei Dutzenden bis Hunderten
+// Checkpoints (eine pro Schale) macht sich das als spürbares "Ruckeln"
+// bemerkbar. Auto-Zoom braucht aber wirklich C¹-Stetigkeit (stetige
+// Ableitung über die GESAMTE Animation), da es jeden Frame live ins Layout
+// eingreift - anders als der Bank-Zoom, der optisch tolerant genug ist,
+// dass die Unstetigkeit dort bisher nicht aufgefallen ist (hat denselben
+// Webfehler, siehe TODO-Notiz unten).
+//
+// Fix: statt eines Kerns 1. Ordnung wird jeder Checkpoint-Sprung als
+// Sprungantwort eines KRITISCH GEDÄMPFTEN Systems 2. Ordnung eingebracht
+// (Standardformel, z.B. aus RLC-Kreisen: h(τ) = 1 - exp(-k·τ)·(1+k·τ) für
+// τ>0, sonst 0). Diese Sprungantwort startet MIT WERT UND STEIGUNG NULL
+// (h(0)=0 UND h'(0)=0, geschlossen nachrechenbar) und wächst erst danach
+// glatt an - die Summe (Superposition) mehrerer solcher Sprungantworten
+// ist deshalb über die gesamte Zeitachse C¹-stetig, auch an den
+// Checkpoints selbst. Ebenfalls kausal und für JEDEN Zeitpunkt exakt
+// auswertbar (kein Zustand, keine Integration über die Zeit nötig) -
+// funktioniert daher genauso beim Scrubben/Zurückspulen wie der alte Kern.
+//
+// TODO (nicht Teil dieser Änderung, nur notiert): getBankTransform() hat
+// denselben C⁰-statt-C¹-Fehler. Bisher nicht als Problem aufgefallen
+// (weniger Checkpoints in der Bank-relevanten Zoom-Bewegung, subtiler),
+// aber bei Bedarf mit derselben Technik reparierbar.
 function getSmoothedAutoZoomExp(time) {
     let cps = GLOBAL_AUTO_ZOOM_CHECKPOINTS;
     if (cps.length === 0) return 0;
     let TAU = Math.max(MAX_TIME * 0.03, 0.5);
     let k = 1 / TAU;
-    function F(tp) { return Math.exp(-k * (time - tp)); }
-
-    let n = 0;
-    for (let i = 1; i < cps.length; i++) { if (time >= cps[i].t) n = i; else break; }
-
-    let wFirst = F(cps[0].t);
-    let exp = cps[0].exp * wFirst;
-    for (let i = 0; i < n; i++) {
-        let w = F(cps[i + 1].t) - F(cps[i].t);
-        exp += cps[i].exp * w;
+    function h(tau) {
+        if (tau <= 0) return 0;
+        return 1 - Math.exp(-k * tau) * (1 + k * tau);
     }
-    let wLast = F(time) - F(cps[n].t);
-    exp += cps[n].exp * wLast;
+    let exp = cps[0].exp;
+    for (let i = 1; i < cps.length; i++) {
+        exp += (cps[i].exp - cps[i - 1].exp) * h(time - cps[i].t);
+    }
     return exp;
 }
 
@@ -688,10 +710,33 @@ function getSmoothedAutoZoomExp(time) {
 // Höcker statt einer Rampe bilden - empirisch geprüft (Node-Test, siehe
 // Gesprächsverlauf), keine geschlossene Formel gefunden. Deshalb bewusst
 // KEINE Bisektion (setzt Monotonie voraus, liefert bei einem Höcker
-// falsche/unruhige Ergebnisse), sondern ein einfacher linearer Suchlauf
-// über 100 Stützstellen - robust unabhängig von der Kurvenform, und mit
-// <0.2ms selbst bei tiefer Rekursion (TOTAL_STEPS~500) weit unter dem
-// Frame-Budget (siehe Performance-Test im Gesprächsverlauf).
+// falsche/unruhige Ergebnisse), sondern ein linearer Suchlauf über 200
+// Stützstellen - robust unabhängig von der Kurvenform, und mit deutlich
+// unter 1ms selbst bei tiefer Rekursion (TOTAL_STEPS~500, siehe Performance-
+// Test im Gesprächsverlauf) weit unter dem Frame-Budget.
+//
+// PATCH: der reine Grob-Raster-Treffer (Rückgabe von i/STEPS) erzeugte eine
+// sichtbare Treppenstufen-Bewegung (Sprünge in 0,5%-Schritten), selbst wenn
+// targetExp sich vollkommen stetig ändert (getSmoothedAutoZoomExp ist C¹-
+// stetig, siehe dort) - die Quantisierung HIER war eine zweite, unabhängige
+// Ruckel-Quelle. Fix: im gefundenen Intervall linear zwischen dem letzten
+// "zu schmalen" und dem ersten "breit genug" Stützpunkt interpolieren,
+// statt hart auf den Rasterpunkt zu springen.
+//
+// BEKANNTE, VERBLEIBENDE EINSCHRÄNKUNG (versucht und wieder verworfen, siehe
+// Gesprächsverlauf): am genauen Moment, an dem Auto-Zoom "einschaltet"
+// (widthAt(0, targetExp) kreuzt thresholdPx), bleibt ein winziger, auf ein
+// sehr schmales Zeitfenster (~0.01 Zeiteinheiten in Tests) begrenzter
+// Ableitungsknick - t_AB=0 ist eine harte Domänen-Grenze, an der ein
+// naiver Klammer-Fix (Math.max(0, extrapolierter Rohwert)) versucht wurde,
+// aber FALSCHES Vorzeichen lieferte (widthAt(t_AB) fällt bei kleinem
+// targetExp anfangs, macht die lokale Steigung bei 0 vorzeichenverkehrt -
+// Ergebnis liefen bis 145% statt [0,1]). Ein sauberer, vorzeichenrobuster
+// Fix bräuchte eine implizite Ableitung nach targetExp statt nach t_AB -
+// nicht trivial angesichts des Höckers oben. Für jetzt bewusst NICHT
+// gefixt (Value bleibt korrekt/stetig, nur die Steigung springt kurz) -
+// alle ANDEREN, häufigeren Ruckel-Quellen (pro Schale, ~dutzende bis
+// hunderte Male) sind behoben.
 function computeAutoZoomTAB(thresholdPx, scale, targetExp) {
     if (thresholdPx <= 0 || TOTAL_STEPS <= 1) return 0;
     function widthAt(t_AB) {
@@ -703,14 +748,21 @@ function computeAutoZoomTAB(thresholdPx, scale, targetExp) {
         let V_SCALE_TARGET = P_FINAL / DYN_W;
         return Math.pow(b_eff, -targetExp) * V_SCALE_TARGET * scale;
     }
-    const STEPS = 100;
-    let bestT = 0, bestWidth = widthAt(0);
-    if (bestWidth >= thresholdPx) return 0;
+    const STEPS = 200;
+    let prevT = 0, prevWidth = widthAt(0);
+    if (prevWidth >= thresholdPx) return 0;
+    let bestT = 0, bestWidth = prevWidth;
     for (let i = 1; i <= STEPS; i++) {
         let t = i / STEPS;
         let w = widthAt(t);
         if (w > bestWidth) { bestWidth = w; bestT = t; }
-        if (w >= thresholdPx) return t; // kleinster ausreichender Wert gefunden
+        if (w >= thresholdPx) {
+            // Lineare Interpolation zwischen (prevT, prevWidth) und (t, w) -
+            // macht das Ergebnis stetig statt auf das 200er-Raster zu springen.
+            let frac = (thresholdPx - prevWidth) / (w - prevWidth);
+            return prevT + frac * (t - prevT);
+        }
+        prevT = t; prevWidth = w;
     }
     return bestT; // Ziel im gesamten [0,1]-Bereich unerreichbar - bester Kompromiss statt hartem Clamp auf 1
 }
