@@ -288,6 +288,35 @@ export function getSmoothedCompactedRect(piece, waypoints, time) {
     return bundle.at(time);
 }
 
+// getSmoothedCompactedRect() baut bei JEDEM Aufruf die komplette Spline neu
+// (O(Waypoints) Tangentenberechnung) - beim Rendern (ein Aufruf pro
+// sichtbarem Stück, pro Frame) gemessen ein echtes Performance-Problem, kein
+// Fall von vorzeitiger Optimierung: bei Tiefe 16 kostete das ~15-24ms für
+// nur 46-64 sichtbare Stücke - über dem 16.7ms-Budget für 60fps (siehe
+// Gesprächsverlauf/CLAUDE.md "Measure before optimizing").
+//
+// makeCompactedRectLookup(waypoints) baut die Spline pro Stück nur EINMAL
+// (beim ersten Abfragen, per piece.id gecacht) und wertet sie danach nur
+// noch aus (O(log Waypoints) statt O(Waypoints) pro Frame) - Waypoints
+// bleiben dabei fest (ein neuer Lookup pro Kompilierung/computeCompaction-
+// Waypoints()-Aufruf, siehe Aufrufer). Bewusst NICHT eager für alle
+// bank_pieces vorberechnet (könnte bei tiefer Rekursion hunderte MB
+// belegen, siehe Messung oben) - nur tatsächlich abgefragte (also
+// tatsächlich gerenderte) Stücke bekommen eine Spline.
+export function makeCompactedRectLookup(waypoints) {
+    let cache = new Map();
+    return function (piece, time) {
+        if (waypoints.length === 0) return null;
+        let bundle = cache.get(piece.id);
+        if (!bundle) {
+            let points = waypoints.map(wp => ({ t: wp.t, ...compactedRectAt(piece, wp) }));
+            bundle = buildMonotoneSplineBundle(points, ['x', 'y', 'w', 'h']);
+            cache.set(piece.id, bundle);
+        }
+        return bundle.at(time);
+    };
+}
+
 // ---------------------------------------------------------------------------
 // TEIL 3: Bijektive Tick <-> Zeit Abbildung (fuer das Haupttool)
 // ---------------------------------------------------------------------------

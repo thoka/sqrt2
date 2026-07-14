@@ -8,12 +8,12 @@ Interaktive Visualisierung von √2 als Beispiel einer irrationalen Zahl, für S
 
 | Datei | Zweck | Zustand |
 |---|---|---|
-| `sqrt2.html` | **Haupttool.** Volle Visualisierung: Zielquadrat (wächst ziffernweise Richtung √2) + Bank/Rest (Restflächen-Reservoir) + Steuerung (Basis, Tiefe, Modus B/C, Zoom-Schwellwert). | Funktionsfähig, nutzt jetzt `bank-core.js` (siehe Abschnitt 5) - **Kompaktierung fehlt hier noch** (nur im Test-Tool) |
+| `sqrt2.html` | **Haupttool.** Volle Visualisierung: Zielquadrat (wächst ziffernweise Richtung √2) + Bank/Rest (Restflächen-Reservoir) + Steuerung (Basis, Tiefe, Modus B/C, Zoom-Schwellwert, Kompaktierung). | Funktionsfähig, nutzt jetzt `bank-core.js` (siehe Abschnitt 5) inkl. Kompaktierung (Checkbox "Kompaktierung statt Bank-Zoom", siehe Abschnitt 6.2) |
 | `selection_strategy_prototype.html` | **Algorithmus-Spiel-Tool.** Isolierter Prototyp nur für die Bank - zeigt Stücke an ihren echten, unveränderten Positionen, Tick-Zeitachse (1 Tick = 1 Entnahme), zum Testen von Auswahl-/Schneide-Strategien. | Funktionsfähig, im Browser getestet |
 | `bank-core.js` | **Gemeinsame Bibliothek**, von beiden Tools per ES-Modul-Import eingebunden (siehe `vite.config.js`). Enthält den Bank-Algorithmus + Kompaktierung + bijektive Tick↔Zeit-Abbildung. | Fertig, in Node getestet (siehe Abschnitt 6) und ins Haupttool integriert |
 | `smoothing.js` | **Gemeinsame Glättungs-Bibliothek** (monotone kubische Hermite-Interpolation durch Stützpunkte, siehe Abschnitt 6.1) - von `bank-core.js` und beiden HTML-Tools genutzt, ersetzt mehrere unabhängig entwickelte Ad-hoc-Lösungen. Siehe CLAUDE.md, "Automatisierte Parameteränderungen". | Fertig, persistente Tests in `smoothing.test.js`/`auto-zoom-visibility.test.js` (`npm test`) |
 
-**Tests:** `npm test` (Node-eingebauter Test-Runner, `node --test`, keine zusätzliche Abhängigkeit) läuft `smoothing.test.js` + `auto-zoom-visibility.test.js` - deckt bisher nur `smoothing.js` und die davon abhängige Auto-Zoom-Sichtbarkeits-Garantie ab, nicht die restliche Bank-/Render-Logik (kein bestehendes Test-Setup dafür, siehe Abschnitt 11).
+**Tests:** `npm test` (Node-eingebauter Test-Runner, `node --test`, keine zusätzliche Abhängigkeit) läuft `smoothing.test.js`, `auto-zoom-visibility.test.js` und `bank-core-compaction.test.js` - deckt `smoothing.js`, die davon abhängige Auto-Zoom-Sichtbarkeits-Garantie und die Kompaktierung (TEIL 2 in `bank-core.js`) ab, nicht die restliche Bank-/Render-Logik (kein bestehendes Test-Setup dafür, siehe Abschnitt 11).
 
 ## 3. Grundkonzept der Konstruktion (falls das in VS Code neu aufgesetzt wird)
 
@@ -82,6 +82,10 @@ Idee des Nutzers: wie in einer Tabellenkalkulation leere Zeilen/Spalten ausblend
 
 **Kritischer Fehler, der gemacht und behoben wurde:** Bei der Überblendung MUSS jedes Stück über **alle** globalen Wegpunkte bewertet werden (auch außerhalb seiner eigenen Sichtbarkeit, mit seiner echten fixen Position durch die jeweilige Kompaktierungs-Abbildung geschickt) - NICHT nur über die Wegpunkte, an denen es selbst sichtbar ist. Sonst nutzen verschiedene Stücke unterschiedliche Gewichte, und die Ordnungstreue bricht zusammen (führte zu tausenden Überlappungen in einem fehlerhaften Zwischenstand). Gilt unverändert für die jetzige `buildMonotoneSplineBundle()`-basierte Umsetzung in `getSmoothedCompactedRect()` (siehe Abschnitt 6.1) - kein TAU-Parameter mehr nötig, da exakte Interpolation statt Abkling-Filter.
 
+**Performance (gemessen, kein Fall von "premature optimization"):** `getSmoothedCompactedRect()` baut bei jedem Aufruf die komplette Spline neu (O(Waypoints) Tangentenberechnung) - beim Rendern (ein Aufruf pro sichtbarem Stück, pro Frame) bei Tiefe 16 gemessen 15-24ms für nur 46-64 sichtbare Stücke, über dem 16.7ms-Budget für 60fps. `makeCompactedRectLookup(waypoints)` cacht die Spline pro `piece.id` (einmal gebaut beim ersten Abfragen, danach nur noch O(log Waypoints) ausgewertet) - gemessen danach ~0.07ms/Frame, weit unter dem Budget. Bewusst NICHT eager für alle `bank_pieces` vorberechnet (könnte bei tiefer Rekursion hunderte MB Speicher belegen) - nur tatsächlich abgefragte (gerenderte) Stücke bekommen eine Spline.
+
+**Im Haupttool integriert** (`sqrt2.html`, Checkbox "Kompaktierung statt Bank-Zoom" in den Einstellungen): ersetzt bei Aktivierung den bankT-basierten Auto-Zoom (Abschnitt 6.1) vollständig für die Bank-Darstellung, für sowohl ruhende Bank-Stücke als auch die Start-Position fliegender Stücke - beide Modi sind bewusst gegenseitig exklusiv (wie im Algorithmus-Spiel-Tool), da Kompaktierung jedes Stück individuell umordnet und sich daher nicht als gemeinsame affine Transformation ausdrücken lässt. Der äußere `[0,1]×[0,1]`-Bank-Rahmen wird bei aktiver Kompaktierung bewusst nicht gezeichnet (hätte keine feste, gemeinsame Entsprechung mehr).
+
 **Ein Bewegungs-Schwellwert-Regler ("nur bei lohnender Verbesserung bewegen") wurde probiert und wieder verworfen** - bei extremen Werten (z.B. 1) "friert" das erste Intervall ein (die Überblendungsformel reduziert sich mathematisch auf einen konstanten Wert, wenn nur Start- und Endwegpunkt akzeptiert werden). Schwellwert=0 (jede Verbesserung wird Wegpunkt) funktioniert bereits ausgezeichnet - kein Regler nötig.
 
 ### 6.3 Bijektive Tick↔Zeit-Abbildung
@@ -146,7 +150,7 @@ Zusätzlicher Regler "Auto-Zoom: Mindestbreite feinste Stelle (Pixel, 0 = aus)" 
 
 1. ~~Test-Tool im Browser verifizieren~~ - erledigt.
 2. ~~Haupttool auf `bank-core.js` umstellen~~ - erledigt (Kompaktierung dabei bewusst ausgeklammert, siehe Punkt 3 unten).
-3. Haupttool: Kompaktierung ergänzen (analog zum Test-Tool, verbunden mit der bijektiven Tick↔Zeit-Abbildung, die das Haupttool jetzt schon nutzt).
+3. ~~Haupttool: Kompaktierung ergänzen~~ - erledigt, siehe Abschnitt 6.2. Dabei zusätzlich `makeCompactedRectLookup()` (Caching) ergänzt und persistente Tests für ganz TEIL 2 aus `bank-core.js` nachgezogen (`bank-core-compaction.test.js`, vorher ungetestet).
 4. Tiefe-Standardwert im Haupttool klären/synchronisieren.
 5. ~~Gemeinsame Schalen-Orchestrierung in `bank-core.js`~~ - erledigt: `buildSystem()` hat jetzt einen `cellMode`-Parameter (`'morph'`/`'subdivide'`), beide Tools nutzen dieselbe Funktion (siehe Abschnitt 5).
 6. ~~Rück-Verschmelzung im Zerschneiden-Modus debuggen~~ - wird nicht mehr reproduziert (siehe Abschnitt 8). Z bleibt bewusst nur Demo-Modus für kleine Tiefen (siehe Abschnitt 8), kein Ausbau zur vollständig korrekten Konstruktion geplant.

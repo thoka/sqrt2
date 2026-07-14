@@ -168,6 +168,10 @@
         <label>Zoom-Schwellwert (Potenzen ignorieren)</label>
         <input type="number" id="zoomThresholdInput" min="0" max="10" step="1" value="0">
     </div>
+    <div class="control-group" style="margin-top:6px; flex-direction: row; align-items: center; gap: 8px;">
+        <input type="checkbox" id="compactionEnabledInput" style="width: auto;">
+        <label style="margin: 0;" for="compactionEnabledInput">Kompaktierung ("Zeilen/Spalten ausblenden") statt Bank-Zoom</label>
+    </div>
 
     <hr style="border: 1px solid #334155; margin: 10px 0;">
 
@@ -213,7 +217,7 @@
 </div>
 
 <script type="module">
-import { buildSystem, buildTickTimeMapping } from './bank-core.js';
+import { buildSystem, buildTickTimeMapping, computeCompactionWaypoints, makeCompactedRectLookup } from './bank-core.js';
 import { buildMonotoneSpline, buildMonotoneSplineBundle } from './smoothing.js';
 
 const COLORS = ["#cbd5e1", "#ef476f", "#ffd166", "#06d6a0", "#118ab2", "#8338ec", "#f78c6b", "#ff006e", "#3a86ff", "#fb5607", "#ffbe0b"];
@@ -243,6 +247,15 @@ for (let param in URL_FIELD_MAP) {
     if (URL_PARAMS.has(param)) {
         let el = document.getElementById(URL_FIELD_MAP[param]);
         if (el) el.value = URL_PARAMS.get(param);
+    }
+}
+// Checkboxen brauchen .checked statt .value - eigene, kleine Zuordnung
+// statt URL_FIELD_MAP mit Sonderfällen zu verunreinigen.
+const URL_CHECKBOX_FIELD_MAP = { compaction: 'compactionEnabledInput' };
+for (let param in URL_CHECKBOX_FIELD_MAP) {
+    if (URL_PARAMS.has(param)) {
+        let el = document.getElementById(URL_CHECKBOX_FIELD_MAP[param]);
+        if (el) el.checked = URL_PARAMS.get(param) === '1';
     }
 }
 
@@ -288,6 +301,16 @@ let GLOBAL_AUTO_ZOOM_CHECKPOINTS = [];
 // smoothing.js) - einmal pro compileSystem(), von getSmoothedAutoZoomExp()
 // nur noch ausgewertet.
 let GLOBAL_AUTO_ZOOM_SPLINE = null;
+// Kompaktierung ("Zeilen/Spalten ausblenden", siehe bank-core.js TEIL 2 und
+// README Abschnitt 6.2/11) - analog zum Algorithmus-Spiel-Tool, hier fürs
+// Haupttool ergänzt. Nur berechnet, wenn COMPACTION_ENABLED aktiv ist (nicht
+// kostenlos bei tiefer Rekursion, siehe makeCompactedRectLookup-Kommentar
+// in bank-core.js). GLOBAL_COMPACTION_LOOKUP cacht pro Stück, GLOBAL_
+// COMPACTION_ZOOM_SPLINE ist nur fürs Zoom-Readout (bankZoomLabel).
+let COMPACTION_ENABLED = false;
+let GLOBAL_COMPACTION_WAYPOINTS = [];
+let GLOBAL_COMPACTION_LOOKUP = null;
+let GLOBAL_COMPACTION_ZOOM_SPLINE = null;
 
 // === SYSTEM A: COMPILER ===
 //
@@ -550,6 +573,23 @@ function compileSystem() {
             eventTimes.map((t, i) => ({ t, ...bank_zoom_states[i] })),
             ['z', 'offsetX', 'offsetY', 'area']
         );
+
+        // Kompaktierung ("Zeilen/Spalten ausblenden", siehe bank-core.js
+        // TEIL 2) - nur berechnet, wenn die Einstellung aktiv ist (nicht
+        // kostenlos bei tiefer Rekursion). Ersetzt bei aktiver Kompaktierung
+        // den obigen bankT-basierten Auto-Zoom für die Bank-Darstellung
+        // vollständig (siehe project() in renderFrame()) - beide Modi sind
+        // bewusst gegenseitig exklusiv, analog zum Algorithmus-Spiel-Tool.
+        COMPACTION_ENABLED = document.getElementById('compactionEnabledInput').checked;
+        if (COMPACTION_ENABLED) {
+            GLOBAL_COMPACTION_WAYPOINTS = computeCompactionWaypoints(bank_pieces, local_max_time);
+            GLOBAL_COMPACTION_LOOKUP = makeCompactedRectLookup(GLOBAL_COMPACTION_WAYPOINTS);
+            GLOBAL_COMPACTION_ZOOM_SPLINE = buildMonotoneSpline(GLOBAL_COMPACTION_WAYPOINTS.map(wp => ({ t: wp.t, v: wp.z })));
+        } else {
+            GLOBAL_COMPACTION_WAYPOINTS = [];
+            GLOBAL_COMPACTION_LOOKUP = null;
+            GLOBAL_COMPACTION_ZOOM_SPLINE = null;
+        }
 
         MAX_TIME = local_max_time;
         document.getElementById('timeSlider').max = MAX_TIME;
@@ -958,19 +998,38 @@ function renderFrame() {
 
     const BANK_X_OFFSET = SQRT2 + 0.1;
     const bankT = getBankTransform(u_time);
-    bankZoomLabel.innerText = formatZoomFactor(bankT.z);
+    // Bei aktiver Kompaktierung ersetzt sie den bankT-basierten Auto-Zoom
+    // vollständig (siehe project() unten) - das Zoom-Readout zeigt dann
+    // konsequenterweise auch deren eigenen Zoom-Faktor statt bankT.z.
+    let displayBankZoom = (COMPACTION_ENABLED && GLOBAL_COMPACTION_ZOOM_SPLINE) ? GLOBAL_COMPACTION_ZOOM_SPLINE(u_time) : bankT.z;
+    bankZoomLabel.innerText = formatZoomFactor(displayBankZoom);
     bankAreaLabel.innerText = (bankT.area * 100).toLocaleString('de-DE', { maximumFractionDigits: bankT.area < 0.01 ? 4 : 1 }) + '%';
 
     ctx.save();
     ctx.translate(50, H - 50);
     ctx.scale(1, -1);
 
-    function project(x, y, w, h, isTarget) {
+    // "piece" (optional, nur für isTarget=false relevant): bei aktiver
+    // Kompaktierung wird darüber der gecachte Pro-Stück-Lookup
+    // (GLOBAL_COMPACTION_LOOKUP, siehe compileSystem()) statt des
+    // gemeinsamen bankT-Zooms verwendet - Kompaktierung ordnet jedes Stück
+    // INDIVIDUELL um (keine gemeinsame affine Transformation mehr möglich,
+    // siehe bank-core.js TEIL 2), x/y/w/h werden dafür nicht mehr direkt
+    // gebraucht (kommen bereits fertig transformiert aus dem Lookup).
+    function project(x, y, w, h, isTarget, piece) {
         if (isTarget) {
             let final_x = x * V_SCALE_TARGET;
             let final_y = y * V_SCALE_TARGET;
             let final_w = w * V_SCALE_TARGET;
             let final_h = h * V_SCALE_TARGET;
+            return [final_x * scale, final_y * scale, final_w * scale, final_h * scale];
+        }
+        if (COMPACTION_ENABLED && piece && GLOBAL_COMPACTION_LOOKUP) {
+            let r = GLOBAL_COMPACTION_LOOKUP(piece, u_time);
+            let final_x = BANK_X_OFFSET + r.x * V_SCALE_BANK;
+            let final_y = r.y * V_SCALE_BANK;
+            let final_w = r.w * V_SCALE_BANK;
+            let final_h = r.h * V_SCALE_BANK;
             return [final_x * scale, final_y * scale, final_w * scale, final_h * scale];
         }
         // Fit-to-Frame-Autozoom mit wanderndem Zentrum (siehe getBankTransform).
@@ -996,8 +1055,15 @@ function renderFrame() {
     let [t_x, t_y, t_w, t_h] = project(0, 0, SQRT2 / V_SCALE_TARGET, SQRT2 / V_SCALE_TARGET, true);
     ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.strokeRect(t_x, t_y, t_w, t_h);
 
-    let [b_x, b_y, b_w, b_h] = project(0, 0, 1.0, 1.0, false);
-    ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.strokeRect(b_x, b_y, b_w, b_h);
+    // Der äußere [0,1]x[0,1]-Rahmen der Bank hat bei aktiver Kompaktierung
+    // keine feste, gemeinsame Entsprechung mehr (jedes Stück hat seine
+    // eigene Transformation) - wird dann bewusst nicht gezeichnet, statt
+    // einen irreführenden (nur für den UNKOMPAKTIERTEN Zustand gültigen)
+    // Rahmen zu zeigen.
+    if (!COMPACTION_ENABLED) {
+        let [b_x, b_y, b_w, b_h] = project(0, 0, 1.0, 1.0, false);
+        ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.strokeRect(b_x, b_y, b_w, b_h);
+    }
 
     // PATCH V36: Das "1x1"-Basisquadrat (axes[0], die Ziffer "1" vor dem
     // Komma) wurde bisher nie explizit gezeichnet - die Schalen-Schleife
@@ -1027,7 +1093,7 @@ function renderFrame() {
 
     for (let p of bank_pieces) {
         if (u_time >= p.born_time && u_time < p.cut_time && u_time < p.taken_time) {
-            let [px, py, pw, ph] = project(p.x, p.y, p.w, p.h, false);
+            let [px, py, pw, ph] = project(p.x, p.y, p.w, p.h, false, p);
             if (pw < 0.2 && ph < 0.2) continue;
             ctx.fillStyle = COLORS[p.k % COLORS.length];
             ctx.fillRect(px, py, pw, ph);
@@ -1099,7 +1165,7 @@ function renderFrame() {
         // beeinflussen - target_w/target_h bleiben daher auf ihren korrekten
         // Default-Werten (tw, th), genau wie bei Z_direct/S_macro.
 
-        let [start_x, start_y, start_w, start_h] = project(p.bp.x, p.bp.y, p.bp.w, p.bp.h, false);
+        let [start_x, start_y, start_w, start_h] = project(p.bp.x, p.bp.y, p.bp.w, p.bp.h, false, p.bp);
         let [end_x, end_y, end_w, end_h] = project(tx, ty, target_w, target_h, true);
 
         let px = start_x * (1 - fly_t) + end_x * fly_t;
@@ -1227,6 +1293,7 @@ document.getElementById('baseInput').addEventListener('change', compileSystem);
 document.getElementById('depthInput').addEventListener('change', compileSystem);
 document.getElementById('zoomThresholdInput').addEventListener('change', compileSystem);
 document.getElementById('transformMode').addEventListener('change', compileSystem);
+document.getElementById('compactionEnabledInput').addEventListener('change', compileSystem);
 
 timeSlider.addEventListener('input', (e) => { u_time = parseFloat(e.target.value); updateOutputs(); });
 modeSliderAB.addEventListener('input', (e) => { u_mode_AB = parseFloat(e.target.value); updateOutputs(); });
@@ -1328,6 +1395,9 @@ function buildStateParams() {
     let p = new URLSearchParams();
     for (let param in URL_FIELD_MAP) {
         p.set(param, document.getElementById(URL_FIELD_MAP[param]).value);
+    }
+    for (let param in URL_CHECKBOX_FIELD_MAP) {
+        p.set(param, document.getElementById(URL_CHECKBOX_FIELD_MAP[param]).checked ? '1' : '0');
     }
     p.set('modeab', u_mode_AB.toFixed(4));
     p.set('time', u_time.toFixed(3));
