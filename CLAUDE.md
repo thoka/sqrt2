@@ -105,3 +105,59 @@ Treffer nötig (z.B. reine Kamera-/Zoom-Bewegung) → `buildDampedFilter()`
 für spürbar ruhigere, langsamere Bewegung bei vielen dicht getakteten
 Stützpunkten. Im Zweifel bei Sicherheitsfragen: eher `computeSegmentBlend()`
 - und bei Bedarf mit dem Nutzer klären.
+
+## Layout-Umordnungen mehrerer Objekte: Masse/Trägheit statt Förderband
+
+Wenn ein automatisierter Vorgang MEHRERE Objekte gleichzeitig neu anordnet
+(Lücken schließen, Umsortieren, o.ä.), NICHT alle gleich behandeln oder
+"alles nach einer festen Regel verschieben" (z.B. "alles ab hier rutscht um
+X" - ein reines Förderband/Prefix-Sum-Verfahren). Stattdessen wie ein
+physikalisches System denken: die Transformation wird über den
+GRÖSSEN-/MASSE-GEWICHTETEN Schwerpunkt definiert. Große (schwere) Objekte
+bekommen dadurch am wenigsten Beschleunigung - sie bleiben nahezu fix,
+kleine/leichte Objekte übernehmen den Großteil der Bewegung. Das Ergebnis
+muss sich so anfühlen, als hätten die Objekte Gewicht, nicht als würden sie
+willkürlich/mit roher Gewalt durch die Gegend geschoben.
+
+**Warum:** In der Kompaktierung (`buildCompactionMap()` in `bank-core.js`)
+verschob das ursprüngliche Prefix-Sum-Verfahren (Gruppe 0 fix bei Koordinate
+0, jede Lücke schließt sich, indem ALLES danach nachrückt) beliebig GROSSE
+Flächen, nur weil irgendwo weit VOR ihnen ein winziges Stück verschwand -
+sichtbar als "große Elemente werden sehr schnell bewegt". Fix: die
+zusammenhängende Gruppe mit der größten Gesamtfläche ist der Anker und
+bleibt an ihrer eigenen (unveränderten) Koordinate; alle anderen Gruppen
+werden lückenlos an sie herangerückt.
+
+**Wie anwenden:** Bewusst zustandslos lösbar (wie der Rest von
+`bank-core.js`) - der Anker wird bei jedem Aufruf frisch aus den aktuell
+sichtbaren/relevanten Objekten bestimmt, keine über die Zeit mitgeführte
+Position pro Objekt nötig. Der Anker bleibt zwischen benachbarten
+Zeitpunkten "for free" stabil, solange sich seine Mitgliedschaft nicht
+ändert (Regelfall) - wechselt der schwerste Teil doch einmal, ist das
+einfach ein weiterer, ganz normal weich überblendeter Übergang.
+
+## Einstellungen & URL-Zustand: EIN Objekt statt mehrerer Listen
+
+Jede einstellbare Größe (Compiler-Input, Checkbox, Laufzeit-Zustand wie
+"spielt gerade ab") gehört in EIN einziges Array (`SETTINGS` in
+`sqrt2.html`) mit `{ key, phase, get(), set(v) }` - NICHT in mehrere parallel
+gepflegte Listen (eine für `<input>`-Felder, eine für Checkboxen, eine für
+den URL-Export, ein eigener Init-Block für alles, was erst nach dem
+Kompilieren gültig ist). Zwei generische Funktionen (`applyPhase(phase)` zum
+Einlesen, `buildStateParams()` zum Exportieren) laufen über dieselbe Liste.
+
+**Warum:** vier von Hand synchron gehaltene Stellen für dieselbe
+Einstellung sind fehleranfällig (eine neue Einstellung wird leicht in einer
+Liste ergänzt, in einer anderen vergessen) und genau das ist passiert - der
+Wiedergabe-Zustand ("läuft die Animation") hatte gar keine URL-Anbindung,
+ein geteilter Link fror zwar die Zeitposition ein, startete sie aber nie.
+
+**Wie anwenden:** neue Einstellung → ein neuer `SETTINGS`-Eintrag, fertig.
+Reine `<input>`/`<select>`/Checkbox-Bindungen über die `bindEl()`-Hilfsfunktion
+abkürzen. Alles, was von einer erst noch zu berechnenden Simulation abhängt
+(oder reiner Laufzeit-Zustand ist), bekommt `phase: 'post'` und wird NACH
+dem Kompilieren angewendet; alles andere `phase: 'pre'`, GANZ am Anfang.
+Sonderfälle (z.B. ein alternativer URL-Parameter wie `tick` statt `time`)
+gehören als `resolveFromUrl()`-Hook AUF den jeweiligen Eintrag, nicht als
+Extra-`if`-Zweig außerhalb der generischen Schleife - sonst wächst dieselbe
+Zersplitterung an anderer Stelle einfach nach.

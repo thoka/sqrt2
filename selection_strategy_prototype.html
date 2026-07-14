@@ -92,7 +92,7 @@
 </div>
 
 <script type="module">
-import { buildSystem, computeCompactionWaypoints, makeCompactedRectLookup } from './bank-core.js';
+import { buildSystem, computeCompactionWaypoints, makeCompactedLogicalRectLookup, computeCompactionFitStates, applyCompactionFit } from './bank-core.js';
 import { buildDampedFilter, buildDampedFilterBundle } from './smoothing.js';
 
 let BASE = 10, N_MAX = 10;
@@ -101,12 +101,17 @@ let local_max_time = 1;
 let thresholdPowers = 0;
 let compactionEnabled = false;
 let compactionWaypointsCache = [];
-let compactionZoomSpline = null; // aus compactionWaypointsCache gebaut, siehe recompile()/render()
-// makeCompactedRectLookup() statt getSmoothedCompactedRect() direkt: cacht
-// die pro-Stück-Spline (siehe bank-core.js) - ohne Cache gemessen ein
-// echtes Performance-Problem bei tiefer Rekursion (CLAUDE.md "Measure
-// before optimizing"), nicht nur beim Haupttool.
-let compactionRectLookup = null;
+// Zwei getrennte, unterschiedlich schnelle Ebenen (siehe bank-core.js
+// computeCompactionFitStates()-Kommentar für die Sicherheits-Begründung):
+// compactionLogicalLookup = schnell/exakt (Nichtüberlappungs-Garantie),
+// compactionFitSpline = gedämpft (Kamera/Zoom-Fenster, spürbar träger -
+// siehe Gesprächsverlauf "Bewegungen der Bank... viel zu schnell").
+// makeCompactedLogicalRectLookup() statt getSmoothedCompactedLogicalRect()
+// direkt: cacht die Wegpunkt-Zeiten (siehe bank-core.js) - ohne das
+// gemessen ein echtes Performance-Problem bei tiefer Rekursion (CLAUDE.md
+// "Measure before optimizing"), nicht nur beim Haupttool.
+let compactionLogicalLookup = null;
+let compactionFitSpline = null;
 
 // ==================== Zoom (Bounding-Box-Fit mit Schwellwert) ====================
 let checkpointTimes = [], checkpointZoom = [];
@@ -172,6 +177,9 @@ window.addEventListener('resize', resize);
 function render() {
     ctx.clearRect(0,0,canvas.width,canvas.height);
     let T = getBankTransform(u_time);
+    // Einmal pro Frame ausgewertet (gedämpft) statt pro Stück - siehe
+    // compactionFitSpline in recompile().
+    let compactionFit = (compactionEnabled && compactionFitSpline) ? compactionFitSpline.at(u_time) : null;
     let scale = Math.min(canvas.width, canvas.height) * 0.8;
     let offX = canvas.width/2 - scale/2, offY = canvas.height/2 - scale/2;
 
@@ -184,8 +192,9 @@ function render() {
     let nextTick = Math.floor(u_time) + 1;
     for (let p of visible) {
         let zx, zy, zw, zh;
-        if (compactionEnabled) {
-            let r = compactionRectLookup(p, u_time);
+        if (compactionEnabled && compactionFit) {
+            let logical = compactionLogicalLookup(p, u_time);
+            let r = applyCompactionFit(logical, compactionFit);
             zx = r.x; zy = r.y; zw = r.w; zh = r.h;
         } else {
             zx = p.x*T.z + T.offsetX; zy = p.y*T.z + T.offsetY; zw = p.w*T.z; zh = p.h*T.z;
@@ -212,7 +221,7 @@ function render() {
     let bboxArea = (maxX>minX) ? (maxX-minX)*(maxY-minY) : 1;
     document.getElementById('statCount').innerText = "Sichtbare Stücke: " + visible.length;
 
-    let displayZoom = (compactionEnabled && compactionZoomSpline) ? compactionZoomSpline(u_time) : T.z;
+    let displayZoom = compactionFit ? compactionFit.z : T.z;
     document.getElementById('statZoom').innerText = "Zoom-Faktor: " + displayZoom.toFixed(2) + "×";
     document.getElementById('statFill').innerText = "Füllgrad (Fläche/BBox): " + (bboxArea>0 ? (area/bboxArea*100).toFixed(1) : "0") + "%";
 
@@ -258,11 +267,15 @@ function recompile() {
         computeZoomCheckpoints();
         if (compactionEnabled) {
             compactionWaypointsCache = computeCompactionWaypoints(sim.bank_pieces, local_max_time);
-            // Nur das Zoom-Faktor-Readout - NICHT compactionRectLookup (die
-            // tatsächlichen Stück-Positionen brauchen weiterhin exakte,
-            // geteilte Gewichte für die Nichtüberlappungs-Garantie).
-            compactionZoomSpline = buildDampedFilter(compactionWaypointsCache.map(wp => ({ t: wp.t, v: wp.z })), Math.max(local_max_time * 0.03, 0.5));
-            compactionRectLookup = makeCompactedRectLookup(compactionWaypointsCache);
+            // Schnell/exakt (Nichtüberlappungs-Garantie).
+            compactionLogicalLookup = makeCompactedLogicalRectLookup(compactionWaypointsCache);
+            // Gedämpft (Kamera/Zoom-Fenster) - eigene, spürbar trägere
+            // Zeitkonstante, unabhängig vom schnellen Lookup oben.
+            compactionFitSpline = buildDampedFilterBundle(
+                computeCompactionFitStates(compactionWaypointsCache),
+                ['z', 'offsetX', 'offsetY'],
+                Math.max(local_max_time * 0.03, 0.5)
+            );
         }
         let maxT = Math.ceil(local_max_time);
         document.getElementById('timeSlider').max = maxT;

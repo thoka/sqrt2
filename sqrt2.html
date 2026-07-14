@@ -168,9 +168,17 @@
         <label>Zoom-Schwellwert (Potenzen ignorieren)</label>
         <input type="number" id="zoomThresholdInput" min="0" max="10" step="1" value="0">
     </div>
+    <div class="control-group" style="margin-top:6px;">
+        <label>Bank-/Kompaktierungs-Zoom: Trägheit (kleiner = schneller)</label>
+        <input type="number" id="zoomSpeedInput" min="0.002" max="0.08" step="0.001" value="0.012">
+    </div>
     <div class="control-group" style="margin-top:6px; flex-direction: row; align-items: center; gap: 8px;">
         <input type="checkbox" id="compactionEnabledInput" style="width: auto;">
         <label style="margin: 0;" for="compactionEnabledInput">Kompaktierung ("Zeilen/Spalten ausblenden") statt Bank-Zoom</label>
+    </div>
+    <div class="control-group" style="margin-top:6px;">
+        <label>Kompaktierung: Übergangsdauer (Ticks)</label>
+        <input type="number" id="compactionTransitionInput" min="0" max="30" step="1" value="3">
     </div>
 
     <hr style="border: 1px solid #334155; margin: 10px 0;">
@@ -217,7 +225,7 @@
 </div>
 
 <script type="module">
-import { buildSystem, buildTickTimeMapping, computeCompactionWaypoints, makeCompactedRectLookup } from './bank-core.js';
+import { buildSystem, buildTickTimeMapping, computeCompactionWaypoints, makeCompactedLogicalRectLookup, computeCompactionFitStates, applyCompactionFit } from './bank-core.js';
 import { buildMonotoneSpline, buildDampedFilterBundle, buildDampedFilter } from './smoothing.js';
 
 const COLORS = ["#cbd5e1", "#ef476f", "#ffd166", "#06d6a0", "#118ab2", "#8338ec", "#f78c6b", "#ff006e", "#3a86ff", "#fb5607", "#ffbe0b"];
@@ -225,39 +233,102 @@ const COLORS = ["#cbd5e1", "#ef476f", "#ffd166", "#06d6a0", "#118ab2", "#8338ec"
 // oben rechts an/aus - Standard aus (nur kurze Symbole l/l²/R).
 const NUMBER_PANEL_VERBOSE = false;
 
-// === URL-Parameter: Einstellungen (für Tests/Links) ===
-// Werden GANZ AM ANFANG direkt auf die zugehörigen <input>/<select>-Elemente
-// geschrieben (roher DOM-Zugriff über getElementById, ohne auf die weiter
-// unten deklarierten JS-Konstanten zu warten) - jeder spätere Code, der
-// .value von diesen Elementen liest (compileSystem(), die Init-Blöcke von
-// lineWidthInput/pauseDurationInput/autoZoomMinPxInput weiter unten, ...),
-// bekommt den überschriebenen Wert dadurch automatisch, ohne eigene
-// Sonderbehandlung. Wiedergabe-Position (time/tick) und Modus-B-Regler
-// (modeab) hängen dagegen von der erst noch zu kompilierenden Simulation ab
-// (MAX_TIME/GLOBAL_TTM) und werden daher separat, NACH compileSystem() am
-// Ende dieses Scripts angewendet (siehe dort). Das Gegenstück (Button "Als
-// URL kopieren") baut denselben Parameter-Satz, siehe buildStateParams().
+// === Einstellungen: EIN Objekt, generisch aus der URL initialisierbar ===
+// Jede Einstellung (egal ob simples <input>, eine Checkbox oder reiner
+// Laufzeit-Zustand wie "spielt gerade ab") ist genau EIN Eintrag in SETTINGS
+// mit ihrem URL-Parameter-Namen sowie get()/set() - neue Einstellungen
+// brauchen dadurch nur noch einen einzigen neuen Eintrag hier (vorher:
+// URL_FIELD_MAP UND URL_CHECKBOX_FIELD_MAP UND ein Eintrag in
+// buildStateParams() UND ggf. ein eigener Init-Block - vier Stellen für
+// jede neue Einstellung, leicht auseinanderlaufend).
+//
+// phase 'pre': reine Compiler-Eingaben (<input>/<select>, direkt per
+// getElementById lesbar) - werden GANZ AM ANFANG angewendet (vor
+// compileSystem()), damit jeder spätere Code (compileSystem() selbst, die
+// Init-Blöcke von lineWidthInput/pauseDurationInput/... weiter unten), der
+// .value/.checked liest, den überschriebenen Wert automatisch sieht.
+// phase 'post': hängt von der erst noch zu kompilierenden Simulation ab
+// (MAX_TIME/GLOBAL_TTM) oder ist reiner Laufzeit-Zustand (isPlaying) -
+// wird erst NACH compileSystem() angewendet, siehe applyPhase() weiter
+// unten. Das Gegenstück (Button "Als URL kopieren") baut denselben
+// Parameter-Satz aus DERSELBEN Liste, siehe buildStateParams().
 const URL_PARAMS = new URLSearchParams(window.location.search);
-const URL_FIELD_MAP = {
-    base: 'baseInput', depth: 'depthInput', mode: 'transformMode',
-    zoomthresh: 'zoomThresholdInput', autozoom: 'autoZoomMinPxInput',
-    linewidth: 'lineWidthInput', pause: 'pauseDurationInput',
-};
-for (let param in URL_FIELD_MAP) {
-    if (URL_PARAMS.has(param)) {
-        let el = document.getElementById(URL_FIELD_MAP[param]);
-        if (el) el.value = URL_PARAMS.get(param);
-    }
+
+// Hilfsfunktion für die häufigste Sorte Einstellung: direkt an ein
+// <input>/<select>-Element gebunden (kind 'value') oder eine Checkbox
+// (kind 'checkbox').
+function bindEl(elId, kind) {
+    return {
+        get: () => {
+            let el = document.getElementById(elId);
+            return kind === 'checkbox' ? (el.checked ? '1' : '0') : el.value;
+        },
+        set: (v) => {
+            let el = document.getElementById(elId);
+            if (!el) return;
+            if (kind === 'checkbox') el.checked = (v === '1'); else el.value = v;
+        },
+    };
 }
-// Checkboxen brauchen .checked statt .value - eigene, kleine Zuordnung
-// statt URL_FIELD_MAP mit Sonderfällen zu verunreinigen.
-const URL_CHECKBOX_FIELD_MAP = { compaction: 'compactionEnabledInput' };
-for (let param in URL_CHECKBOX_FIELD_MAP) {
-    if (URL_PARAMS.has(param)) {
-        let el = document.getElementById(URL_CHECKBOX_FIELD_MAP[param]);
-        if (el) el.checked = URL_PARAMS.get(param) === '1';
+
+const SETTINGS = [
+    { key: 'base', phase: 'pre', ...bindEl('baseInput', 'value') },
+    { key: 'depth', phase: 'pre', ...bindEl('depthInput', 'value') },
+    { key: 'mode', phase: 'pre', ...bindEl('transformMode', 'value') },
+    { key: 'zoomthresh', phase: 'pre', ...bindEl('zoomThresholdInput', 'value') },
+    { key: 'autozoom', phase: 'pre', ...bindEl('autoZoomMinPxInput', 'value') },
+    { key: 'zoomspeed', phase: 'pre', ...bindEl('zoomSpeedInput', 'value') },
+    { key: 'linewidth', phase: 'pre', ...bindEl('lineWidthInput', 'value') },
+    { key: 'pause', phase: 'pre', ...bindEl('pauseDurationInput', 'value') },
+    { key: 'compaction', phase: 'pre', ...bindEl('compactionEnabledInput', 'checkbox') },
+    { key: 'transition', phase: 'pre', ...bindEl('compactionTransitionInput', 'value') },
+    // Laufzeit-Zustand - hängt von der kompilierten Simulation ab
+    // (MAX_TIME/GLOBAL_TTM für time/tick) bzw. ist reiner JS-Zustand
+    // (play, siehe setPlaying() weiter unten).
+    {
+        key: 'modeab', phase: 'post',
+        get: () => u_mode_AB.toFixed(4),
+        set: (v) => { u_mode_AB = Math.max(0, Math.min(1, parseFloat(v) || 0)); modeSliderAB.value = u_mode_AB; },
+    },
+    {
+        key: 'time', phase: 'post',
+        get: () => u_time.toFixed(3),
+        set: (v) => { u_time = Math.max(0, Math.min(MAX_TIME, parseFloat(v) || 0)); timeSlider.value = u_time; },
+        // "time" hat Vorrang vor "tick", falls beide angegeben sind - "tick"
+        // ist nur eine alternative Eingabeform derselben Einstellung (für
+        // den direkten Zustandsvergleich mit dem Test-Tool, das Tick als
+        // native Zeitachse nutzt), braucht daher keinen eigenen Eintrag.
+        resolveFromUrl: (params) => {
+            if (params.has('time')) return params.get('time');
+            if (params.has('tick') && GLOBAL_TTM) {
+                let tick = Math.max(0, Math.min(GLOBAL_TTM.maxTick, Math.round(parseFloat(params.get('tick')) || 0)));
+                return String(GLOBAL_TTM.tickToTime(tick));
+            }
+            return undefined;
+        },
+    },
+    {
+        key: 'play', phase: 'post',
+        get: () => isPlaying ? '1' : '0',
+        set: (v) => setPlaying(v === '1'),
+    },
+];
+
+// Wendet alle Einstellungen einer Phase an, deren URL-Parameter gesetzt ist
+// (bzw. deren resolveFromUrl() einen Wert liefert). Gibt zurück, ob
+// irgendetwas geändert wurde (für ein abschließendes updateOutputs()).
+function applyPhase(phase) {
+    let touched = false;
+    for (let s of SETTINGS) {
+        if (s.phase !== phase) continue;
+        let raw = s.resolveFromUrl ? s.resolveFromUrl(URL_PARAMS) : (URL_PARAMS.has(s.key) ? URL_PARAMS.get(s.key) : undefined);
+        if (raw === undefined) continue;
+        s.set(raw);
+        touched = true;
     }
+    return touched;
 }
+applyPhase('pre');
 
 let N_MAX = 16; let BASE = 10;
 let TOTAL_STEPS = 0; let MAX_TIME = 0; let P_FINAL = 0;
@@ -302,15 +373,23 @@ let GLOBAL_AUTO_ZOOM_CHECKPOINTS = [];
 // nur noch ausgewertet.
 let GLOBAL_AUTO_ZOOM_SPLINE = null;
 // Kompaktierung ("Zeilen/Spalten ausblenden", siehe bank-core.js TEIL 2 und
-// README Abschnitt 6.2/11) - analog zum Algorithmus-Spiel-Tool, hier fürs
+// README Abschnitt 6.2/12) - analog zum Algorithmus-Spiel-Tool, hier fürs
 // Haupttool ergänzt. Nur berechnet, wenn COMPACTION_ENABLED aktiv ist (nicht
-// kostenlos bei tiefer Rekursion, siehe makeCompactedRectLookup-Kommentar
-// in bank-core.js). GLOBAL_COMPACTION_LOOKUP cacht pro Stück, GLOBAL_
-// COMPACTION_ZOOM_SPLINE ist nur fürs Zoom-Readout (bankZoomLabel).
+// kostenlos bei tiefer Rekursion, siehe makeCompactedLogicalRectLookup-
+// Kommentar in bank-core.js).
+//
+// ZWEI GETRENNTE, unterschiedlich schnelle Ebenen (siehe bank-core.js
+// computeCompactionFitStates()-Kommentar für die Sicherheits-Begründung):
+// GLOBAL_COMPACTION_LOGICAL_LOOKUP = schnell/exakt, "wo steht jedes Stück
+// im kompaktierten Layout" (nötig für die Nichtüberlappungs-Garantie).
+// GLOBAL_COMPACTION_FIT_SPLINE = gedämpft, "wie wird dieses Layout
+// aufs [0,1]-Fenster gezoomt/zentriert" (die Kamera - darf/soll spürbar
+// träger sein, siehe Gesprächsverlauf "Bewegungen der Bank... viel zu
+// schnell").
 let COMPACTION_ENABLED = false;
 let GLOBAL_COMPACTION_WAYPOINTS = [];
-let GLOBAL_COMPACTION_LOOKUP = null;
-let GLOBAL_COMPACTION_ZOOM_SPLINE = null;
+let GLOBAL_COMPACTION_LOGICAL_LOOKUP = null;
+let GLOBAL_COMPACTION_FIT_SPLINE = null;
 
 // === SYSTEM A: COMPILER ===
 //
@@ -579,8 +658,13 @@ function compileSystem() {
         // Positionen bleibt sicher") gilt für JEDE Zeitkonstante TAU, siehe
         // README Abschnitt 6.1 - anders als beim Auto-Zoom-Exponenten
         // (dort MUSS jeder Wegpunkt exakt getroffen werden, siehe
-        // getSmoothedAutoZoomExp() weiter unten).
-        const BANK_ZOOM_TAU = Math.max(local_max_time * 0.03, 0.5);
+        // getSmoothedAutoZoomExp() weiter unten). Der Koeffizient (Anteil von
+        // local_max_time) ist einstellbar (zoomSpeedInput, "Trägheit" -
+        // kleiner = schneller folgt die Kamera) statt fest verdrahtet:
+        // frühere feste 0.03 fühlten sich fürs Ausstellungsstück "viel zu
+        // langsam" an (Gesprächsverlauf), Default hier daher niedriger.
+        const ZOOM_SPEED_COEF = parseFloat(document.getElementById('zoomSpeedInput').value) || 0.012;
+        const BANK_ZOOM_TAU = Math.max(local_max_time * ZOOM_SPEED_COEF, 0.5);
         GLOBAL_BANK_ZOOM_SPLINE = buildDampedFilterBundle(
             eventTimes.map((t, i) => ({ t, ...bank_zoom_states[i] })),
             ['z', 'offsetX', 'offsetY', 'area'],
@@ -595,18 +679,32 @@ function compileSystem() {
         // bewusst gegenseitig exklusiv, analog zum Algorithmus-Spiel-Tool.
         COMPACTION_ENABLED = document.getElementById('compactionEnabledInput').checked;
         if (COMPACTION_ENABLED) {
-            GLOBAL_COMPACTION_WAYPOINTS = computeCompactionWaypoints(bank_pieces, local_max_time);
-            GLOBAL_COMPACTION_LOOKUP = makeCompactedRectLookup(GLOBAL_COMPACTION_WAYPOINTS);
-            // Nur das Zoom-Faktor-TEXT-Readout (bankZoomLabel) - NICHT
-            // GLOBAL_COMPACTION_LOOKUP (die tatsächlichen Stück-Positionen):
-            // die brauchen weiterhin computeSegmentBlend()s exakte,
-            // geteilte Gewichte für die Nichtüberlappungs-Garantie (siehe
-            // Abschnitt 6.2) - nur die Zahlenanzeige darf/soll träger sein.
-            GLOBAL_COMPACTION_ZOOM_SPLINE = buildDampedFilter(GLOBAL_COMPACTION_WAYPOINTS.map(wp => ({ t: wp.t, v: wp.z })), Math.max(local_max_time * 0.03, 0.5));
+            // transitionTicks einstellbar (compactionTransitionInput, siehe
+            // README Abschnitt 6.2 "Siebte Voraussetzung") - Default hier
+            // niedriger als der Bibliotheks-Default in bank-core.js (weniger
+            // Wartezeit bis eine Lücke sichtbar schließt, Gesprächsverlauf).
+            let transitionTicks = parseInt(document.getElementById('compactionTransitionInput').value);
+            if (!(transitionTicks >= 0)) transitionTicks = 3;
+            GLOBAL_COMPACTION_WAYPOINTS = computeCompactionWaypoints(bank_pieces, local_max_time, transitionTicks);
+            // Schnell/exakt: "wo steht jedes Stück im kompaktierten Layout"
+            // (computeSegmentBlend()-basiert, für die Nichtüberlappungs-
+            // Garantie - siehe bank-core.js).
+            GLOBAL_COMPACTION_LOGICAL_LOOKUP = makeCompactedLogicalRectLookup(GLOBAL_COMPACTION_WAYPOINTS);
+            // Gedämpft: "wie wird das Layout aufs [0,1]-Fenster gezoomt" -
+            // dieselbe (jetzt einstellbare) Zeitkonstante wie beim regulären
+            // Bank-Zoom oben, UNABHÄNGIG von den schnellen Logical-Rects.
+            // Sicherheit bleibt erhalten, weil JEDE gemeinsame affine
+            // Skalierung+Verschiebung Nichtüberlappung bewahrt, siehe
+            // computeCompactionFitStates()-Kommentar.
+            GLOBAL_COMPACTION_FIT_SPLINE = buildDampedFilterBundle(
+                computeCompactionFitStates(GLOBAL_COMPACTION_WAYPOINTS),
+                ['z', 'offsetX', 'offsetY'],
+                BANK_ZOOM_TAU
+            );
         } else {
             GLOBAL_COMPACTION_WAYPOINTS = [];
-            GLOBAL_COMPACTION_LOOKUP = null;
-            GLOBAL_COMPACTION_ZOOM_SPLINE = null;
+            GLOBAL_COMPACTION_LOGICAL_LOOKUP = null;
+            GLOBAL_COMPACTION_FIT_SPLINE = null;
         }
 
         MAX_TIME = local_max_time;
@@ -1017,9 +1115,12 @@ function renderFrame() {
     const BANK_X_OFFSET = SQRT2 + 0.1;
     const bankT = getBankTransform(u_time);
     // Bei aktiver Kompaktierung ersetzt sie den bankT-basierten Auto-Zoom
-    // vollständig (siehe project() unten) - das Zoom-Readout zeigt dann
-    // konsequenterweise auch deren eigenen Zoom-Faktor statt bankT.z.
-    let displayBankZoom = (COMPACTION_ENABLED && GLOBAL_COMPACTION_ZOOM_SPLINE) ? GLOBAL_COMPACTION_ZOOM_SPLINE(u_time) : bankT.z;
+    // vollständig (siehe project() unten) - EINMAL pro Frame ausgewertet
+    // (gedämpft, siehe GLOBAL_COMPACTION_FIT_SPLINE in compileSystem()),
+    // nicht pro Stück. Das Zoom-Readout zeigt konsequenterweise auch
+    // deren eigenen Zoom-Faktor statt bankT.z.
+    const compactionFit = (COMPACTION_ENABLED && GLOBAL_COMPACTION_FIT_SPLINE) ? GLOBAL_COMPACTION_FIT_SPLINE.at(u_time) : null;
+    let displayBankZoom = compactionFit ? compactionFit.z : bankT.z;
     bankZoomLabel.innerText = formatZoomFactor(displayBankZoom);
     bankAreaLabel.innerText = (bankT.area * 100).toLocaleString('de-DE', { maximumFractionDigits: bankT.area < 0.01 ? 4 : 1 }) + '%';
 
@@ -1029,11 +1130,15 @@ function renderFrame() {
 
     // "piece" (optional, nur für isTarget=false relevant): bei aktiver
     // Kompaktierung wird darüber der gecachte Pro-Stück-Lookup
-    // (GLOBAL_COMPACTION_LOOKUP, siehe compileSystem()) statt des
+    // (GLOBAL_COMPACTION_LOGICAL_LOOKUP, siehe compileSystem()) statt des
     // gemeinsamen bankT-Zooms verwendet - Kompaktierung ordnet jedes Stück
-    // INDIVIDUELL um (keine gemeinsame affine Transformation mehr möglich,
-    // siehe bank-core.js TEIL 2), x/y/w/h werden dafür nicht mehr direkt
-    // gebraucht (kommen bereits fertig transformiert aus dem Lookup).
+    // INDIVIDUELL um. Zwei getrennte Ebenen (siehe bank-core.js
+    // computeCompactionFitStates()): der schnelle/exakte Logical-Lookup
+    // (wo steht das Stück im kompaktierten Layout) und der gedämpfte,
+    // EINMAL pro Frame oben ausgewertete compactionFit (wie wird dieses
+    // Layout ins [0,1]-Fenster gezoomt) - applyCompactionFit() kombiniert
+    // beides. Eine gemeinsame affine Abbildung wie compactionFit bewahrt
+    // Nichtüberlappung unabhängig von ihrer Trägheit, siehe dort.
     function project(x, y, w, h, isTarget, piece) {
         if (isTarget) {
             let final_x = x * V_SCALE_TARGET;
@@ -1042,8 +1147,9 @@ function renderFrame() {
             let final_h = h * V_SCALE_TARGET;
             return [final_x * scale, final_y * scale, final_w * scale, final_h * scale];
         }
-        if (COMPACTION_ENABLED && piece && GLOBAL_COMPACTION_LOOKUP) {
-            let r = GLOBAL_COMPACTION_LOOKUP(piece, u_time);
+        if (COMPACTION_ENABLED && piece && GLOBAL_COMPACTION_LOGICAL_LOOKUP && compactionFit) {
+            let logical = GLOBAL_COMPACTION_LOGICAL_LOOKUP(piece, u_time);
+            let r = applyCompactionFit(logical, compactionFit);
             let final_x = BANK_X_OFFSET + r.x * V_SCALE_BANK;
             let final_y = r.y * V_SCALE_BANK;
             let final_w = r.w * V_SCALE_BANK;
@@ -1312,6 +1418,8 @@ document.getElementById('depthInput').addEventListener('change', compileSystem);
 document.getElementById('zoomThresholdInput').addEventListener('change', compileSystem);
 document.getElementById('transformMode').addEventListener('change', compileSystem);
 document.getElementById('compactionEnabledInput').addEventListener('change', compileSystem);
+document.getElementById('compactionTransitionInput').addEventListener('change', compileSystem);
+document.getElementById('zoomSpeedInput').addEventListener('change', compileSystem);
 
 timeSlider.addEventListener('input', (e) => { u_time = parseFloat(e.target.value); updateOutputs(); });
 modeSliderAB.addEventListener('input', (e) => { u_mode_AB = parseFloat(e.target.value); updateOutputs(); });
@@ -1405,20 +1513,13 @@ const pauseDurationInput = document.getElementById('pauseDurationInput');
 let ANIM_PAUSE_DURATION = parseFloat(pauseDurationInput.value) || 0;
 pauseDurationInput.addEventListener('input', (e) => { ANIM_PAUSE_DURATION = parseFloat(e.target.value) || 0; });
 
-// Baut denselben Parameter-Satz, den URL_FIELD_MAP (siehe ganz oben im
-// Script) beim Laden zurückliest - Gegenstück zu den "Zustand teilen"-
-// Buttons unten. modeab/time kommen NICHT aus URL_FIELD_MAP (das deckt nur
-// die Compiler-Einstellungen ab), sondern direkt aus dem laufenden Zustand.
+// Baut denselben Parameter-Satz, den SETTINGS (siehe ganz oben im Script)
+// beim Laden zurückliest - Gegenstück zu den "Zustand teilen"-Buttons
+// unten. Läuft über dieselbe Liste wie applyPhase(), damit neue
+// Einstellungen automatisch in beide Richtungen funktionieren.
 function buildStateParams() {
     let p = new URLSearchParams();
-    for (let param in URL_FIELD_MAP) {
-        p.set(param, document.getElementById(URL_FIELD_MAP[param]).value);
-    }
-    for (let param in URL_CHECKBOX_FIELD_MAP) {
-        p.set(param, document.getElementById(URL_CHECKBOX_FIELD_MAP[param]).checked ? '1' : '0');
-    }
-    p.set('modeab', u_mode_AB.toFixed(4));
-    p.set('time', u_time.toFixed(3));
+    for (let s of SETTINGS) p.set(s.key, s.get());
     return p;
 }
 
@@ -1442,8 +1543,12 @@ document.getElementById('copyParamsBtn').addEventListener('click', (e) => {
 
 let lastTime = performance.now();
 const playBtn = document.getElementById('playBtn');
-playBtn.addEventListener('click', () => {
-    isPlaying = !isPlaying;
+// Eigene Funktion statt nur eines Inline-Klick-Handlers, damit sowohl der
+// Button als auch die URL-Einstellung "play" (siehe SETTINGS oben) denselben
+// Start-Weg nehmen - insbesondere denselben lastTime-Reset (siehe Bugfix-
+// Kommentar unten), der sonst beim URL-Auto-Start gefehlt hätte.
+function setPlaying(playing) {
+    isPlaying = playing;
     playBtn.textContent = isPlaying ? '⏸' : '▶';
     if (isPlaying) {
         // Bugfix: lastTime blieb sonst auf dem Stand des letzten Loop-Aufrufs
@@ -1456,7 +1561,8 @@ playBtn.addEventListener('click', () => {
         lastTime = performance.now();
         requestAnimationFrame(loop);
     }
-});
+}
+playBtn.addEventListener('click', () => setPlaying(!isPlaying));
 
 function loop(now) {
     if (!isPlaying) return;
@@ -1478,29 +1584,11 @@ function loop(now) {
 
 resizeCanvas();  compileSystem();
 
-// URL-Parameter für die Wiedergabe-Position (siehe URL_FIELD_MAP weiter
-// oben für die Compiler-Einstellungen) - erst HIER anwendbar, weil sie von
-// der gerade kompilierten Simulation abhängen (MAX_TIME/GLOBAL_TTM).
-// "time" hat Vorrang vor "tick", falls beide angegeben sind.
-{
-    let touched = false;
-    if (URL_PARAMS.has('modeab')) {
-        u_mode_AB = Math.max(0, Math.min(1, parseFloat(URL_PARAMS.get('modeab')) || 0));
-        modeSliderAB.value = u_mode_AB;
-        touched = true;
-    }
-    if (URL_PARAMS.has('time')) {
-        u_time = Math.max(0, Math.min(MAX_TIME, parseFloat(URL_PARAMS.get('time')) || 0));
-        timeSlider.value = u_time;
-        touched = true;
-    } else if (URL_PARAMS.has('tick') && GLOBAL_TTM) {
-        let tick = Math.max(0, Math.min(GLOBAL_TTM.maxTick, Math.round(parseFloat(URL_PARAMS.get('tick')) || 0)));
-        u_time = GLOBAL_TTM.tickToTime(tick);
-        timeSlider.value = u_time;
-        touched = true;
-    }
-    if (touched) updateOutputs();
-}
+// Laufzeit-Einstellungen (modeab/time/tick/play, siehe SETTINGS ganz oben)
+// - erst HIER anwendbar, weil sie von der gerade kompilierten Simulation
+// abhängen (MAX_TIME/GLOBAL_TTM) bzw. (play) den bereits verdrahteten
+// setPlaying() braucht.
+if (applyPhase('post')) updateOutputs();
 </script>
 </body>
 </html>

@@ -7,7 +7,7 @@
 Zwei konkrete Wünsche haben denselben architektonischen Bedarf:
 
 1. **Rest-Anzeige als austauschbare Widgets.** Die Bank/Rest-Visualisierung als Zähler soll unabhängig von den übrigen Einstellungen verfügbar sein, mit mehreren Darstellungs-Modi zum Ausprobieren: vertikale Anzeige aller Ziffern-Stellen als Balken (existiert schon als Teil von `updateHUD()`, aber fest verdrahtet), horizontale Anzeige als bis zu 4×4-Grid (abhängig von der Basis, noch nicht gebaut). Weitere Modi werden folgen ("Wir werden unterschiedliche Modi ausprobieren").
-2. **Steuerung über ein zweites Fenster / einen separat verbundenen Browser.** Bereits in der README (Abschnitt 10, "Zukünftige Vision") als Wunsch notiert: Ziel/Rest/Steuerung auf getrennten Displays, später auch QR-Code-Fernsteuerung von einem Handy aus.
+2. **Steuerung über ein zweites Fenster / einen separat verbundenen Browser.** Bereits in der README (Abschnitt 11, "Zukünftige Vision") als Wunsch notiert: Ziel/Rest/Steuerung auf getrennten Displays, später auch QR-Code-Fernsteuerung von einem Handy aus.
 
 Beides braucht dieselbe Grundarchitektur: **Zustand von Darstellung trennen**, damit (a) mehrere Widget-Varianten denselben Zustand unterschiedlich rendern können und (b) mehrere Fenster/Geräte denselben Zustand teilen können. Das aktuelle `sqrt2.html` ist eine einzige Datei mit imperativer DOM-Manipulation (`getElementById`, manuelles `innerHTML`, direkt gemutierte `let`-Variablen im Modul-Scope) - das macht (a) und (b) beides mühsam.
 
@@ -64,7 +64,7 @@ Jede Phase ist einzeln committ- und testbar - wichtig, damit eine künftige Sitz
 | 3 | Control-Panel in Svelte-Komponenten umbauen, gebunden an die Stores. Verhalten mit dem alten Panel abgleichen | mittel |
 | 4 | Canvas + HUD komponentisieren (`<TargetBankCanvas>`, `<RestCounterBars>`). `updateHUD()` in die zwei Widget-Varianten aufteilen (Balken jetzt, Grid neu) | mittel-hoch (neues Grid-Widget ist Neuentwicklung, nicht nur Port) |
 | 5 | `BroadcastChannel`-Sync-Adapter + zweiter Vite-Entry (`RemoteControl.svelte`). Verifizieren: zwei Browser-Tabs bleiben synchron | mittel |
-| 6 | Politur: Widget-Auswahl-UI, admin-konfigurierbare Steuerungs-Komplexität (bereits als Wunsch in README Abschnitt 10 notiert) | niedrig, kann warten |
+| 6 | Politur: Widget-Auswahl-UI, admin-konfigurierbare Steuerungs-Komplexität (bereits als Wunsch in README Abschnitt 11 notiert) | niedrig, kann warten |
 
 **Empfehlung für den Einstieg in die nächste Sitzung:** mit Phase 0+1 anfangen. Phase 1 ist der höchste Hebel (macht den Kern testbar/wiederverwendbar, ohne dass irgendetwas an der sichtbaren App sich ändert) und lässt sich unabhängig von der Svelte-Entscheidung selbst schon committen.
 
@@ -72,7 +72,7 @@ Jede Phase ist einzeln committ- und testbar - wichtig, damit eine künftige Sitz
 
 - `bank-core.js` wird **nicht** angefasst - bleibt die geteilte, framework-agnostische Quelle für beide Tools.
 - `selection_strategy_prototype.html` (Test-Tool) ist **out of scope** für diesen Umbau (siehe Abschnitt 6) - bleibt vorerst vanilla.
-- Kein neuer Server/Backend in dieser Phase - nur `BroadcastChannel` (ein Rechner, mehrere Fenster/Tabs). Echte Geräte-Fernsteuerung (separates Backend, QR-Code) ist ein SPÄTERER Schritt, schon in README Abschnitt 10 vermerkt, hier nicht mit umzusetzen.
+- Kein neuer Server/Backend in dieser Phase - nur `BroadcastChannel` (ein Rechner, mehrere Fenster/Tabs). Echte Geräte-Fernsteuerung (separates Backend, QR-Code) ist ein SPÄTERER Schritt, schon in README Abschnitt 11 vermerkt, hier nicht mit umzusetzen.
 - Visuelle/Animations-Themen (C¹-Stetigkeit für Z/R-Modi, Kompaktierung im Haupttool) sind unabhängig davon und **nicht** Teil dieses Umbaus - nicht vermischen.
 
 ## 6. Offene Fragen (vor oder zu Beginn der nächsten Sitzung klären)
