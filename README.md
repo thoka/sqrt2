@@ -34,8 +34,8 @@ Nach vielen Experimenten (siehe Abschnitt 7 für die verworfenen) hat sich diese
 Ursprünglich lief das Verhalten des Rests im Haupttool "komplett anders" als im Test-Tool. Ursachen (alle bestätigt):
 
 1. ~~**Der Algorithmus-Code war separat kopiert**~~ in beiden Dateien und ist auseinandergedriftet (z.B. ein `born_time <= action_time`-Filter, der im Haupttool nötig war, im Test-Tool aber fehlte - empirisch aber ohne Auswirkung). **Gelöst:** beide Tools importieren jetzt denselben `bank-core.js`-Code (`createBankSimulation`/`buildSystem` per ES-Modul, siehe `vite.config.js`). Dabei kam auch eine reale Divergenz ans Licht: das Haupttool schnitt Quadrate bisher nach `k`-Parität statt nach der (validierten) Form-/`squareSplit`-Regel aus `bank-core.js` - mit der Umstellung stimmt das jetzt überein.
-2. **Kompaktierung existiert weiterhin nur im Test-Tool**, nicht im Haupttool - offener Punkt, siehe Abschnitt 10.
-3. **Tiefe-Standardwert war unterschiedlich**: Haupttool hatte `Tiefe=3`, Test-Tool `Tiefe=10` - weiterhin nicht synchronisiert (offene Entscheidung, siehe Abschnitt 10).
+2. **Kompaktierung existiert weiterhin nur im Test-Tool**, nicht im Haupttool - offener Punkt, siehe Abschnitt 11.
+3. **Tiefe-Standardwert war unterschiedlich**: Haupttool hatte `Tiefe=3`, Test-Tool `Tiefe=10` - weiterhin nicht synchronisiert (offene Entscheidung, siehe Abschnitt 11).
 4. Haupttool hat **keine Auswahlmöglichkeit** für den Algorithmus (bewusst - Best-Kombination `squareSplit='fixed'` fest einprogrammiert, um die Haupt-UI schlank zu halten).
 
 ### Wie die Anbindung funktioniert
@@ -47,11 +47,11 @@ Ursprünglich lief das Verhalten des Rests im Haupttool "komplett anders" als im
 
 `buildSystem()` liefert dafür zusätzlich zu `sim`/`local_max_time` ein `events`-Array (ein Eintrag pro `getPieceFromBank()`-Aufruf, mit Gitterposition `u`/`v`, `is_top`, `k`, `piece`, `tick`, sowie `i`/`count` für Zerschneiden-Gruppen) - genug Information, damit ein Aufrufer daraus seine eigene Render-Pipeline bauen kann, ohne die Schalen-Konstruktion selbst zu duplizieren. Das Haupttool durchläuft `events` linear, vergibt dabei seine eigene kontinuierliche Animationszeit (`global_time`/`t_fly`, `SHELL_GAP` zwischen Schalen) und sammelt `(tick, t_fly)`-Paare; `buildTickTimeMapping()` übersetzt daraus am Ende alle `born_time`/`cut_time`/`taken_time`-Felder der Bank-Stücke (die `bank-core.js` nur als Integer-Tick führt) zurück in diese Zeitachse. Das Test-Tool braucht das nicht (seine Zeitachse ist der Tick selbst) und ignoriert `events`.
 
-### Zerschneiden-Modus im Haupttool (Z) - bekannter offener Bug
+### Zerschneiden-Modus im Haupttool (Z) - bewusst nur Demo-Modus
 
-Der Flug-Modus **Z: Zerschneiden** ist im Haupttool jetzt wählbar (Dropdown "Transformation") und nutzt denselben `subdivide`-Pfad wie das Test-Tool. **Bekannter, noch nicht behobener Bug:** die Rück-Verschmelzung beim Zurückspulen (`BASE` Stücke der Ebene `n+1` fusionieren visuell zurück zu einem Stück der Ebene `n`, `Z_ghost`) ist nicht vollständig/korrekt animiert. Bewusst noch nicht gefixt - siehe Abschnitt 8. Da beide Tools jetzt dieselbe `buildSystem()`-Funktion mit `cellMode: 'subdivide'` nutzen, lässt sich der Bug an einer einzigen Stelle beheben und wirkt sich automatisch auf beide Tools aus.
+Der Flug-Modus **Z: Zerschneiden** ist im Haupttool jetzt wählbar (Dropdown "Transformation") und nutzt denselben `subdivide`-Pfad wie das Test-Tool. Die Rück-Verschmelzung beim Zurückspulen (`BASE` Stücke der Ebene `n+1` fusionieren visuell zurück zu einem Stück der Ebene `n`, `Z_ghost`) wird nicht mehr als Bug reproduziert. Z bleibt trotzdem bewusst nur ein Demo-Modus für kleine Tiefen (nicht für die vollständig korrekte Konstruktion) - Details siehe Abschnitt 8.
 
-**Beobachtung am Rande:** die `BASE`-Stücke-Zerlegung (Zerschneiden) hält den Rest sichtbar kompakter (weniger verstreute Einzelstücke) als die Ein-Stück-Variante (Morphing) - vermutlich ein echter Vorteil, aber getrennt vom Rück-Verschmelzungs-Bug zu bewerten.
+**Beobachtung am Rande:** die `BASE`-Stücke-Zerlegung (Zerschneiden) hält den Rest sichtbar kompakter (weniger verstreute Einzelstücke) als die Ein-Stück-Variante (Morphing) - vermutlich ein echter Vorteil, aber getrennt von der Demo-Modus-Einordnung zu bewerten.
 
 ### Tick-Vergleich mit dem Test-Tool (Zeitstrahl-Regler "Tick")
 
@@ -99,26 +99,46 @@ Auswahl-/Schneide-Heuristiken, die getestet, aber **keine** Verbesserung brachte
 - Rollout/Lookahead mit fixierter Fortsetzungs-Politik - als "Kaninchenbau" identifiziert und bewusst NICHT umgesetzt (zu rechenintensiv für den Nutzen)
 - Bewegungs-Schwellwert für Kompaktierungs-Wegpunkte (siehe 6.2) - verursacht Einfrier-Bug bei extremen Werten, wieder entfernt
 
-## 8. Z/R-Transformationsmodi (Z jetzt wählbar, aber bekannt buggy; R weiterhin deaktiviert)
+## 8. Z/R-Transformationsmodi (Z wählbar, aber bewusst nur Demo-Modus; R weiterhin deaktiviert)
 
 Im Haupttool gibt es historisch drei Flug-Animationsmodi für die Ziel-Seite: **Z** (Zerschneiden/Montessori-Stil), **R** (Rotieren/Festkörper), **S** (Strecken/Morphing). Z und R hatten Bugs (teilweise gefixt: Doppel-Zeichnung bei Z_source, falsche Zielgröße bei R_macro) und wurden zwischenzeitlich komplett deaktiviert (nur S in der UI wählbar). **Z ist jetzt wieder wählbar** (nutzt die gemeinsame `buildSystem(..., 'subdivide')` aus `bank-core.js`, siehe Abschnitt 5) - **R bleibt deaktiviert**, das ist ein separater, unabhängiger Bug.
 
-**Bekannter, noch offener Bug in Z (Zerschneiden):** beim Zurückspulen wird die Rück-Verschmelzung von `BASE` Stücken der Ebene `n+1` zurück in ein Stück der Ebene `n` (`Z_ghost`) nicht korrekt/vollständig animiert. Da Haupttool und Test-Tool jetzt dieselbe `buildSystem()`-Orchestrierung nutzen, betrifft der Bug (und sein künftiger Fix) automatisch beide Tools - es lohnt sich nicht mehr, ihn an zwei Stellen zu suchen.
+~~Bekannter Bug: Rück-Verschmelzung beim Zurückspulen nicht animiert~~ - **wird nicht mehr reproduziert** (Stand nach der gemeinsamen `buildSystem()`-Orchestrierung, Playwright-Scrub vorwärts/rückwärts über den vollen Tick-Bereich sowie Abspielen inkl. Zeitumkehr ohne Fehler/Auffälligkeiten).
+
+**Z ist bewusst weiterhin nur ein Demo-Modus für kleine Tiefen, nicht "ehrlich" für die vollständige Konstruktion:** eine Rand-Zelle nimmt immer genau `BASE` Stücke der nächsten Ebene, unabhängig davon, wie weit die betroffene Seitenlänge von den bereits vorhandenen Stellen entfernt ist. Für eine wirklich korrekte Darstellung der Transformation weiter entfernter Seitenlängen müsste deutlich öfter geschnitten werden (mehrstufig, nicht nur einen Schritt tief). Für kleine Iterationstiefen fällt das nicht auf, wird aber bei tieferer Rekursion zunehmend unehrlich. Kein aktueller Handlungsbedarf, nur zur Einordnung.
 
 **Anforderung für die Neuimplementierung (vom Nutzer explizit genannt):** Alle Übergänge müssen **C¹-stetig** sein (Ableitung stetig, kein "Stop-and-Go"). Erkenntnis dazu: Die Positions-Interpolation nutzte bereits Smoothstep (gut), aber die Alpha-Ein-/Ausblendungen bei Z (Z_source ausblenden, Z_micro ein-/ausblenden, Z_ghost einblenden) nutzten **lineare** Rampen (`Math.min`/`Math.max`) - das erzeugt Geschwindigkeitssprünge an den Rändern. Lösung (angedacht, noch nicht umgesetzt): alle Alpha-Übergänge auf Smoothstep umstellen, mit überlappenden Crossfade-Fenstern (z.B. 0.3 Zeiteinheiten) zwischen Z_source→Z_micro und Z_micro→Z_ghost, statt harter Cutoffs.
 
-## 9. Zukünftige Vision (noch nicht begonnen)
+**Idee für später (noch nicht umgesetzt):** ein eigener, dedizierter Demo-Modus für die Konstanz der Fläche bei Variation von `b^-n * b^-m` für `n+m = const` - zeigt anschaulich, dass alle Zerlegungen derselben Gesamt-Exponentensumme dieselbe Fläche ergeben, unabhängig davon, wie sie auf die beiden Achsen verteilt ist. Getrennt vom Z-Modus zu behandeln (andere Fragestellung: Flächenkonstanz statt Bank-Konstruktion).
+
+## 9. Auto-Zoom-Modus (Mindestbreite in Pixeln, umgesetzt)
+
+Zusätzlicher Regler "Auto-Zoom: Mindestbreite feinste Stelle (Pixel, 0 = aus)" im Haupttool. Idee: die feinste Ziffern-Stelle (`axes[TOTAL_STEPS-1]`, Exponent `N_MAX`) soll nie kleiner als `AUTO_ZOOM_MIN_PX` Canvas-Pixel dargestellt werden, auch wenn der Modus-B-Regler das nicht hergibt.
+
+**Funktionsweise:**
+- `computeAutoZoomTAB(thresholdPx, scale)` (in `sqrt2.html`) sucht per Bisektion den kleinsten `t_AB` (Modus-B-Wert, [0,1]), bei dem die feinste Stelle mindestens `thresholdPx` breit ist - reine Funktion, keine Seiteneffekte auf den Layout-Cache von `updateDynamicLayout()`. `finestPixelWidth(t_AB)` ist monoton wachsend in `t_AB`, daher reicht eine einfache Bisektion (40 Iterationen, mehr als genug Präzision).
+- Effektiv gerendert wird `effective_t_AB = Math.max(u_mode_AB, autoZoomTAB)` - **"größerer Wert gewinnt"**: der Regler kann die Verzerrung erhöhen, Auto-Zoom kann sie ebenfalls erhöhen, aber keiner von beiden kann sie verringern. Der Modus-B-Regler selbst (`u_mode_AB`, seine sichtbare Position) bleibt dabei **unverändert** unter Nutzerkontrolle - nur der tatsächlich fürs Rendering benutzte Wert wird ggf. übersteuert.
+- Ist bei `t_AB=1` (maximale Verzerrung) die Mindestbreite immer noch nicht erreichbar (z.B. sehr hohe Tiefe mit sehr vielen Ziffern-Stellen), wird auf `1` geklammert (best effort) statt eine unmögliche Bedingung zu erzwingen.
+
+**Visualisierung "welcher Wert gilt gerade":** eine Markierung (`#autoZoomMarker`, oranger Strich) wird bei `AUTO_ZOOM_MIN_PX > 0` über dem Modus-B-Regler an der Position `autoZoomTAB` eingeblendet (rein positionale Näherung, `left: X%` - nicht pixelgenau an die native Slider-Thumb-Breite angepasst, aber ausreichend als visueller Hinweis). Zusätzlich erscheint ein Text-Hinweis ("Auto-Zoom aktiv - übersteuert den Regler nach oben") NUR, wenn Auto-Zoom den Regler tatsächlich gerade übersteuert (`autoZoomTAB > u_mode_AB`) - bewegt der Nutzer den Regler manuell über die Marke hinaus, verschwindet der Hinweis wieder, obwohl die Marke sichtbar bleibt.
+
+## 10. Zukünftige Vision (teils noch nicht begonnen)
 
 - QR-Code-Verbindung: Besucher scannt Code am Exponat, öffnet Steuerung auf eigenem Gerät (Handy). Braucht echte Backend-Infrastruktur (WebSocket-Relay oder Realtime-Dienst wie Firebase/Supabase/Ably) - nicht mit einer reinen HTML-Datei machbar.
 - Mehrbildschirm-Betrieb: Ziel/Rest/Steuerung auf getrennten physischen Displays. Innerhalb eines Rechners mit mehreren Fenstern schon heute simulierbar über die `BroadcastChannel`-API (kein Server nötig) - noch nicht umgesetzt. Würde ein gemeinsames Layout-Konfigurationsobjekt brauchen (z.B. `{ziel: {x,y,breite}, rest: {x,y,breite}, ...}`), damit jedes Fenster seine Position im gemeinsamen Koordinatenraum kennt.
 - Admin-konfigurierbare Steuerungs-Komplexität: sobald die Grundarchitektur (siehe oben) steht, "nur" ein Konfigurationsobjekt, welche Regler für Besucher sichtbar sind.
+- **Rest-Anzeige als austauschbare Widgets** (neuer Wunsch): die Bank/Rest-Visualisierung als Zähler soll unabhängig von den übrigen Einstellungen (Basis, Tiefe, Flug-Modus, ...) verfügbar sein, mit mehreren austauschbaren Darstellungs-Modi zum Ausprobieren - u.a. vertikale Anzeige aller Ziffern-Stellen als Balken (ähnlich der heutigen HUD-Inventory-Liste, aber als eigenständiges, austauschbares Widget) und horizontale Anzeige als bis zu 4×4-Grid (abhängig von der Basis). Noch nicht spezifiziert, welche weiteren Modi geplant sind - siehe Diskussion unten zu Svelte/Architektur.
+- **Fernsteuerung über ein zweites Fenster/einen separat verbundenen Browser** - baut auf denselben Baustein wie Mehrbildschirm-Betrieb (`BroadcastChannel` lokal, später ein echter Realtime-Dienst für getrennte Geräte) und sollte dieselbe Architektur nutzen wie die austauschbaren Rest-Widgets (siehe Diskussion unten).
 
-## 10. Empfohlene nächste Schritte (Priorität)
+## 11. Empfohlene nächste Schritte (Priorität)
 
 1. ~~Test-Tool im Browser verifizieren~~ - erledigt.
 2. ~~Haupttool auf `bank-core.js` umstellen~~ - erledigt (Kompaktierung dabei bewusst ausgeklammert, siehe Punkt 3 unten).
 3. Haupttool: Kompaktierung ergänzen (analog zum Test-Tool, verbunden mit der bijektiven Tick↔Zeit-Abbildung, die das Haupttool jetzt schon nutzt).
 4. Tiefe-Standardwert im Haupttool klären/synchronisieren.
 5. ~~Gemeinsame Schalen-Orchestrierung in `bank-core.js`~~ - erledigt: `buildSystem()` hat jetzt einen `cellMode`-Parameter (`'morph'`/`'subdivide'`), beide Tools nutzen dieselbe Funktion (siehe Abschnitt 5).
-6. Rück-Verschmelzung im Zerschneiden-Modus debuggen (fehlende/fehlerhafte Animation beim Zurückspulen, betrifft jetzt beide Tools gemeinsam über `buildSystem()`, siehe Abschnitt 8) - höchste Priorität für die Z/R-Neuimplementierung.
-7. Erst danach: Z/R-Transformationsmodi vollständig neu aufbauen (C¹-stetig, siehe Abschnitt 8) - eigenständiges Thema, nicht mit den Punkten oben vermischen.
+6. ~~Rück-Verschmelzung im Zerschneiden-Modus debuggen~~ - wird nicht mehr reproduziert (siehe Abschnitt 8). Z bleibt bewusst nur Demo-Modus für kleine Tiefen (siehe Abschnitt 8), kein Ausbau zur vollständig korrekten Konstruktion geplant.
+7. Z/R-Transformationsmodi vollständig neu aufbauen (C¹-stetig, siehe Abschnitt 8) - eigenständiges Thema.
+8. ~~Auto-Zoom-Modus~~ - erledigt, siehe Abschnitt 9.
+9. Architektur-Entscheidung klären: Svelte (oder ähnliches Komponenten-Framework) für austauschbare Rest-Widgets + Fernsteuerungs-Architektur? Noch offen, siehe Konversationsverlauf - nichts umgesetzt, bis Grundsatzentscheidung steht.
+10. Danach: Rest-Anzeige als austauschbare Widgets (Abschnitt 10) und Mehrbildschirm-/Fernsteuerungs-Architektur (Abschnitt 10) - beide auf derselben Architektur-Entscheidung (Punkt 9) aufbauend, nicht unabhängig voneinander umsetzen.

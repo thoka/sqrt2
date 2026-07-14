@@ -59,6 +59,13 @@
         .warning { color: #f59e0b; font-size: 0.8em; margin-top: -5px; }
         .error-msg { color: #ef476f; font-weight: bold; font-size: 0.9em; display: none; }
         .zoom-readout { color: #3b82f6; font-weight: bold; }
+
+        .slider-with-marker { position: relative; }
+        .auto-zoom-marker {
+            position: absolute; top: 0; bottom: 0; width: 3px; margin-left: -1.5px;
+            background: #f59e0b; border-radius: 2px; pointer-events: none; display: none;
+        }
+        .auto-zoom-note { color: #f59e0b; font-size: 0.8em; margin-top: -4px; display: none; }
     </style>
 </head>
 <body>
@@ -92,7 +99,18 @@
         <div class="control-group"><label id="timeLabel">Zeitstrahl (0.0)</label><input type="range" id="timeSlider" min="0" max="10" step="0.01" value="0"></div>
         <div class="control-group" style="margin-top:-4px;"><label id="tickLabel">Tick (Vergleich mit Test-Tool) — 0 / 0</label><input type="number" id="tickInput" min="0" step="1" value="0"></div>
 
-        <div class="control-group" style="margin-top:10px;"><label>Modus B (Hypothetische Basis $b \to 1$)</label><input type="range" id="modeSliderAB" min="0" max="1" step="0.01" value="0"></div>
+        <div class="control-group" style="margin-top:10px;">
+            <label>Modus B (Hypothetische Basis $b \to 1$)</label>
+            <div class="slider-with-marker">
+                <input type="range" id="modeSliderAB" min="0" max="1" step="0.01" value="0">
+                <div class="auto-zoom-marker" id="autoZoomMarker" title="Auto-Zoom-Mindestwert"></div>
+            </div>
+            <div class="auto-zoom-note" id="autoZoomNote">Auto-Zoom aktiv - übersteuert den Regler nach oben</div>
+        </div>
+        <div class="control-group" style="margin-top:6px;">
+            <label>Auto-Zoom: Mindestbreite feinste Stelle (Pixel, 0 = aus)</label>
+            <input type="number" id="autoZoomMinPxInput" min="0" max="200" step="1" value="0">
+        </div>
 
         <div class="control-group" style="margin-top:10px;">
             <label>Bank-Zoom (automatisch, reale Basis) — <span class="zoom-readout" id="bankZoomLabel">1,0×</span></label>
@@ -530,6 +548,11 @@ function updateHUD(time) {
 const canvas = document.getElementById('glCanvas'); const ctx = canvas.getContext('2d');
 let isPlaying = false; let animDirection = 1; let animPause = 0;
 let u_time = 0.0; let u_mode_AB = 0.0;
+// Auto-Zoom: Mindestbreite (Canvas-Pixel) für die feinste Ziffern-Stelle im
+// Ziel. 0 = deaktiviert. Übersteuert den Modus-B-Regler NACH OBEN (mehr
+// Verzerrung/Zoom), niemals nach unten - der Regler selbst bleibt dabei
+// unverändert, siehe computeAutoZoomTAB() und renderFrame().
+let AUTO_ZOOM_MIN_PX = 0;
 
 function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; renderFrame(); }
 window.addEventListener('resize', resizeCanvas);
@@ -608,10 +631,58 @@ function getBankTransform(time) {
     return { z, offsetX, offsetY, area };
 }
 
+// Auto-Zoom: findet den KLEINSTEN Modus-B-Wert t_AB, bei dem die feinste
+// Ziffern-Stelle (axes[TOTAL_STEPS-1], Exponent N_MAX) mindestens
+// thresholdPx Canvas-Pixel breit dargestellt wird. Reine Funktion (keine
+// Seiteneffekte auf dyn_prefA/dyn_axes_w) - rechnet dieselbe Formel wie
+// updateDynamicLayout() nach, aber unabhängig davon, damit die eigentliche
+// Layout-Berechnung (mit ihrem Memoisierungs-Cache) nicht durch den
+// Suchlauf gestört wird. finestPixelWidth(t_AB) ist monoton wachsend in
+// t_AB (mehr Verzerrung -> größere feinste Stelle), daher reicht eine
+// einfache Bisektion.
+function computeAutoZoomTAB(thresholdPx, scale) {
+    if (thresholdPx <= 0 || TOTAL_STEPS <= 1) return 0;
+    function finestPixelWidth(t_AB) {
+        let b_eff = Math.pow(BASE, 1.0 - t_AB);
+        if (b_eff < 1.000001) b_eff = 1.000001;
+        let sumA = 1.0;
+        for (let i = 1; i < TOTAL_STEPS; i++) sumA += Math.pow(b_eff, -axes[i].exp);
+        let DYN_W = sumA + Math.pow(b_eff, -(N_MAX + 1));
+        let V_SCALE_TARGET = P_FINAL / DYN_W;
+        let finestLogicalWidth = Math.pow(b_eff, -axes[TOTAL_STEPS - 1].exp);
+        return finestLogicalWidth * V_SCALE_TARGET * scale;
+    }
+    if (finestPixelWidth(0) >= thresholdPx) return 0;
+    if (finestPixelWidth(1) < thresholdPx) return 1;
+    let lo = 0, hi = 1;
+    for (let iter = 0; iter < 40; iter++) {
+        let mid = (lo + hi) / 2;
+        if (finestPixelWidth(mid) < thresholdPx) lo = mid; else hi = mid;
+    }
+    return hi;
+}
+
 function renderFrame() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (render_pipeline.length === 0) return; 
-    updateDynamicLayout(u_mode_AB);
+    if (render_pipeline.length === 0) return;
+
+    const SQRT2 = Math.SQRT2;
+    const LOGICAL_MAX_W = SQRT2 + 0.1 + 1.0;
+    const LOGICAL_MAX_H = SQRT2;
+    const renderAreaWidth = canvas.width - 450;
+    const scale = Math.min(renderAreaWidth / LOGICAL_MAX_W, (canvas.height - 100) / LOGICAL_MAX_H);
+
+    // Auto-Zoom: "größerer Wert gewinnt" - der Regler (u_mode_AB) kann die
+    // Verzerrung erhöhen, Auto-Zoom kann sie ebenfalls erhöhen (falls die
+    // feinste Stelle sonst unter AUTO_ZOOM_MIN_PX Pixel fiele), aber nie
+    // verringern. Der Regler selbst bleibt dabei unverändert (siehe
+    // modeSliderAB.value) - nur die tatsächlich fürs Layout benutzte
+    // effektive Verzerrung wird übersteuert.
+    let autoZoomTAB = computeAutoZoomTAB(AUTO_ZOOM_MIN_PX, scale);
+    let effective_t_AB = Math.max(u_mode_AB, autoZoomTAB);
+    updateAutoZoomIndicator(autoZoomTAB, effective_t_AB > u_mode_AB + 1e-9);
+
+    updateDynamicLayout(effective_t_AB);
 
     // PATCH V31: Zwei getrennte Skalen. V_SCALE_TARGET hängt (gewollt) von
     // Modus B ab und bestimmt nur die Größe des Zielquadrats. V_SCALE_BANK
@@ -622,13 +693,7 @@ function renderFrame() {
     // hier hart auf 1.0 gesetzt, unabhängig vom Regler.
     const V_SCALE_TARGET = P_FINAL / DYN_TARGET_W;
     const V_SCALE_BANK = 1.0;
-    const SQRT2 = Math.SQRT2;
-    const LOGICAL_MAX_W = SQRT2 + 0.1 + 1.0;
-    const LOGICAL_MAX_H = SQRT2;
 
-    const renderAreaWidth = canvas.width - 450; 
-    const scale = Math.min(renderAreaWidth / LOGICAL_MAX_W, (canvas.height - 100) / LOGICAL_MAX_H);
-    
     const BANK_X_OFFSET = SQRT2 + 0.1;
     const bankT = getBankTransform(u_time);
     bankZoomLabel.innerText = formatZoomFactor(bankT.z);
@@ -741,7 +806,7 @@ function renderFrame() {
         let tw = dyn_axes_w[p.u]; let th = dyn_axes_w[p.v];
         let target_w = tw; let target_h = th;
         
-        let b_eff = Math.pow(BASE, 1.0 - u_mode_AB);
+        let b_eff = Math.pow(BASE, 1.0 - effective_t_AB);
         if (b_eff < 1.000001) b_eff = 1.000001;
 
         if (p.type === 'Z_micro') {
@@ -795,6 +860,25 @@ const bankAreaLabel = document.getElementById('bankAreaLabel');
 const timeLabel = document.getElementById('timeLabel');
 const tickInput = document.getElementById('tickInput');
 const tickLabel = document.getElementById('tickLabel');
+const autoZoomMarker = document.getElementById('autoZoomMarker');
+const autoZoomNote = document.getElementById('autoZoomNote');
+const autoZoomMinPxInput = document.getElementById('autoZoomMinPxInput');
+
+// Zeigt (falls Auto-Zoom aktiv, AUTO_ZOOM_MIN_PX > 0) eine Markierung auf dem
+// Modus-B-Regler an der Stelle, ab der Auto-Zoom übersteuern würde/tut -
+// löst die vom Nutzer aufgeworfene Frage "welcher Wert gilt gerade gemäß
+// Regler-Position" pragmatisch: eine sichtbare Marke plus Text-Hinweis, statt
+// den Regler selbst zu verschieben (der bleibt bewusst unter Nutzerkontrolle).
+function updateAutoZoomIndicator(autoZoomTAB, isActive) {
+    if (AUTO_ZOOM_MIN_PX <= 0) {
+        autoZoomMarker.style.display = 'none';
+        autoZoomNote.style.display = 'none';
+        return;
+    }
+    autoZoomMarker.style.display = 'block';
+    autoZoomMarker.style.left = (autoZoomTAB * 100) + '%';
+    autoZoomNote.style.display = isActive ? 'block' : 'none';
+}
 
 function updateOutputs() {
     timeLabel.innerText = `Zeitstrahl (${u_time.toFixed(1)})`;
@@ -824,6 +908,7 @@ document.getElementById('transformMode').addEventListener('change', compileSyste
 
 timeSlider.addEventListener('input', (e) => { u_time = parseFloat(e.target.value); updateOutputs(); });
 modeSliderAB.addEventListener('input', (e) => { u_mode_AB = parseFloat(e.target.value); updateOutputs(); });
+autoZoomMinPxInput.addEventListener('input', (e) => { AUTO_ZOOM_MIN_PX = parseFloat(e.target.value) || 0; renderFrame(); });
 
 // Direkter Sprung zu einem Tick (springt exakt auf dessen Animationszeit via
 // GLOBAL_TTM.tickToTime) - erlaubt den Zustandsvergleich mit dem Test-Tool,
