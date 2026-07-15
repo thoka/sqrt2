@@ -11,6 +11,9 @@
 - [x] TOOLING_SPEC.md: Phase 5 "offen" → "erledigt" (E2E-Test grün)
 - [x] TOOLING_ENV_SPEC.md §3: "Neue Instanz planen" → Playwright läuft hier bereits
 - [x] TOOLING_ENV_SPEC.md §4: pnpm/npm Inkonsistenz dokumentiert
+- [x] Paketmanager-Entscheidung: pnpm durchgesetzt, npm-Befehle in Testdateien/README/scripts bereinigt
+- [x] TOOLING_SPEC.md: Detaillierte Phase-Protokolle → CHANGELOG.md ausgelagert
+- [x] TOOLING_ENV_SPEC.md §3-4: Auf pnpm-konsistenten Stand aktualisiert
 
 ## Offen (Code-Hygiene, nicht dokumentiert)
 
@@ -22,12 +25,6 @@
 - [ ] **CODE: `compiledStore.depth` Pitfall Test-Absicherung**
   - AGENTS.md GOTCHA #2 dokumentiert: `compiledStore` hat KEIN `depth`-Feld, `configStore.depth` (Alias N_MAX) nutzen
   - Prüfen ob `RestCounterBars.test.js` / `RestCounterGrid.test.js` das als Testfall abdecken
-
-- [ ] **Paketmanager-Entscheidung treffen** (npm vs. pnpm)
-  - `package.json` Scripts nutzen `npm`/`vite` direkt
-  - `pnpm-lock.yaml` + `pnpm-workspace.yaml` + `mise.toml` (pnpm 11) existieren
-  - Entweder: Scripts auf `pnpm` umstellen + `package-lock.json` löschen
-  - Oder: pnpm-Artefakte löschen + bei `npm` bleiben
 
 ## Nächster logischer Schritt (Phase 6 - Politur)
 

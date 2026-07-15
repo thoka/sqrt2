@@ -15,12 +15,12 @@ noch offen.
 ## 2. Schnellstart: aktuellen Stand ausprobieren
 
 ```bash
-npm install            # Abhängigkeiten (svelte, vite, vitest, jsdom)
-npm run dev           # Vite-Dev-Server; die gedruckte URL (meist localhost:5173)
+pnpm install          # Abhängigkeiten (svelte, vite, vitest, jsdom)
+pnpm dev              # Vite-Dev-Server; die gedruckte URL (meist localhost:5173)
                       # im Browser öffnen -> live-Reload beim Editieren
-npm run build         # produktiver Build -> dist/sqrt2.html (+ assets)
+pnpm build            # produktiver Build -> dist/sqrt2.html (+ assets)
                       # dist/sqrt2.html direkt im Browser öffnen (kein Server nötig)
-npm test              # node --test *.test.js (reine Logik) UND vitest run (Svelte-Komponenten)
+pnpm test             # node --test *.test.js (reine Logik) UND vitest run (Svelte-Komponenten)
 ```
 
 - **Haupttool:** `dist/sqrt2.html` bzw. im Dev-Server. Canvas-Rendering
@@ -38,7 +38,7 @@ npm test              # node --test *.test.js (reine Logik) UND vitest run (Svel
   `selection_strategy_prototype.html` (über Dev-Server oder als statische Datei).
 - **Kein Browser/Visuelle Verifikation in dieser Sandbox möglich** (headless
   chromium hängt an DBus/Netzwerk) - siehe `AGENTS.md`. Hier nur
-  `npm run build` + `npm test` als Korrektheits-Gate.
+  `pnpm build` + `pnpm test` als Korrektheits-Gate.
 
 ## 3. Dateien und ihr Zweck
 
@@ -59,7 +59,7 @@ npm test              # node --test *.test.js (reine Logik) UND vitest run (Svel
 | `CLAUDE.md` | Agentenregeln (stetige Ableitung, Layout-Masse, SETTINGS-EIN-Objekt, Tooling-Updates, Svelte-Tests). | gepflegt |
 | `AGENTS.md` | Kurzübersicht + Gotchas für Agents (Build/Test, toter Code, Store-Pitfalls). | gepflegt |
 
-**Tests:** `npm test` = `node --test *.test.js` (reine Logik:
+**Tests:** `pnpm test` = `node --test *.test.js` (reine Logik:
 `smoothing.test.js`, `auto-zoom-visibility.test.js`, `bank-core-compaction.test.js`,
 `compiler.test.js`, `url-state.test.js`, `stores.test.js`) **+** `vitest run`
 (Svelte-Komponenten in `src/**/*.test.js`, jsdom). Beide Runner bewusst

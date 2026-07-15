@@ -24,17 +24,13 @@ echo "==> [1/6] System aktualisieren (rolling release)"
 $SUDO pacman -Syu --noconfirm
 
 echo "==> [2/6] Basis-Dev-Tools"
-# node/npm kommen via mise (siehe mise.toml), hier nur die Build-Basis.
+# node/pnpm kommen via mise (siehe mise.toml), hier nur die Build-Basis.
 $SUDO pacman -S --noconfirm --needed base-devel git
 
 echo "==> [3/6] mise + direnv installieren, Tools pinnen"
 $SUDO pacman -S --noconfirm --needed mise direnv
 mise install                                   # node + pnpm aus mise.toml
 eval "$(mise activate bash)"                   # gepinntes node/pnpm ins PATH
-# Falls mise keinen pnpm-Backend hat: pnpm via mise-npm nachinstallieren.
-if ! command -v pnpm >/dev/null 2>&1; then
-  npm i -g pnpm@11
-fi
 
 echo "==> [4/6] System-Bibliotheken fuer Playwright/Chromium"
 # Playwright laedt ein eigenes chromium, braucht aber die Runtime-Libs.

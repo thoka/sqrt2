@@ -165,7 +165,7 @@ Zersplitterung an anderer Stelle einfach nach.
 ## Tooling-Updates: kleinstmöglicher sicherer Versionssprung, nicht blind "latest"
 
 Beim Hinzufügen/Aktualisieren von Build-Tooling (Vite, Bundler, Test-Runner,
-…) NICHT automatisch die npm-`latest`-Version nehmen, wenn eine ältere,
+…) NICHT automatisch die `latest`-Version nehmen, wenn eine ältere,
 noch aktuelle Major-Version die eigentliche Anforderung genauso erfüllt und
 dabei einen Architekturwechsel vermeidet.
 
@@ -232,8 +232,8 @@ Projekt-Grundsatz, keine schwergewichtigen Browser-Test-Harnesses
 
 **Wie anwenden:** Reine Logik-Module (`bank-core.js`, `smoothing.js`,
 `src/lib/compiler.js`, …) bleiben bei `node --test` mit Test-Dateien auf
-Root-Ebene (`*.test.js`, per `npm test`). Svelte-Komponenten-Tests laufen
-separat über `vitest run` (ebenfalls Teil von `npm test`), Dateien unter
+Root-Ebene (`*.test.js`, per `pnpm test`). Svelte-Komponenten-Tests laufen
+separat über `vitest run` (ebenfalls Teil von `pnpm test`), Dateien unter
 `src/**/*.test.js` (siehe `vite.config.js` `test.include`). Beide Runner
 bewusst nebeneinander, nicht vereinheitlicht - unterschiedliche Aufgabe
 (reine Funktionen vs. Komponenten mit DOM-Mounting).
