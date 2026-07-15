@@ -11,6 +11,7 @@ import https from 'node:https';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { WebSocketServer } from 'ws';
+import { FixedWindowLimiter, PinBackoff } from './ratelimit.js';
 
 const PORT = Number(process.env.PORT ?? 8080);
 const DATA_DIR = process.env.DATA_DIR ?? '/data';
@@ -20,6 +21,17 @@ const HEARTBEAT_MS = Number(process.env.HEARTBEAT_MS ?? 30000);
 const TOKEN_BYTES = 18;
 const VERSION = '0.2.0';
 const STARTED_AT = Date.now();
+
+// Brute-Force-Schutz (§9): Rate-Limit pro API-Key beim Token-Minting sowie
+// exponentielles Backoff bei falscher PIN.
+const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX ?? 120);
+const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS ?? 60000);
+const mintLimiter = new FixedWindowLimiter(RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS);
+const pinBackoff = new PinBackoff({
+  baseMs: Number(process.env.PIN_BACKOFF_BASE_MS ?? 1000),
+  maxMs: Number(process.env.PIN_BACKOFF_MAX_MS ?? 60000),
+  grace: Number(process.env.PIN_BACKOFF_GRACE ?? 8),
+});
 
 // CORS: komma-getrennte Origins aus ALLOWED_ORIGINS (leer = keine CORS-Antwort).
 const ALLOWED_ORIGINS = new Set(
@@ -227,7 +239,7 @@ function isAdmin(req) {
     return u.searchParams.get('k') === ADMIN_KEY;
   } catch { return false; }
 }
-function isApi(req) { const b = bearer(req); return b && API_KEYS.has(b); }
+function apiKey(req) { const b = bearer(req); return b && API_KEYS.has(b) ? b : null; }
 
 function publicWsUrl(req) {
   const host = req.headers.host ?? `localhost:${PORT}`;
@@ -272,7 +284,14 @@ async function requestHandler(req, res) {
 
     // --- Exponat: Token minten ---
     if (p === '/api/token' && req.method === 'POST') {
-      if (!isApi(req)) return json(401, { error: 'unauthorized', code: 'no_api_key' });
+      const key = apiKey(req);
+      if (!key) return json(401, { error: 'unauthorized', code: 'no_api_key' });
+      // Rate-Limit pro API-Key (Brute-Force/Typo-Schutz).
+      if (!mintLimiter.check(`api:${key}`)) {
+        const retry = Math.ceil(mintLimiter.retryAfterMs(`api:${key}`) / 1000);
+        res.writeHead(429, { 'retry-after': String(retry), ...corsHeaders(req) });
+        return res.end(JSON.stringify({ error: 'rate_limited', code: 'too_many_tokens', retryAfterSec: retry }));
+      }
       const b = await readBody(req);
       const seats = Math.max(1, Math.min(Number(b.seats ?? DEFAULT_SEATS) || DEFAULT_SEATS, 999));
       const pin = b.pin == null ? null : String(b.pin);
@@ -299,7 +318,7 @@ async function requestHandler(req, res) {
     // PIN rotieren (Host via API-Key): /api/token/:token/pin
     const pinMatch = p.match(/^\/api\/token\/([^/]+)\/pin$/);
     if (pinMatch && req.method === 'PATCH') {
-      if (!isApi(req)) return json(401, { error: 'unauthorized', code: 'no_api_key' });
+      if (!apiKey(req)) return json(401, { error: 'unauthorized', code: 'no_api_key' });
       const id = decodeURIComponent(pinMatch[1]);
       const t = tokens.get(id);
       if (!t) return json(404, { error: 'not_found' });
@@ -311,7 +330,7 @@ async function requestHandler(req, res) {
     // revoke (Host via API-Key): /api/token/:token
     const tokenMatch = p.match(/^\/api\/token\/([^/]+)$/);
     if (tokenMatch && (req.method === 'DELETE' || req.method === 'PATCH')) {
-      if (!isApi(req)) return json(401, { error: 'unauthorized', code: 'no_api_key' });
+      if (!apiKey(req)) return json(401, { error: 'unauthorized', code: 'no_api_key' });
       const id = decodeURIComponent(tokenMatch[1]);
       const t = tokens.get(id);
       if (!t) return json(404, { error: 'not_found' });
@@ -383,7 +402,16 @@ wss.on('connection', (ws, req) => {
   const t = tokenId ? tokens.get(tokenId) : null;
   if (!t) return fail('bad_token', 'unknown or revoked token');
   if (t.expiresAt && Date.now() > t.expiresAt) return fail('expired', 'token expired');
-  if (role === 'guest' && t.pin && pin !== t.pin) return fail('pin_mismatch', 'wrong PIN');
+
+  // PIN: erst auf aktive Sperre pruefen (exponentielles Backoff), dann Treffer.
+  if (role === 'guest' && t.pin) {
+    const locked = pinBackoff.lockedMs(tokenId);
+    if (locked > 0) return fail('pin_locked', `PIN-Versuche gesperrt für ${Math.ceil(locked / 1000)}s`);
+    if (pin !== t.pin) {
+      const wait = pinBackoff.registerFailure(tokenId);
+      return fail('pin_mismatch', wait > 0 ? `falsche PIN, Sperre ${Math.ceil(wait / 1000)}s` : 'wrong PIN');
+    }
+  }
   if (role === 'guest' && guestCount(tokenId) >= t.seats) return fail('seats_exhausted', 'room full');
 
   let set = rooms.get(tokenId);
@@ -391,6 +419,7 @@ wss.on('connection', (ws, req) => {
   set.add(connId);
   conns.set(connId, { ws, tokenId, role });
   if (role === 'host') t.hostConnId = connId;
+  if (role === 'guest') pinBackoff.registerSuccess(tokenId);
 
   ws.isAlive = true;
   ws.on('pong', () => (ws.isAlive = true));

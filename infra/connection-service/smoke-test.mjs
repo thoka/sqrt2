@@ -33,6 +33,12 @@ async function startServer() {
       API_KEYS: API_KEY,
       ADMIN_KEY,
       ALLOWED_ORIGINS: ALLOWED,
+      // Brute-Force-Schutz knapp halten, damit die Checks deterministisch sind.
+      RATE_LIMIT_MAX: '3',
+      RATE_LIMIT_WINDOW_MS: '60000',
+      PIN_BACKOFF_GRACE: '1',
+      PIN_BACKOFF_BASE_MS: '500',
+      PIN_BACKOFF_MAX_MS: '2000',
     },
     stdio: ['ignore', 'ignore', 'inherit'],
   });
@@ -156,7 +162,44 @@ const main = async () => {
   const uiKey = await req('GET', `/admin?k=${ADMIN_KEY}`, null, ADMIN_KEY);
   check('admin ui served', uiKey.status === 200 && /Admin/.test(uiKey.text));
 
-  a.ws.close(); b.ws.close(); host.ws.close();
+  // 15) PIN-Brute-Force-Backoff: frischer PIN-Token, grace=1.
+  // Erster falscher PIN -> pin_mismatch, zweiter -> pin_mismatch (Lock setzt),
+  // dritter -> pin_locked (exponentielles Backoff greift).
+  // (Vor dem Rate-Limit-Loop, damit das Minting noch im Budget liegt.)
+  const bt = await req('POST', '/api/token', { seats: 4, pin: '0000' }, API_KEY);
+  const btok = bt.json?.token;
+  check('backoff token minted', !!btok);
+  const w1 = await openWs(btok, 'guest', '1111');
+  await wait(80);
+  const w2 = await openWs(btok, 'guest', '2222');
+  await wait(80);
+  const w3 = await openWs(btok, 'guest', '3333');
+  await wait(80);
+  const codeOf = (ws) => ws.msgs.find((m) => m.type === 'error')?.code;
+  check('pin mismatch #1', codeOf(w1) === 'pin_mismatch');
+  check('pin mismatch #2', codeOf(w2) === 'pin_mismatch');
+  check('pin locked #3', codeOf(w3) === 'pin_locked');
+  // Richtiger PIN nach Lock wieder moeglich? Lock ist kurz (baseMs=500) -> warten.
+  await wait(700);
+  const ok = await openWs(btok, 'guest', '0000');
+  await wait(120);
+  check('correct pin joins after lock', ok.msgs.some((m) => m.type === 'joined'));
+
+  // 16) Rate-Limit auf Token-Minting (RATE_LIMIT_MAX=3, 2 Tokens schon gemintet)
+  // -> nach 1 weiteren 201 kommt 429 mit Retry-After.
+  let rateLimited = 0;
+  let retryHeaders = 0;
+  for (let i = 0; i < 5; i++) {
+    const r = await req('POST', '/api/token', { seats: 1 }, API_KEY);
+    if (r.status === 429) {
+      rateLimited++;
+      if (r.headers.get('retry-after')) retryHeaders++;
+    }
+  }
+  check('rate limit triggers 429', rateLimited >= 1);
+  check('rate limit returns retry-after', retryHeaders >= 1);
+
+  a.ws.close(); b.ws.close(); host.ws.close(); ok.ws.close();
   await wait(100);
   stopServer(dataDir);
   console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

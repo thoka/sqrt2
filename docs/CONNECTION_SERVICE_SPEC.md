@@ -14,10 +14,11 @@ wiederverwendbar.
 
 > Status: Konzept + lauffähiges Fundament (`infra/connection-service/`).
 > Server-Logik ist real (Token-Minting, Seat-Limit, PIN, Broadcast, TLS) und
-> um Status-Page (`/`), CORS (`ALLOWED_ORIGINS` + Preflight) sowie eine
-> admin-geschützte Admin-UI (`/admin`, nutzt die REST-API) ergänzt.
-> Produktions-Härtung (Persistenz, Redis-Adapter, Rate-Limit, Brute-Force-
-> Schutz) ist als Nächstes markiert.
+> um Status-Page (`/`), CORS (`ALLOWED_ORIGINS` + Preflight), eine
+> admin-geschützte Admin-UI (`/admin`, nutzt die REST-API) sowie
+> Brute-Force-Härtung (Token-Rate-Limit + exponentielles PIN-Backoff)
+> ergänzt. Offen (optional/später): Persistenz, Redis-Adapter, Seat-Freigabe
+> in der Admin-UI (§8).
 
 ---
 
@@ -157,7 +158,7 @@ Server → Client (nach erfolgreichem Join):
 { "type":"joined", "role":"host|guest", "seats":N, "occupied":M }
 { "type":"presence", "event":"join|leave", "role":..., "occupied":M }
 { "type":"app", "from":"<connId|host>", "payload":<bel. JSON> }
-{ "type":"error", "code":"bad_token|expired|pin_mismatch|seats_exhausted" }
+{ "type":"error", "code":"bad_token|expired|pin_mismatch|pin_locked|seats_exhausted" }
 ```
 
 Client → Server:
@@ -256,8 +257,12 @@ als Erweiterung der Admin-API zu spezifizieren (Stufe: eigenes Ticket).
   `ws://`, weil (a) die Seite selbst über HTTP serviert werden kann und
   (b) der WireGuard-Transport ohnehin E2E-verschlüsselt ist.
 - `API_KEY` und `ADMIN_KEY` sind Secrets → nur via env/Volume, nie im Image.
-- Brute-Force-Schutz (später): Token-Rate-Limit, kurze `ttlSec`-Defaults,
-  exponentielles Backoff bei falscher PIN.
+- Brute-Force-Schutz: **Token-Rate-Limit** pro API-Key beim Minting
+  (`RATE_LIMIT_MAX`/`RATE_LIMIT_WINDOW_MS`, → `429` + `Retry-After`) sowie
+  **exponentielles Backoff bei falscher PIN** je Token (`PIN_BACKOFF_GRACE`/
+  `PIN_BACKOFF_BASE_MS`/`PIN_BACKOFF_MAX_MS`): nach `grace` Fehlversuchen
+  wächst die Join-Sperre als `base·2^(n-grace)`, gedeckelt auf `maxMs`;
+  erfolgreicher Join setzt den Zähler zurück. Fehlercode `pin_locked`.
 - Seat-Limit verhindert Ressourcen-Erschöpfung durch einen Code.
 - PIN verhindert "Mitfahren" mit abgelaufenen Codes.
 - CORS nur für bekannte Exponat-Origins.
