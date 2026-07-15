@@ -44,7 +44,23 @@ kompaktieren**.
 - **Nichts Neues erfinden:** nur existierendes Wissen kondensieren, keine
   neuen Konventionen einführen.
 
-## 3. Abschluss
+## 3. Lessons-learned kompakt ablegen
+
+Während der Iteration aufkommen: welche Erkenntnis hätte den Start / das
+Vorankommen **beschleunigt**? Diese kompakt an den passenden Ort schreiben,
+damit der nächste Agent sie nicht neu erarbeiten muss.
+
+- **Umgebungs-/Setup-Fallen** (once-only Trust, stale E2E-dist, pnpm-only,
+  mise/PATH) → AGENTS.md, Sektion „Frischer Start" bzw. GOTCHAS.
+- **Architektur-/Migrations-Entscheidungen** (Sync-Design, Vite-Version,
+  Store-Grenzen) → TOOLING_SPEC.md an der zugehörigen Phase.
+- **Lokal zum Code gehörige Hinweise** (warum ein Workaround nötig, wo ein
+  Port unvollständig ist) → sparsamer Kommentar direkt am Betroffenen Code
+  oder GOTCHAS.
+- **Regel:** ein bis zwei Sätze reichen; nicht ausufernd. Keine Secrets/Keys.
+  Lieber eine präzise GOTCHA-Zeile als ein langer Essay.
+
+## 4. Abschluss
 
 - Pro Phase **committen** (Commit-Regel beachten): nur die phasen-zugehörigen
   Dateien (`git add` einzeln, NICHT `git add -A`); Message kurz im Repo-Stil.
