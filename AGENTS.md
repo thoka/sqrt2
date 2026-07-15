@@ -30,20 +30,12 @@ npm test         # node --test *.test.js  (reine Logik)
                   #   +  vitest run       (Svelte-Komponenten, jsdom)
 ```
 
-- **Keine visuelle Verifikation in DIESER Sandbox möglich:** headless chromium
-  hängt an DBus/Netzwerk. Korrektheit hier NUR über `npm run build` + `npm test`
-  absichern. Playwright/Browser-Mode NICHT aufsetzen (siehe `CLAUDE.md`
-  "Svelte-Komponenten-Tests": offizielle Svelte-5-Empfehlung ist vitest + jsdom
-  mit `mount()`/`unmount()`/`flushSync()`, KEINE testing-library).
-- **Smoke-Test ohne Browser (hier):** Dev-Server (`nohup npm run dev -- --port 5173
-  --strictPort &`) starten und per `curl -s -o /dev/null -w "%{http_code}"
-  http://localhost:5173/sqrt2.html` (bzw. `/bank-core.js`,
-  `/selection_strategy_prototype.html`) zumindest HTTP-200 + fehlerfreies
-  Bundling prüfen - ersetzt keine visuelle Prüfung, fängt aber Import-/
-  Build-Fehler früh. **Auf der neuen arch/cachedos-Instanz:** stattdessen
-  Playwright-E2E (`pnpm test:e2e`) über `dist/sqrt2.html` nutzen - hebt die
-  „kein Browser"-Blockade (siehe `TOOLING_ENV_SPEC.md`).
-- Branches: aktive Arbeit auf `migrate-to-svelte`.
+- **Visuelle Verifikation in DIESER Sandbox MÖGLICH:** Playwright + Chromium
+  laufen (globaler Cache `~/.cache/ms-playwright`). `pnpm test:e2e` (3 Tests)
+  grün. `npm run build` + `npm test` (Unit) bleiben Basis-Gate.
+- **E2E-Test:** `pnpm test:e2e` deckt Canvas-Rendering + Rest-Widget +
+  BroadcastChannel-Sync ab (siehe `e2e/sqrt2.e2e.test.js`).
+- Branches: Arbeit auf `main` (Migration `migrate-to-svelte` abgeschlossen).
 - **Commit-Regel (Feature-Branch):** befinden wir uns in einem Feature-Branch
   (nicht `main`/`master`), ist nach Abschluss einer abgeschlossenen
   Arbeitsphase **immer zu committen** - auch ohne explizite Einzel-Aufforderung.
@@ -73,19 +65,17 @@ npm test         # node --test *.test.js  (reine Logik)
 4. **`displayStore` ist lokal, nicht synchronisiert** - bei neuen geteilten
    Zuständen `configStore`/`playbackStore` verwenden, nicht `displayStore`.
 5. **Tooling-Version & Paketmanager:**
-   - **Vite:** `vite@7` (nicht `latest@8` mit Rolldown-Wechsel) behalten -
-     Minimal sicheren Versionssprung wählen, Architekturwechsel vermeiden
-     (siehe `CLAUDE.md` "Tooling-Updates"). **Umgebungs-bedingt:** galt, weil
-     hier (veralteter Unterbau) kein Browser/Playwright lauffähig ist; auf der
-     neuen arch/cachedos-Instanz + Playwright neu bewerten (`TOOLING_ENV_SPEC.md`).
-   - **Paketmanager:** **pnpm** (nicht npm) - bewusste Lern-/Ausrichtungs-
-     entscheidung des Users (Discourse-Stack). pnpm gereift + bessere
-     Reproduzierbarkeit (strikt `node_modules`, kein Phantom-Dep).
-   - **Toolchain-Pinning:** `node` (22) + `pnpm` (11) sind deklarativ in
-     `mise.toml` gepinnt; `.envrc` aktiviert sie via `mise`/`direnv`
-     automatisch beim Betreten des Repos. `scripts/setup-env.sh` installiert
-     `mise`+`direnv` und läuft `mise install` - kein manuelles corepack/
-     Global-Install mehr.
+    - **Vite:** `vite@7` (aktuell `7.3.6` in package.json). Migration auf Svelte
+      erledigt; Vite 8/Rolldown-Sprung steht nicht mehr an - bei Bedarf auf
+      neuer Instanz neu bewerten (`TOOLING_ENV_SPEC.md`).
+    - **Paketmanager:** **pnpm** (bewusste Lern-/Ausrichtungsentscheidung,
+      Discourse-Stack). `pnpm-lock.yaml` + `pnpm-workspace.yaml` vorhanden;
+      `package-lock.json` ist Legacy-Rest, kann entfernt werden.
+    - **Toolchain-Pinning:** `node` (22) + `pnpm` (11) sind deklarativ in
+      `mise.toml` gepinnt; `.envrc` aktiviert sie via `mise`/`direnv`
+      automatisch beim Betreten des Repos. `scripts/setup-env.sh` installiert
+      `mise`+`direnv` und läuft `mise install` - kein manuelles corepack/
+      Global-Install mehr.
 6. **`SETTINGS`-Array:** neue einstellbare Größe = EIN neuer Eintrag
    `{ key, phase, get(), set(v) }` in `sqrt2.html`; nie wieder vier parallele
    Listen pflegen (`bindEl()` für input/select/checkbox, `phase:'pre'` vor

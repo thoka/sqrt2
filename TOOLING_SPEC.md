@@ -1,6 +1,6 @@
 # Tooling-Umbau: Svelte + geteilter Zustand für austauschbare Widgets & Fernsteuerung
 
-**Status:** Spezifikation, noch nicht begonnen. Ziel dieses Dokuments: genug Kontext, um den Umbau in einer neuen Sitzung effizient zu starten, ohne die Diskussion aus dem Gesprächsverlauf zu wiederholen.
+**Status:** Phasen 0–5 erledigt (alle Tests grün). Phase 6 (Politur) offen. Ziel dieses Dokuments: genug Kontext, um den Umbau in einer neuen Sitzung effizient zu starten, ohne die Diskussion aus dem Gesprächsverlauf zu wiederholen.
 
 ## 1. Warum (Kontext aus dem Gespräch)
 

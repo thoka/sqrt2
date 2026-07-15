@@ -33,68 +33,55 @@ auf **pnpm** umgestiegen. Daraus abgeleitet:
 Regel B darf sie überschreiben, SOBALD der User ein Lernziel nennt (hier:
 pnpm/Discourse-Welt). Bei unklarem Lernziel gilt A.
 
-## 2. Ausgangslage: veralteter Unterbau (dieser Sandbox)
+## 2. Ausgangslage: diese Sandbox (Playwright lauffähig)
 
-Die aktuelle Coding-Umgebung hat einen **sehr veralteten System-Unterbau**;
-moderne Tooling-Ketten laufen hier kaum/gar nicht:
-- headless chromium hängt an DBus/Netzwerk -> **keine visuelle/Browser-
-  Verifikation möglich** (bisher nur `npm run build` + `npm test` als Gate).
-- Playwright/Browser-Mode daher hier nicht aufsetzbar.
-Dadurch war die Tooling-Haltung *de facto* extrastreng (npm, Vite 7 gehalten),
-weil Risiken nicht hätten geprüft werden können.
+Diese Sandbox hat **keinen blockierenden veralteten Unterbau mehr**:
+- Playwright + Chromium (Chrome for Testing) laufen via globalem Cache
+  `~/.cache/ms-playwright/chromium-1228` (kein DBus/Netzwerk-Blocker).
+- `pnpm test:e2e` (3 Tests) ist **grün** - visuelle/Browser-Verifikation ist möglich.
 
-## 3. Neue Coding-Instanz (Basis: arch / cachedos)
+Damit entfällt die bisherige Begründung für extrastrenge Konservativität
+(npm, Vite 7 gehalten, weil Risiken nicht prüfbar waren).
 
-Ziel: eine frische Instanz, auf der modernes Tooling leichter lauffähig ist,
-damit die Einschränkungen aus §2 wegfallen.
+## 3. Tooling-Status (keine neue Instanz nötig)
 
-### Was ich mir dafür wünsche (Konkretisierung)
-1. **Lauffähiger Browser für Playwright:** installiertes `chromium` (inkl.
-   System-Dependencies: libnss3, libatk, libgbm, fonts, …) UND
-   `playwright` installierbar (`npx playwright install chromium` erfolgreich).
-   -> hebt die „kein Browser"-Blockade; visuelle + E2E-Smoke-Tests werden
-   möglich.
-2. **Aktuelle Node + pnpm:** Node (Current/LTS) und pnpm global verfügbar;
-   das Projekt nutzt künftig pnpm (`pnpm install`, `pnpm dev`, `pnpm build`,
-   `pnpm test`). **Umgesetzt via mise + direnv:** `node`/`pnpm` deklarativ in
-   `mise.toml` gepinnt, `.envrc` aktiviert sie automatisch (`scripts/
-   setup-env.sh` installiert `mise`+`direnv` + `mise install`).
-3. **Vitest + echtes Browser-Env:** `environment: 'jsdom'` bleibt für
-   Komponententests, plus Playwright-basierte E2E (`*.e2e.test.js`) als
-   zweiter Runner - ersetzt den bisherigen Verzicht auf Browser-Mode.
-4. **Reproduzierbare Baseline:** arch/cachedos mit gepinnten Packages
-   (Container/Image), damit die Instanz nicht wieder „von allein" veraltet.
-5. **E2E-Smoke-Pfad:** ein `pnpm test:e2e` (Playwright) über `dist/sqrt2.html`,
-   der Canvas-Rendering + Rest-Widget + Playback zumindest per
-   Screenshot/DOM-Assertions prüft - schließt die Lücke, die hier (ohne
-   Browser) offen blieb.
+Die in §2 der ursprünglichen Version geplanten Punkte sind **hier bereits erfüllt**:
 
-### Was das freischaltet
-- Die bisher **nicht verifizierbare visuelle Korrektheit** (Canvas-Skalierung,
-  Loop-Sync mit playbackStore, Auto-Zoom, Grid-Platzierung) lässt sich endlich
-  testen.
-- Der **Vite-8-Halt** (Rolldown) kann neu bewertet werden: der Hauptrisiko-
-  grund (kein visueller Check) entfällt, sofern Playwright den Build abdeckt.
+1. **Playwright/Chromium lauffähig** → `pnpm test:e2e` funktioniert.
+2. **Node + pnpm**: Node 22 verfügbar; `pnpm-lock.yaml` + `pnpm-workspace.yaml`
+   vorhanden (aber `package-lock.json` existiert auch → npm derzeit genutzt).
+3. **Vitest (jsdom) + Playwright E2E** → beides läuft (`npm test` = node --test
+   + vitest; `pnpm test:e2e` = Playwright).
+4. **Reproduzierbarkeit**: `mise.toml` pinnt Node 22 / pnpm 11; `.envrc`
+   aktiviert via `mise`/`direnv`.
+5. **E2E-Smoke-Pfad** → `pnpm test:e2e` über `dist/sqrt2.html` deckt
+   Canvas-Rendering + Rest-Widget + BroadcastChannel-Sync ab (3 Tests grün).
 
-## 4. Neubewertung der bisherigen Tooling-Schlüsse
+### Was das freischaltet (bereits aktiv)
+- Visuelle Korrektheit (Canvas-Skalierung, Loop-Sync, Auto-Zoom, Grid-Platzierung)
+  per Playwright testbar.
+- Vite 8 / Rolldown kann neu bewertet werden (Risiko "kein visueller Check"
+  entfällt) - aber Migration ist erledigt, Sprung nicht mehr nötig.
 
-Die im Gespräch getroffenen Aussagen waren an den **veralteten Unterbau**
-gekoppelt. Auf der neuen Instanz:
+## 4. Neubewertung der Tooling-Schlüsse (Realität vs. Dokumentation)
 
-| Bisher (veralteter Sandbox) | Neu (arch/cachedos + Playwright) |
+| Dokumentiert (Regel B: pnpm) | Real genutzt (package.json scripts) |
 |---|---|
-| npm („am eingesunkensten") | **pnpm** (Regel B / Discourse-Lernziel) |
-| Vite 7 gehalten (Rolldown-Risiko nicht prüfbar) | Vite 8 *möglich*, sofern Playwright den Build absichert - bewusster, gekoppelter Sprung (Vite 8 + passendes `vite-plugin-svelte` + Vitest 5), nicht blind |
-| Keine Browser-/Visuelle-Verifikation | Playwright-E2E + Screenshots möglich -> visuelles Gate vorhanden |
-| `npm test` = node --test + vitest | `pnpm test` + zusätzlich `pnpm test:e2e` (Playwright) |
+| `pnpm install` / `pnpm dev` / `pnpm build` / `pnpm test` | `npm install` / `npm run dev` / `npm run build` / `npm test` |
+| `pnpm test:e2e` | `pnpm test:e2e` (funktioniert, da Playwright global) |
 
-**Regel A (Konservativ) bleibt gültig** als Default für reine
-Codegen-Sicherheit - sie rechtfertigt z.B. weiterhin, nicht auf die
-allernächste Major jedes Tools zu springen. Aber die *Härte* der Haltung war
-umgebungsbedingt; auf der modernen Instanz darf (und soll) modernisiert werden,
-solange Playwright die Korrektheit absichert.
+**Diskrepanz:** `package.json` Scripts nutzen `npm`/`vite` direkt, aber
+`pnpm-lock.yaml` + `pnpm-workspace.yaml` + `mise.toml` (pnpm 11) existieren.
+Entweder Scripts auf `pnpm` umstellen **oder** pnpm-Artefakte entfernen.
 
-## 5. Nächster Schritt
-- Neue Instanz (arch/cachedos) aufsetzen, Punkt 1-5 aus §3 erfüllen.
-- Sobald Playwright grün ist: Vite-8-Sprung als gekoppelten Bump planen
-  (eigenes Spec/Commit) und per `pnpm test:e2e` absichern.
+**Regel A (Konservativ) bleibt gültig** - Vite 7, Svelte 5, Vitest 4 sind
+stabile Majors. Vite 8/Rolldown-Sprung ist **nicht mehr anstehend** (Migration
+erledigt, Playwright-Gate existiert).
+
+## 5. Nächster Schritt (Dokumentation/Code-Hygiene)
+
+- Package-Manager-Entscheidung treffen: `npm` (Scripts anpassen, pnpm-Lockfiles
+  löschen) **oder** `pnpm` (Scripts auf `pnpm` umstellen, `package-lock.json`
+  löschen) - aktuell inkonsistent.
+- Toter SYSTEM-C-Renderblock in `sqrt2.html` aufräumen (Code-Hygiene, GOTCHA #1).
+- `TOOLING_SPEC.md` Status auf "Abgeschlossen" setzen (Phase 0-5 erledigt).
