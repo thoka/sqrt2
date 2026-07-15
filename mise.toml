@@ -1,0 +1,6 @@
+# Pinned toolchain for this project (siehe scripts/setup-env.sh + AGENTS.md).
+# `mise` + `direnv` activieren das automatisch beim Betreten des Repos
+# (kein manuelles corepack/Global-Install mehr).
+[tools]
+node = "22"
+pnpm = "11"

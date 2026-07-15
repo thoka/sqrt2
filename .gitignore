@@ -4,4 +4,5 @@ dist/
 playwright-report/
 test-results/
 e2e/artifacts/
+.direnv/
 .claude/settings.local.json
