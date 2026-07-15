@@ -206,6 +206,10 @@
         <label>Wiedergabe: Wartezeit an Anfang &amp; Ende (Sekunden)</label>
         <input type="number" id="pauseDurationInput" min="0" max="10" step="0.1" value="1.5">
     </div>
+    <div class="control-group">
+        <label>Wiedergabe: Geschwindigkeit (Multiplikator)</label>
+        <input type="number" id="playSpeedInput" min="0.1" max="20" step="0.1" value="2.0">
+    </div>
 
     <hr style="border: 1px solid #334155; margin: 10px 0;">
 
@@ -281,6 +285,7 @@ const SETTINGS = [
     { key: 'linewidth', phase: 'pre', ...bindEl('lineWidthInput', 'value') },
     { key: 'pause', phase: 'pre', ...bindEl('pauseDurationInput', 'value') },
     { key: 'compaction', phase: 'pre', ...bindEl('compactionEnabledInput', 'checkbox') },
+    { key: 'speed', phase: 'pre', ...bindEl('playSpeedInput', 'value') },
     { key: 'transition', phase: 'pre', ...bindEl('compactionTransitionInput', 'value') },
     // Laufzeit-Zustand - hängt von der kompilierten Simulation ab
     // (MAX_TIME/GLOBAL_TTM für time/tick) bzw. ist reiner JS-Zustand
@@ -1511,7 +1516,11 @@ document.addEventListener('mousemove', (e) => {
 
 const pauseDurationInput = document.getElementById('pauseDurationInput');
 let ANIM_PAUSE_DURATION = parseFloat(pauseDurationInput.value) || 0;
-pauseDurationInput.addEventListener('input', (e) => { ANIM_PAUSE_DURATION = parseFloat(e.target.value) || 0; });
+pauseDurationInput.addEventListener('input', (e) => { ANIM_PAUSE_DURATION = parseFloat(e.target.value) || 1.5; });
+
+const playSpeedInput = document.getElementById('playSpeedInput');
+let ANIM_SPEED = parseFloat(playSpeedInput.value) || 2.0;
+playSpeedInput.addEventListener('input', (e) => { ANIM_SPEED = parseFloat(e.target.value) || 2.0; });
 
 // Baut denselben Parameter-Satz, den SETTINGS (siehe ganz oben im Script)
 // beim Laden zurückliest - Gegenstück zu den "Zustand teilen"-Buttons
@@ -1571,7 +1580,7 @@ function loop(now) {
     if (animPause > 0) {
         animPause -= dt;
     } else {
-        u_time += dt * 2.0 * animDirection;
+        u_time += dt * ANIM_SPEED * animDirection;
         if (u_time >= MAX_TIME) {
             u_time = MAX_TIME; animDirection = -1; animPause = ANIM_PAUSE_DURATION;
         } else if (u_time <= 0) {
