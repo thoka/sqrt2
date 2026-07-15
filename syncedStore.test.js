@@ -53,7 +53,6 @@ test('syncedStore: ohne BroadcastChannel bleibt der Store lokal nutzbar', () => 
   // simuliert die SSR/Node-Ohne-Channel-Situation, indem wir den Konstruktor
   // kurzzeitig ausblenden - der Store darf dann nicht brechen.
   const orig = globalThis.BroadcastChannel;
-  // eslint-disable-next-line no-global-assign
   globalThis.BroadcastChannel = undefined;
   try {
     const s = writable({ x: 1 });
@@ -61,7 +60,6 @@ test('syncedStore: ohne BroadcastChannel bleibt der Store lokal nutzbar', () => 
     s.set({ x: 9 });
     assert.equal(snapshot(s).x, 9);
   } finally {
-    // eslint-disable-next-line no-global-assign
     globalThis.BroadcastChannel = orig;
   }
 });

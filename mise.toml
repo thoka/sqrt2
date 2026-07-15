@@ -4,3 +4,11 @@
 [tools]
 node = "22"
 pnpm = "11"
+
+# Projekt-lokale CLI-Tools (vite, playwright, svelte-check, prettier, eslint,
+# knip) aus node_modules/.bin direkt im PATH verfügbar machen, damit z.B.
+# `vite` / `playwright` ohne `pnpm exec` in der Shell laufen. Greift nach
+# `pnpm install` (dann existiert node_modules/.bin). $PWD wird von mise aus
+# der Shell-Umgebung aufgelöst.
+[env]
+_.path = ["$PWD/node_modules/.bin"]

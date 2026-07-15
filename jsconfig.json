@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "target": "ESNext",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["svelte", "node"],
+    "allowJs": true,
+    "checkJs": false,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": false,
+    "strict": false,
+    "noEmit": true
+  },
+  "include": [
+    "src/**/*.js",
+    "src/**/*.svelte",
+    "*.html",
+    "vite.config.js",
+    "svelte.config.js",
+    "eslint.config.js",
+    "scripts/**/*.mjs"
+  ],
+  "exclude": ["node_modules", "dist"]
+}

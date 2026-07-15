@@ -6,3 +6,6 @@ test-results/
 e2e/artifacts/
 .direnv/
 .claude/settings.local.json
+
+# npm-Rest (Projekt nutzt pnpm - siehe AGENTS.md) nicht zurückkriechen lassen
+package-lock.json

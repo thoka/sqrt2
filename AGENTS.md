@@ -23,16 +23,34 @@ voll lesen - hier nur das Nötigste zum schnellen Einstieg.
 ## Build / Test / Run
 
 ```bash
-npm install
-npm run dev      # Vite-Dev-Server, URL im Browser öffnen (live-reload)
-npm run build    # -> dist/sqrt2.html (+ assets), direkt im Browser öffnen
-npm test         # node --test *.test.js  (reine Logik)
-                  #   +  vitest run       (Svelte-Komponenten, jsdom)
+pnpm install            # Projekt via pnpm (siehe "Paketmanager" unten)
+pnpm dev                # Vite-Dev-Server, URL im Browser öffnen (live-reload)
+pnpm build              # -> dist/sqrt2.html (+ assets), direkt im Browser öffnen
+pnpm test               # node --test *.test.js  (reine Logik)
+                        #   +  vitest run       (Svelte-Komponenten, jsdom)
+pnpm check              # Qualitäts-Gate: svelte-check && eslint . && knip --dependencies
+pnpm test:env           # Umgebungs-Check (Node/pnpm/Chromium headless)
+pnpm test:e2e           # Playwright-E2E über dist/ (siehe unten)
 ```
 
+- **Paketmanager: pnpm (nicht npm).** `package-lock.json` ist aus dem Repo
+  entfernt und in `.gitignore` geblockt - bei Relikten `rm package-lock.json`.
+  `pnpm-lock.yaml` ist committet (reproduzierbare Installs). Die CI
+  (`.github/workflows/deploy-pages.yml`) nutzt ebenfalls pnpm + Node 22.
+- **CLI-Tools im PATH:** `mise.toml` blendet `node_modules/.bin` per
+  `[env] _.path` in den PATH ein - nach `pnpm install` sind `vite`,
+  `playwright`, `svelte-check`, `prettier`, `eslint`, `knip` direkt als
+  Befehle verfügbar (nicht nur via `pnpm exec`). `mise trust mise.toml` ist
+  einmalig nötig (Env-Änderungen gelten als unvertrauenswürdig).
+- **Qualitäts-Gate `pnpm check`:** `svelte-check` (Diagnose der `.svelte`-
+  Dateien inkl. Runes/Store-Bindings/Templates), `eslint .` (Flat-Config in
+  `eslint.config.js`, Svelte via `eslint-plugin-svelte`, `no-undef` in
+  `.svelte` bewusst aus, weil `svelte-check` das abdeckt - daher nur
+  Warnungen bei ungenutzten Variablen) und `knip --dependencies` (ungenutzte
+  npm-Deps). Die CI läuft `pnpm check` vor `pnpm test`/`build`.
 - **Visuelle Verifikation in DIESER Sandbox MÖGLICH:** Playwright + Chromium
   laufen (globaler Cache `~/.cache/ms-playwright`). `pnpm test:e2e` (3 Tests)
-  grün. `npm run build` + `npm test` (Unit) bleiben Basis-Gate.
+  grün. `pnpm build` + `pnpm test` (Unit) + `pnpm check` bleiben Basis-Gate.
 - **E2E-Test:** `pnpm test:e2e` deckt Canvas-Rendering + Rest-Widget +
   BroadcastChannel-Sync ab (siehe `e2e/sqrt2.e2e.test.js`).
 - Branches: Arbeit auf `main` (Migration `migrate-to-svelte` abgeschlossen).

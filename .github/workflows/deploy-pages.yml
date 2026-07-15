@@ -19,11 +19,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - run: npm ci
-      - run: npm run build
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Quality-Gate: Svelte-Diagnose + ESLint + ungenutzte Dependencies.
+      - run: pnpm check
+      # Unit-Tests (node --test + vitest) + Umgebungs-Check.
+      - run: pnpm test
+      - run: pnpm test:env
+      # E2E (echtes headless Chromium) - Browser vorab installieren.
+      - run: pnpm exec playwright install chromium
+      - run: pnpm test:e2e
+      - run: pnpm build
         env:
           GITHUB_PAGES: true
       - run: cp dist/sqrt2.html dist/index.html
