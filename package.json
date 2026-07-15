@@ -9,6 +9,7 @@
 		"test": "node --test tests/unit/*.test.js && vitest run",
 		"e2e:install": "playwright install chromium",
 		"test:e2e": "playwright test",
+		"test:wssync": "node infra/connection-service/test-sqrt2-sync.mjs",
 		"test:env": "node --test scripts/check-env.mjs",
 		"check": "svelte-check --tsconfig jsconfig.json && eslint . && knip --dependencies && prettier --check .",
 		"prepare": "git config core.hooksPath scripts/git-hooks",

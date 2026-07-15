@@ -140,7 +140,10 @@ export function createWsRoom({ url, onStatus } = {}) {
 		socket.onmessage = (ev) => {
 			let msg;
 			try {
-				msg = JSON.parse(ev.data);
+				// Browser liefert String, node `ws` ggf. Buffer - beides
+				// verarbeitbar (siehe Integrationstest test-sqrt2-sync.mjs).
+				const raw = typeof ev.data === 'string' ? ev.data : ev.data.toString();
+				msg = JSON.parse(raw);
 			} catch {
 				return;
 			}
