@@ -186,7 +186,37 @@ Rendering-Modell, o.ä.) oder nur Features/Fixes? Bei (2) = Architekturwechsel
 UND der Task braucht das nicht: die kleinere, noch aktuelle Version wählen
 und die Abwägung im jeweiligen Spec-Dokument festhalten (siehe
 `TOOLING_SPEC.md` Abschnitt 6 als Beispiel), damit eine spätere bewusste
-Aktualisierung nicht als vergessen wirkt.
+  Aktualisierung nicht als vergessen wirkt.
+
+## Tooling: Lern-Horizont des Users (Antagonist zur Konservativ-Regel)
+
+Die Konservativ-Regel (oben) ist der Default für reine Codegen-Sicherheit,
+aber es ist **ebenso legitim, das zu nutzen, was der User lernen möchte**.
+Nord-Stern dafür ist die Tooling-Welt von **Discourse** (Forum-Software, die
+der User nutzt/kennt): Discourse ist selbst sehr konservativ, ist aber vor
+einiger Zeit auf **pnpm** umgestiegen. Daraus abgeleitet:
+
+- **pnpm ist der Paketmanager der Wahl**, auch wo npm nach der
+  Konservativ-Regel „am eingesunkensten" wäre. Begründung: bewusste
+  Lern-/Ausrichtungs-Entscheidung des Users, nicht technische Notwendigkeit;
+  pnpm ist zudem gereift und bringt bessere Reproduzierbarkeit
+  (content-addressable Lockfile, strikte `node_modules` ohne Phantom-Deps).
+- Andere Discourse-Stack-Bestandteile (Ember, Rails, PostgreSQL, Redis) werden
+  NICHT auf dieses Svelte-Projekt portiert - es zählt nur die *Haltung*
+  (konservativ + bereit, pnpm als Modernisierung mitzunehmen).
+
+**Anwendung:** Regel A gilt, bis der User ein Lernziel nennt (hier: pnpm/
+Discourse-Welt) - dann darf Regel B sie überschreiben. Siehe
+`TOOLING_ENV_SPEC.md` für die vollständige Philosophie + die Planung der neuen
+Coding-Instanz.
+
+**Umgebungs-Bedingtheit:** Der bisherige Vite-7-Halt (kein Rolldown-Risiko)
+war an den **veralteten System-Unterbau** dieser Sandbox gekoppelt, auf dem
+kein Browser/Playwright lauffähig ist (keine visuelle Verifikation möglich).
+Auf einer modernen Instanz (siehe `TOOLING_ENV_SPEC.md`, Basis arch/cachedos)
+entfällt dieser Grund, sofern Playwright den Build absichert - dort ist ein
+bewusster Vite-8-Sprung (gekoppelt mit passendem `vite-plugin-svelte` + Vitest
+5) vertretbar.
 
 ## Svelte-Komponenten-Tests: vitest + jsdom, keine zusätzliche Testing-Library
 

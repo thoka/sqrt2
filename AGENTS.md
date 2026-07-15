@@ -30,17 +30,19 @@ npm test         # node --test *.test.js  (reine Logik)
                   #   +  vitest run       (Svelte-Komponenten, jsdom)
 ```
 
-- **Keine visuelle Verifikation in dieser Sandbox möglich:** headless chromium
+- **Keine visuelle Verifikation in DIESER Sandbox möglich:** headless chromium
   hängt an DBus/Netzwerk. Korrektheit hier NUR über `npm run build` + `npm test`
   absichern. Playwright/Browser-Mode NICHT aufsetzen (siehe `CLAUDE.md`
   "Svelte-Komponenten-Tests": offizielle Svelte-5-Empfehlung ist vitest + jsdom
   mit `mount()`/`unmount()`/`flushSync()`, KEINE testing-library).
-- **Smoke-Test ohne Browser:** Dev-Server (`nohup npm run dev -- --port 5173
+- **Smoke-Test ohne Browser (hier):** Dev-Server (`nohup npm run dev -- --port 5173
   --strictPort &`) starten und per `curl -s -o /dev/null -w "%{http_code}"
   http://localhost:5173/sqrt2.html` (bzw. `/bank-core.js`,
   `/selection_strategy_prototype.html`) zumindest HTTP-200 + fehlerfreies
   Bundling prüfen - ersetzt keine visuelle Prüfung, fängt aber Import-/
-  Build-Fehler früh.
+  Build-Fehler früh. **Auf der neuen arch/cachedos-Instanz:** stattdessen
+  Playwright-E2E (`pnpm test:e2e`) über `dist/sqrt2.html` nutzen - hebt die
+  „kein Browser"-Blockade (siehe `TOOLING_ENV_SPEC.md`).
 - Branches: aktive Arbeit auf `migrate-to-svelte`.
 
 ## GOTCHAS (spart einem nächsten Agenten Zeit)
@@ -61,9 +63,15 @@ npm test         # node --test *.test.js  (reine Logik)
    Frame neu).
 4. **`displayStore` ist lokal, nicht synchronisiert** - bei neuen geteilten
    Zuständen `configStore`/`playbackStore` verwenden, nicht `displayStore`.
-5. **Tooling-Version:** `vite@7` (nicht `latest@8` mit Rolldown-Wechsel)
-   behalten - Minimal sicheren Versionssprung wählen, Architekturwechsel
-   vermeiden (siehe `CLAUDE.md` "Tooling-Updates").
+5. **Tooling-Version & Paketmanager:**
+   - **Vite:** `vite@7` (nicht `latest@8` mit Rolldown-Wechsel) behalten -
+     Minimal sicheren Versionssprung wählen, Architekturwechsel vermeiden
+     (siehe `CLAUDE.md` "Tooling-Updates"). **Umgebungs-bedingt:** galt, weil
+     hier (veralteter Unterbau) kein Browser/Playwright lauffähig ist; auf der
+     neuen arch/cachedos-Instanz + Playwright neu bewerten (`TOOLING_ENV_SPEC.md`).
+   - **Paketmanager:** **pnpm** (nicht npm) - bewusste Lern-/Ausrichtungs-
+     entscheidung des Users (Discourse-Stack). pnpm gereift + bessere
+     Reproduzierbarkeit (strikt `node_modules`, kein Phantom-Dep).
 6. **`SETTINGS`-Array:** neue einstellbare Größe = EIN neuer Eintrag
    `{ key, phase, get(), set(v) }` in `sqrt2.html`; nie wieder vier parallele
    Listen pflegen (`bindEl()` für input/select/checkbox, `phase:'pre'` vor
@@ -86,4 +94,6 @@ npm test         # node --test *.test.js  (reine Logik)
 `TOOLING_SPEC.md` ist das lebendige Doc (Phasen 0-5, Stand je Step). Nach
 JEDEM erledigten Schritt dort den Status + "Nächster Schritt" aktualisieren.
 Phase 5 (BroadcastChannel-Sync-Adapter + zweiter Vite-Entry `RemoteControl`)
-ist der nächste Schritt.
+ist der nächste Schritt. `TOOLING_ENV_SPEC.md` ergänzt um die Tooling-
+Philosophie (Konservativ vs. Lern-Horizont/Discourse) + die Planung der neuen
+Coding-Instanz (arch/cachedos, Playwright).
