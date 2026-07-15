@@ -90,6 +90,20 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
   Ein aus einem früheren Run noch laufender `vite preview` serviert ALTEN Build
   → neue Entries (z.B. `remote-control.html`) als 404. Vor `pnpm test:e2e`
   nach Rebuild: `pkill -f "vite preview"` (oder `reuseExistingServer: false`).
+- **direnv evaluiert `.envrc` unter zsh `emulate sh`:** `mise activate`
+  emittiert zsh/bash-Hook-Code (`autoload`/`add-zsh-hook`/`$+functions`) und
+  bricht mit "command not found" / "arithmetic syntax error". In `.envrc`
+  `mise hook-env` nutzen (nur `export`-Zeilen, shell-agnostisch).
+- **`pkill` fehlt im PATH dieser Sandbox:** Server nicht mit
+  `pkill -f "vite preview"` stoppen, sondern `scripts/serve.sh stop`
+  (PID-Datei `.server.pid` + `kill`). `serve.sh` startet dev/preview/restart.
+- **Vite bindet via `server.host: true` an 0.0.0.0:** Windows (WSL) erreicht
+  Dev/Preview unter `localhost`; Cross-Device-Test über Tailscale
+  (`<host>.<tailnet>.ts.net`) oder `scripts/serve.sh`.
+- **Connection-Service:** `infra/connection-service/` — `node server.js` bzw.
+  `docker compose up`; Admin-Key beim 1. Start auf der Console (persistent in
+  `/data`); TLS via `tailscale cert` → `TLS_CERT`/`TLS_KEY`. Tests:
+  `node smoke-test.mjs` (Plain + TLS). Spec: `docs/CONNECTION_SERVICE_SPEC.md`.
 - Offene Reste: ungenutzte `GLOBAL_*`-Ports in `TargetBankCanvas.svelte`
   (nur ESLint-Warnungen); Phase 6 (Politur) offen.
 
