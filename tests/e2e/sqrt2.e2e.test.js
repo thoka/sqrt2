@@ -142,7 +142,7 @@ test('PlaybackBar: Play-Button vor Slider, Slider spannnt Breite', async ({ page
 test('Zwei Tabs bleiben synchron (BroadcastChannel)', async ({ context }) => {
   const pageA = await context.newPage();
   const pageB = await context.newPage();
-  await pageA.goto('/sqrt2.html');
+  await pageA.goto('/');
   await pageB.goto('/remote-control.html');
 
   // config: Basis im Haupttool ändern -> Fernsteuerung übernimmt.
@@ -160,4 +160,23 @@ test('Zwei Tabs bleiben synchron (BroadcastChannel)', async ({ context }) => {
 
   await pageA.close();
   await pageB.close();
+});
+
+// Routing (vite appType 'mpa'): nur reale .html-Dateien werden
+// ausgeliefert, unbekannte/clean-URLs antworten mit 404 - KEIN
+// SPA-Fallback, der stumm index.html für alle Pfade serviert.
+// Prüft rohe HTTP-Status über das request-Fixture (kein Seiten-Navigation).
+test('Routing: / und /remote-control.html ok, unbekannte Pfade 404', async ({ request }) => {
+  const main = await request.get('/');
+  expect(main.status()).toBe(200);
+  expect(await main.title()).toContain('Flächenmodell');
+
+  const remote = await request.get('/remote-control.html');
+  expect(remote.status()).toBe(200);
+  expect(await remote.title()).toContain('Fernsteuerung');
+
+  // Unbekannter Pfad (clean URL ohne .html) darf NICHT auf index.html
+  // umgeleitet werden - das wäre der alte SPA-Fallback-Bug.
+  const unknown = await request.get('/control');
+  expect(unknown.status()).toBe(404);
 });
