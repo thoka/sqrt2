@@ -127,6 +127,14 @@
 		await QRCode.toCanvas(qrCanvas, text, { width: 200, margin: 1 });
 	}
 
+	// QR erst zeichnen, sobald der Canvas im DOM ist (er liegt im Session-
+	// Zweig, der beim Klick noch nicht gemountet war - direktes renderQr im
+	// startSession traf einen noch nicht existierenden Canvas). $effect läuft
+	// nach dem DOM-Update, wenn qrCanvas gebunden ist.
+	$effect(() => {
+		if (session && qrCanvas) renderQr(session.guestLink);
+	});
+
 	async function startSession() {
 		sessionError = '';
 		persistSettings();
@@ -157,8 +165,8 @@
 				pin: minted.pin,
 			});
 			session = { ...minted, guestLink, room };
-			await renderQr(guestLink);
 		} catch (e) {
+			console.error('[Fernsteuerung] Sitzung starten fehlgeschlagen:', e);
 			sessionError = String(e?.message ?? e);
 		}
 	}
@@ -176,8 +184,8 @@
 				pin,
 			});
 			session = { ...session, pin, guestLink };
-			await renderQr(guestLink);
 		} catch (e) {
+			console.error('[Fernsteuerung] PIN-Rotation fehlgeschlagen:', e);
 			sessionError = String(e?.message ?? e);
 		}
 	}
