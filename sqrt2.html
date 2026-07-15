@@ -121,7 +121,7 @@
 <canvas id="glCanvas"></canvas>
 
 <div id="numberPanel"><div id="numberPanelInner"></div></div>
-<div id="bankPanel"><div id="bankPanelInner"></div></div>
+<div id="bankPanel"><div id="bankPanelMount"></div></div>
 
 <div class="overlay-panel" id="settingsPanel">
     <div class="error-msg" id="errorMsg"></div>
@@ -140,6 +140,7 @@ import { configStore, playbackStore, compiledStore } from './src/lib/stores.js';
 import { parseConfigFromUrl, parsePlaybackFromUrl } from './src/lib/urlState.js';
 import ControlPanel from './src/components/ControlPanel.svelte';
 import PlaybackBar from './src/components/PlaybackBar.svelte';
+import RestCounterBars from './src/components/RestCounterBars.svelte';
 
 const COLORS = ["#cbd5e1", "#ef476f", "#ffd166", "#06d6a0", "#118ab2", "#8338ec", "#f78c6b", "#ff006e", "#3a86ff", "#fb5607", "#ffbe0b"];
 // Schaltet die Wort-Präfixe ("Länge ", "Fläche ", "Rest ") im Zahlen-Panel
@@ -171,6 +172,10 @@ playbackStore.update((p) => ({ ...p, ...parsePlaybackFromUrl(URL_PARAMS, get(com
 // Dokuments (implizites "defer").
 mount(ControlPanel, { target: document.getElementById('controlPanelMount') });
 mount(PlaybackBar, { target: document.getElementById('playbackBarMount') });
+// Rest-Anzeige als austauschbares Widget (TOOLING_SPEC.md Phase 4) -
+// RestCounterBars rendert die Bank-Balken in #bankPanelMount (die
+// eigentliche #bankPanelInner-Skalierung liegt in der Komponente selbst).
+mount(RestCounterBars, { target: document.getElementById('bankPanelMount') });
 
 let N_MAX = 16; let BASE = 10;
 let TOTAL_STEPS = 0; let MAX_TIME = 0; let P_FINAL = 0;
@@ -370,15 +375,16 @@ function getShellStepAt(time) {
 let current_hud_hash = "";
 function updateHUD(time) {
     let Step = getShellStepAt(time);
-    let counts = new Array(Math.min(2 * N_MAX + 1, 50)).fill(0);
-    for (let p of bank_pieces) {
-        if (p.k < counts.length && time >= p.born_time && time < p.cut_time && time < p.taken_time) counts[p.k]++;
-    }
-    
-    let hash = Step + "_" + JSON.stringify(counts) + "_" + BASE;
+    // Hash enthält seit Phase 4 nur noch Step + BASE: die Bank-Balken
+    // (die von counts abhingen) leben jetzt in <RestCounterBars>
+    // (siehe mount() weiter oben), diese Funktion rendert NUR noch die
+    // Zahlentafel l/l²/R. Dadurch läuft MathJax typesetPromise()
+    // nicht mehr bei jeder reinen Bestandsänderung (nur noch bei
+    // Schalenwechsel/Basiswechsel) - spürbar ruhiger.
+    let hash = Step + "_" + BASE;
     if (hash === current_hud_hash) return;
     current_hud_hash = hash;
-    
+
     // Ermittle den "echten" Iterationsschritt (m) passend zum Fragment (S)
     let current_m = axes[Step].exp;
 
@@ -431,33 +437,6 @@ function updateHUD(time) {
     \\end{aligned} \\]`;
     numberPanelInner.innerHTML = equation;
 
-    let inv_html = "";
-    const BLOCK_CAP = 24; // ab hier wird die Bargraph-Darstellung zu einer "+N"-Kurzform verdichtet
-    for (let k = 0; k < counts.length; k++) {
-        let count = counts[k] || 0;
-        let color = COLORS[k % COLORS.length];
-        let expText = k === 0 ? "0" : `-${k}`;
-
-        let barHtml = "";
-        if (count === 0) {
-            barHtml = `<div class="bank-bar" style="opacity:0.25"></div>`;
-        } else if (count <= BLOCK_CAP) {
-            let blocks = "";
-            for (let i = 0; i < count; i++) blocks += `<div class="piece-block" style="background:${color}"></div>`;
-            barHtml = `<div class="bank-bar">${blocks}</div>`;
-        } else {
-            // Bei sehr vielen Stücken (z.B. tiefe Rekursion, Basis>2): kompakter
-            // durchgehender Balken statt hunderter einzelner Blöckchen - bleibt
-            // trotzdem klar als "voller Bestand" erkennbar.
-            barHtml = `<div class="bank-bar"><div style="flex-grow:1; height:10px; border-radius:2px; background:${color}"></div></div>`;
-        }
-
-        inv_html += `<div class="bank-row" style="opacity: ${count === 0 ? 0.35 : 1.0}">
-            ${barHtml}
-            <div class="bank-exp" style="color:${color}">${expText}</div>
-        </div>`;
-    }
-    bankPanelInner.innerHTML = inv_html;
     // MathJax rendert asynchron - die tatsächliche (finale) Breite der Formel
     // steht erst nach Abschluss von typesetPromise() fest, daher die Skalierung
     // erst im .then() anstoßen (nicht direkt danach synchron).
@@ -466,7 +445,8 @@ function updateHUD(time) {
     } else {
         updateNumberPanelScale();
     }
-    updateBankPanelScale();
+    // Bank-Balken ("Restfläche"-Inventar) werden seit Phase 4 NICHT mehr
+    // hier gerendert, sondern in <RestCounterBars> (siehe mount() oben).
 }
 
 // Bei tiefer Rekursion (z.B. N_MAX=30, Basis 2) werden die Ziffernketten in
@@ -482,30 +462,6 @@ function updateNumberPanelScale() {
     let natural = numberPanelInner.scrollWidth;
     let scale = Math.min(1, available / natural);
     numberPanelInner.style.transform = `scale(${scale})`;
-}
-
-// Bei tiefer Rekursion (viele Ziffern-Stellen, also viele Zeilen im
-// Bank-Zähler) überragt die natürliche Höhe irgendwann die Fensterhöhe -
-// ohne Gegenmaßnahme würden die äußersten Zeilen oben/unten aus dem
-// sichtbaren Bereich laufen. Fix: Inhalt erst ungeskaliert messen, dann bei
-// Bedarf gleichmäßig auf die verfügbare Höhe herunterskalieren (nie
-// hochskalieren - Math.min mit 1). transform-origin "right center" (siehe
-// CSS) hält dabei den rechten Rand fest, der Zähler schrumpft nach links.
-//
-// WICHTIG: gemessen (und skaliert) wird #bankPanelInner, NICHT #bankPanel -
-// #bankPanel hat selbst eine feste Höhe (top:0/bottom:0, für die vertikale
-// Zentrierung über die volle Fensterhöhe). Ein Element mit fester Höhe und
-// Standard-overflow:visible liefert in scrollHeight einfach seine eigene
-// (feste) Höhe zurück, NICHT die tatsächliche, überlaufende Inhaltsgröße -
-// die Messung wäre also immer ≈ available und hätte nie ausgelöst.
-// #bankPanelInner dagegen hat keine eigene Höhenvorgabe (wächst frei mit dem
-// Inhalt), scrollHeight liefert dort zuverlässig die echte Wunschhöhe.
-function updateBankPanelScale() {
-    bankPanelInner.style.transform = 'none';
-    let available = window.innerHeight - 40;
-    let natural = bankPanelInner.scrollHeight;
-    let scale = Math.min(1, available / natural);
-    bankPanelInner.style.transform = `scale(${scale})`;
 }
 
 // === SYSTEM C: RENDER ENGINE ===
@@ -542,7 +498,6 @@ function resizeCanvas() {
     canvas.height = window.innerHeight * RENDER_SCALE;
     canvas.style.width = window.innerWidth + 'px';
     canvas.style.height = window.innerHeight + 'px';
-    updateBankPanelScale();
     renderFrame();
 }
 window.addEventListener('resize', resizeCanvas);
@@ -957,7 +912,8 @@ const autoZoomNote = document.getElementById('autoZoomNote');
 const numberPanel = document.getElementById('numberPanel');
 const numberPanelInner = document.getElementById('numberPanelInner');
 const bankPanel = document.getElementById('bankPanel');
-const bankPanelInner = document.getElementById('bankPanelInner');
+// #bankPanelInner (inkl. seiner Skalierung) wird seit Phase 4 von
+// <RestCounterBars> gerendert, hier nicht mehr per getElementById geholt.
 
 // Zeigt (falls Auto-Zoom aktiv, AUTO_ZOOM_MIN_PX > 0) eine Markierung auf dem
 // Modus-B-Regler an der Stelle, ab der Auto-Zoom übersteuern würde/tut -
