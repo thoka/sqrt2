@@ -1,0 +1,11 @@
+# pnpm-Workspace-Konfiguration (pnpm 10+/11).
+#
+# onlyBuiltDependencies: Build-Skripte, die pnpm aus Sicherheitsgruenden per
+# Default blockiert, hier explizit erlauben. Ohne esbuild-Postinstall fehlt das
+# esbuild-Binary und `vite build` (Schritt 6 von setup-env.sh) schlaegt fehl
+# (ERR_PNPM_IGNORED_BUILDS).
+#
+# minimumReleaseAgeExclude wird ggf. von pnpm selbst (loose mode) ergaenzt,
+# wenn eine Version als "zu frisch" gilt - nicht von Hand pflegen.
+onlyBuiltDependencies:
+  - esbuild
