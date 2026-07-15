@@ -124,216 +124,53 @@
 <div id="bankPanel"><div id="bankPanelInner"></div></div>
 
 <div class="overlay-panel" id="settingsPanel">
-    <div style="font-weight: bold; margin-bottom: 5px; color: #3b82f6;">System-Compiler</div>
-    <div class="control-row">
-        <div class="control-group"><label>Basis (b)</label><input type="number" id="baseInput" min="2" max="16" value="10"></div>
-        <div class="control-group"><label>Tiefe ($n_{max}$)</label><input type="number" id="depthInput" min="1" max="100" value="16"></div>
-    </div>
-    <div class="warning" id="perfWarning">Tiefe > 5 kann Leistung beeinträchtigen.</div>
     <div class="error-msg" id="errorMsg"></div>
-
-    <div class="control-group" style="margin-top: 5px;">
-        <label>Transformation (Flug-Modus)</label>
-        <select id="transformMode">
-            <option value="S">S: Strecken (Morphing)</option>
-            <option value="Z">Z: Zerschneiden (Montessori) - Rück-Verschmelzung noch buggy</option>
-            <!-- R (Rotieren) weiterhin deaktiviert - eigener, unabhängiger
-                 Bug (falsche Zielgröße bei R_macro), siehe README
-                 Abschnitt 8. Für Neuimplementierung siehe Kommentare im JS. -->
-        </select>
-    </div>
-
-    <hr style="border: 1px solid #334155; margin: 10px 0;">
-
-    <div class="control-group"><label id="tickLabel">Tick (Vergleich mit Test-Tool) — 0 / 0</label><input type="number" id="tickInput" min="0" step="1" value="0"></div>
-
-    <div class="control-group" style="margin-top:10px;">
-        <label>Modus B (Hypothetische Basis $b \to 1$)</label>
-        <div class="slider-with-marker">
-            <input type="range" id="modeSliderAB" min="0" max="1" step="0.01" value="0">
-            <div class="auto-zoom-marker" id="autoZoomMarker" title="Auto-Zoom-Mindestwert"></div>
-        </div>
-        <div class="auto-zoom-note" id="autoZoomNote">Auto-Zoom aktiv - übersteuert den Regler nach oben</div>
-    </div>
-    <div class="control-group" style="margin-top:6px;">
-        <label>Auto-Zoom: Mindestbreite feinste Stelle (Pixel, 0 = aus)</label>
-        <input type="number" id="autoZoomMinPxInput" min="0" max="200" step="1" value="3">
-    </div>
-
-    <div class="control-group" style="margin-top:10px;">
-        <label>Bank-Zoom (automatisch, reale Basis) — <span class="zoom-readout" id="bankZoomLabel">1,0×</span></label>
-        <label style="margin-top:-4px;">Restfläche der Bank — <span class="zoom-readout" id="bankAreaLabel">100%</span></label>
-    </div>
-    <div class="control-group" style="margin-top:6px;">
-        <label>Zoom-Schwellwert (Potenzen ignorieren)</label>
-        <input type="number" id="zoomThresholdInput" min="0" max="10" step="1" value="0">
-    </div>
-    <div class="control-group" style="margin-top:6px;">
-        <label>Bank-/Kompaktierungs-Zoom: Trägheit (kleiner = schneller)</label>
-        <input type="number" id="zoomSpeedInput" min="0.002" max="0.08" step="0.001" value="0.012">
-    </div>
-    <div class="control-group" style="margin-top:6px; flex-direction: row; align-items: center; gap: 8px;">
-        <input type="checkbox" id="compactionEnabledInput" style="width: auto;">
-        <label style="margin: 0;" for="compactionEnabledInput">Kompaktierung ("Zeilen/Spalten ausblenden") statt Bank-Zoom</label>
-    </div>
-    <div class="control-group" style="margin-top:6px;">
-        <label>Kompaktierung: Übergangsdauer (Ticks)</label>
-        <input type="number" id="compactionTransitionInput" min="0" max="30" step="1" value="3">
-    </div>
-
-    <hr style="border: 1px solid #334155; margin: 10px 0;">
-
-    <!-- Auskommentiert: Linienbreite allein (0.3px) reicht bereits für
-    ein komplett ruhiges Bild - Supersampling und Blur bringen dann keinen
-    spürbaren Zusatznutzen mehr. Code bleibt für späteren Bedarf erhalten.
-    <div class="control-group">
-        <label>Render-Auflösung (Supersampling gegen Flirren, kostet Performance) — <span class="zoom-readout" id="renderScaleLabel">1,0×</span></label>
-        <input type="range" id="renderScaleInput" min="0.5" max="3" step="0.1" value="1">
-    </div>
-    <div class="control-group" style="margin-top:6px;">
-        <label>Kantenweichheit (Blur gegen Flirren) — <span class="zoom-readout" id="edgeBlurLabel">0px</span></label>
-        <input type="range" id="edgeBlurInput" min="0" max="2" step="0.1" value="0">
-    </div>
-    -->
-    <div class="control-group" style="margin-top:6px;">
-        <label>Linienbreite (dicker = weniger Flirren, kaum Performance-Kosten) — <span class="zoom-readout" id="lineWidthLabel">0,3px</span></label>
-        <input type="range" id="lineWidthInput" min="0" max="4" step="0.1" value="0.3">
-    </div>
-
-    <hr style="border: 1px solid #334155; margin: 10px 0;">
-
-    <div class="control-group">
-        <label>Wiedergabe: Wartezeit an Anfang &amp; Ende (Sekunden)</label>
-        <input type="number" id="pauseDurationInput" min="0" max="10" step="0.1" value="1.5">
-    </div>
-    <div class="control-group">
-        <label>Wiedergabe: Geschwindigkeit (Multiplikator)</label>
-        <input type="number" id="playSpeedInput" min="0.1" max="20" step="0.1" value="2.0">
-    </div>
-
-    <hr style="border: 1px solid #334155; margin: 10px 0;">
-
-    <div class="control-group">
-        <label>Aktuellen Zustand teilen (kopiert in die Zwischenablage)</label>
-        <div class="control-row">
-            <button type="button" class="settings-btn" id="copyUrlBtn">Als URL kopieren</button>
-            <button type="button" class="settings-btn" id="copyParamsBtn">Nur Parameter kopieren</button>
-        </div>
-    </div>
+    <div id="controlPanelMount"></div>
 </div>
 
 <div id="bottomBar">
-    <button id="playBtn" title="Play/Pause">▶</button>
-    <input type="range" id="timeSlider" min="0" max="10" step="0.01" value="0">
-    <span id="timeReadout">0.0 · 0/0</span>
+    <div id="playbackBarMount"></div>
 </div>
 
 <script type="module">
 import { applyCompactionFit } from './bank-core.js';
-import { compileSystem as compileSystemPure } from './src/lib/compiler.js';
+import { mount } from 'svelte';
+import { get } from 'svelte/store';
+import { configStore, playbackStore, compiledStore } from './src/lib/stores.js';
+import { parseConfigFromUrl, parsePlaybackFromUrl } from './src/lib/urlState.js';
+import ControlPanel from './src/components/ControlPanel.svelte';
+import PlaybackBar from './src/components/PlaybackBar.svelte';
 
 const COLORS = ["#cbd5e1", "#ef476f", "#ffd166", "#06d6a0", "#118ab2", "#8338ec", "#f78c6b", "#ff006e", "#3a86ff", "#fb5607", "#ffbe0b"];
 // Schaltet die Wort-Präfixe ("Länge ", "Fläche ", "Rest ") im Zahlen-Panel
 // oben rechts an/aus - Standard aus (nur kurze Symbole l/l²/R).
 const NUMBER_PANEL_VERBOSE = false;
 
-// === Einstellungen: EIN Objekt, generisch aus der URL initialisierbar ===
-// Jede Einstellung (egal ob simples <input>, eine Checkbox oder reiner
-// Laufzeit-Zustand wie "spielt gerade ab") ist genau EIN Eintrag in SETTINGS
-// mit ihrem URL-Parameter-Namen sowie get()/set() - neue Einstellungen
-// brauchen dadurch nur noch einen einzigen neuen Eintrag hier (vorher:
-// URL_FIELD_MAP UND URL_CHECKBOX_FIELD_MAP UND ein Eintrag in
-// buildStateParams() UND ggf. ein eigener Init-Block - vier Stellen für
-// jede neue Einstellung, leicht auseinanderlaufend).
-//
-// phase 'pre': reine Compiler-Eingaben (<input>/<select>, direkt per
-// getElementById lesbar) - werden GANZ AM ANFANG angewendet (vor
-// compileSystem()), damit jeder spätere Code (compileSystem() selbst, die
-// Init-Blöcke von lineWidthInput/pauseDurationInput/... weiter unten), der
-// .value/.checked liest, den überschriebenen Wert automatisch sieht.
-// phase 'post': hängt von der erst noch zu kompilierenden Simulation ab
-// (MAX_TIME/GLOBAL_TTM) oder ist reiner Laufzeit-Zustand (isPlaying) -
-// wird erst NACH compileSystem() angewendet, siehe applyPhase() weiter
-// unten. Das Gegenstück (Button "Als URL kopieren") baut denselben
-// Parameter-Satz aus DERSELBEN Liste, siehe buildStateParams().
+// === Einstellungen: configStore/playbackStore + URL-Sync (TOOLING_SPEC.md
+// Phase 3) ===
+// Ersetzt die frühere DOM-gebundene SETTINGS-Liste (bindEl()/applyPhase()) -
+// Compiler-Eingaben UND Laufzeit-Regler leben jetzt als EIN configStore-
+// Objekt (siehe src/lib/stores.js); <ControlPanel>/<PlaybackBar> (siehe
+// mount() weiter unten) lesen/schreiben es direkt, ohne Umweg über den DOM.
+// "time"/"tick" aus der URL brauchen dagegen MAX_TIME/GLOBAL_TTM einer
+// bereits kompilierten Simulation zum Klammern bzw. Umrechnen - anders als
+// im alten DOM-getriebenen Ablauf ist compiledStore dafür aber JEDERZEIT per
+// get() verfügbar (reine, deterministische Funktion, kein Compile-Schritt im
+// Sinne von "erst nach dem Rendern"), daher hier ohne pre/post-Phasen-
+// Unterscheidung in zwei einfachen Schritten. Siehe src/lib/urlState.js für
+// die Parameter-Definitionen (Gegenstück: buildStateParams() in
+// ControlPanel.svelte, "Zustand teilen"-Buttons).
 const URL_PARAMS = new URLSearchParams(window.location.search);
+configStore.update((c) => ({ ...c, ...parseConfigFromUrl(URL_PARAMS) }));
+playbackStore.update((p) => ({ ...p, ...parsePlaybackFromUrl(URL_PARAMS, get(compiledStore)) }));
 
-// Hilfsfunktion für die häufigste Sorte Einstellung: direkt an ein
-// <input>/<select>-Element gebunden (kind 'value') oder eine Checkbox
-// (kind 'checkbox').
-function bindEl(elId, kind) {
-    return {
-        get: () => {
-            let el = document.getElementById(elId);
-            return kind === 'checkbox' ? (el.checked ? '1' : '0') : el.value;
-        },
-        set: (v) => {
-            let el = document.getElementById(elId);
-            if (!el) return;
-            if (kind === 'checkbox') el.checked = (v === '1'); else el.value = v;
-        },
-    };
-}
-
-const SETTINGS = [
-    { key: 'base', phase: 'pre', ...bindEl('baseInput', 'value') },
-    { key: 'depth', phase: 'pre', ...bindEl('depthInput', 'value') },
-    { key: 'mode', phase: 'pre', ...bindEl('transformMode', 'value') },
-    { key: 'zoomthresh', phase: 'pre', ...bindEl('zoomThresholdInput', 'value') },
-    { key: 'autozoom', phase: 'pre', ...bindEl('autoZoomMinPxInput', 'value') },
-    { key: 'zoomspeed', phase: 'pre', ...bindEl('zoomSpeedInput', 'value') },
-    { key: 'linewidth', phase: 'pre', ...bindEl('lineWidthInput', 'value') },
-    { key: 'pause', phase: 'pre', ...bindEl('pauseDurationInput', 'value') },
-    { key: 'compaction', phase: 'pre', ...bindEl('compactionEnabledInput', 'checkbox') },
-    { key: 'speed', phase: 'pre', ...bindEl('playSpeedInput', 'value') },
-    { key: 'transition', phase: 'pre', ...bindEl('compactionTransitionInput', 'value') },
-    // Laufzeit-Zustand - hängt von der kompilierten Simulation ab
-    // (MAX_TIME/GLOBAL_TTM für time/tick) bzw. ist reiner JS-Zustand
-    // (play, siehe setPlaying() weiter unten).
-    {
-        key: 'modeab', phase: 'post',
-        get: () => u_mode_AB.toFixed(4),
-        set: (v) => { u_mode_AB = Math.max(0, Math.min(1, parseFloat(v) || 0)); modeSliderAB.value = u_mode_AB; },
-    },
-    {
-        key: 'time', phase: 'post',
-        get: () => u_time.toFixed(3),
-        set: (v) => { u_time = Math.max(0, Math.min(MAX_TIME, parseFloat(v) || 0)); timeSlider.value = u_time; },
-        // "time" hat Vorrang vor "tick", falls beide angegeben sind - "tick"
-        // ist nur eine alternative Eingabeform derselben Einstellung (für
-        // den direkten Zustandsvergleich mit dem Test-Tool, das Tick als
-        // native Zeitachse nutzt), braucht daher keinen eigenen Eintrag.
-        resolveFromUrl: (params) => {
-            if (params.has('time')) return params.get('time');
-            if (params.has('tick') && GLOBAL_TTM) {
-                let tick = Math.max(0, Math.min(GLOBAL_TTM.maxTick, Math.round(parseFloat(params.get('tick')) || 0)));
-                return String(GLOBAL_TTM.tickToTime(tick));
-            }
-            return undefined;
-        },
-    },
-    {
-        key: 'play', phase: 'post',
-        get: () => isPlaying ? '1' : '0',
-        set: (v) => setPlaying(v === '1'),
-    },
-];
-
-// Wendet alle Einstellungen einer Phase an, deren URL-Parameter gesetzt ist
-// (bzw. deren resolveFromUrl() einen Wert liefert). Gibt zurück, ob
-// irgendetwas geändert wurde (für ein abschließendes updateOutputs()).
-function applyPhase(phase) {
-    let touched = false;
-    for (let s of SETTINGS) {
-        if (s.phase !== phase) continue;
-        let raw = s.resolveFromUrl ? s.resolveFromUrl(URL_PARAMS) : (URL_PARAMS.has(s.key) ? URL_PARAMS.get(s.key) : undefined);
-        if (raw === undefined) continue;
-        s.set(raw);
-        touched = true;
-    }
-    return touched;
-}
-applyPhase('pre');
+// Mountet früh (vor jedem restlichen Setup, das per getElementById auf von
+// diesen Komponenten gerenderte Elemente wie #bankZoomLabel/#timeSlider
+// zugreift, siehe weiter unten) - die Mount-Ziele existieren bereits im
+// HTML-Body, <script type="module"> läuft ohnehin erst nach dem Parsen des
+// Dokuments (implizites "defer").
+mount(ControlPanel, { target: document.getElementById('controlPanelMount') });
+mount(PlaybackBar, { target: document.getElementById('playbackBarMount') });
 
 let N_MAX = 16; let BASE = 10;
 let TOTAL_STEPS = 0; let MAX_TIME = 0; let P_FINAL = 0;
@@ -359,13 +196,10 @@ let GLOBAL_BANK_ZOOM_SPLINE = null;
 // Zoom-Schwellwert (in Potenzen von BASE): 0 = alle Stücke fließen ins
 // Framing ein (bisheriges Verhalten). Siehe compileSystem() für Details.
 let BANK_ZOOM_THRESHOLD_POWERS = 0;
-// Bijektive Tick<->Zeit-Abbildung aus compileSystem() (siehe dort) - wird
-// hier zusätzlich aufgehoben, damit der Tick-Regler (siehe unten) jederzeit
-// zwischen der kontinuierlichen Animationszeit dieses Tools und dem
-// ganzzahligen Tick-Zähler aus bank-core.js hin- und herrechnen kann. Das
-// erlaubt den direkten Zustandsvergleich mit dem Test-Tool (dort ist Tick
-// die native Zeitachse).
-let GLOBAL_TTM = null;
+// (Tick<->Zeit-Umrechnung selbst - GLOBAL_TTM - wird nicht mehr modul-lokal
+// gehalten: Tick-Eingabe/-Anzeige lebt seit Phase 3 vollständig in
+// ControlPanel.svelte/PlaybackBar.svelte, die dafür direkt $compiledStore
+// lesen.)
 // Auto-Zoom braucht während der Animation ein bewegliches Ziel: der
 // Exponent der tiefsten gerade sichtbaren Ziffern-Stelle wächst schalenweise
 // (axes[S].exp), nicht erst fix bei N_MAX. Ein Eintrag pro Schale S
@@ -400,39 +234,50 @@ let GLOBAL_COMPACTION_FIT_SPLINE = null;
 //
 // Die eigentliche Compiler-Logik (Ziffernsuche + Bank-Algorithmus aus
 // bank-core.js, Tick<->Zeit-Mapping, Auto-Zoom-/Kompaktierungs-Checkpoints)
-// lebt seit TOOLING_SPEC.md Phase 1 als reine Funktion in
-// src/lib/compiler.js (kein DOM-Zugriff, config rein -> kompilierter
-// Zustand raus - siehe compiler.test.js für die Verhaltens-Absicherung
-// dieser Extraktion). Hier bleibt nur noch der DOM-Adapter: Inputs lesen,
-// compileSystemPure() aufrufen, Ergebnis in die Modul-Scope-Variablen
-// zurückschreiben, die restlichen DOM-Seiteneffekte (Slider-Max, Fehler-
-// Anzeige) ausführen.
-function compileSystem() {
+// lebt seit TOOLING_SPEC.md Phase 1 als reine Funktion in src/lib/compiler.js
+// (kein DOM-Zugriff, config rein -> kompilierter Zustand raus). Seit Phase 3
+// kommt die Config nicht mehr aus dem DOM, sondern aus configStore (siehe
+// ControlPanel.svelte) - applyConfig() ist der configStore-Adapter: liest
+// den aktuellen configStore-Wert, holt sich darüber via compiledStore (siehe
+// src/lib/stores.js) das kompilierte Ergebnis und schreibt beides in die
+// Modul-Scope-Variablen zurück, die renderFrame()/updateHUD()/die
+// Animationsschleife weiter unten unverändert nutzen.
+let _lastCompileKey; // undefined bis zum ersten applyConfig()-Aufruf
+// true, während applyConfig() oder loop() (siehe weiter unten) selbst gerade
+// playbackStore aktualisieren - unterdrückt das sonst durch applyPlayback()
+// ausgelöste updateOutputs() für diesen Zwischenschritt, weil der jeweilige
+// Aufrufer ohnehin gleich selbst (mit dann vollständig konsistentem Zustand)
+// noch einmal rendert.
+let _suppressPlaybackRender = false;
+function compileRelevantKey(c) {
+    // Nur diese Felder verändern axes/bank_pieces/MAX_TIME usw. (siehe
+    // compileSystem() in src/lib/compiler.js) - alle anderen configStore-
+    // Felder (modeAB/autoZoomMinPx/lineWidth/pause/speed) sind reine
+    // Laufzeit-/Renderregler. NUR bei einer Änderung dieser Teilmenge macht
+    // ein Reset der Zeitposition auf 0 Sinn (wie im alten DOM-Panel) - sonst
+    // würde z.B. das Ziehen des Linienbreite-Reglers während der Wiedergabe
+    // die Animation zurückspringen lassen.
+    return JSON.stringify([c.base, c.depth, c.transformMode, c.bankZoomThresholdPowers, c.zoomSpeedCoef, c.compactionEnabled, c.compactionTransitionTicks]);
+}
+function applyConfig(c) {
     try {
         document.getElementById('errorMsg').style.display = 'none';
-        let config = {
-            depth: parseInt(document.getElementById('depthInput').value),
-            base: parseInt(document.getElementById('baseInput').value),
-            bankZoomThresholdPowers: parseInt(document.getElementById('zoomThresholdInput').value) || 0,
-            transformMode: document.getElementById('transformMode').value,
-            zoomSpeedCoef: parseFloat(document.getElementById('zoomSpeedInput').value) || 0.012,
-            compactionEnabled: document.getElementById('compactionEnabledInput').checked,
-            compactionTransitionTicks: parseInt(document.getElementById('compactionTransitionInput').value),
-        };
-        N_MAX = config.depth;
-        BASE = config.base;
-        BANK_ZOOM_THRESHOLD_POWERS = config.bankZoomThresholdPowers;
-        document.getElementById('perfWarning').style.display = N_MAX > 5 ? 'block' : 'none';
+        N_MAX = c.depth;
+        BASE = c.base;
+        BANK_ZOOM_THRESHOLD_POWERS = c.bankZoomThresholdPowers;
+        u_mode_AB = c.modeAB;
+        AUTO_ZOOM_MIN_PX = c.autoZoomMinPx;
+        LINE_WIDTH_PX = c.lineWidth;
+        ANIM_PAUSE_DURATION = c.pauseDuration;
+        ANIM_SPEED = c.playSpeed;
 
-        let compiled = compileSystemPure(config);
+        let compiled = get(compiledStore);
         axes = compiled.axes;
         TOTAL_STEPS = compiled.TOTAL_STEPS;
         bank_pieces = compiled.bank_pieces;
         render_pipeline = compiled.render_pipeline;
         GLOBAL_N_ARR = compiled.GLOBAL_N_ARR;
         P_FINAL = compiled.P_FINAL;
-        GLOBAL_TTM = compiled.GLOBAL_TTM;
-        tickInput.max = GLOBAL_TTM.maxTick;
         GLOBAL_SHELL_START = compiled.GLOBAL_SHELL_START;
         GLOBAL_AUTO_ZOOM_CHECKPOINTS = compiled.GLOBAL_AUTO_ZOOM_CHECKPOINTS;
         GLOBAL_AUTO_ZOOM_SPLINE = compiled.GLOBAL_AUTO_ZOOM_SPLINE;
@@ -443,15 +288,26 @@ function compileSystem() {
         GLOBAL_COMPACTION_WAYPOINTS = compiled.GLOBAL_COMPACTION_WAYPOINTS;
         GLOBAL_COMPACTION_LOGICAL_LOOKUP = compiled.GLOBAL_COMPACTION_LOGICAL_LOOKUP;
         GLOBAL_COMPACTION_FIT_SPLINE = compiled.GLOBAL_COMPACTION_FIT_SPLINE;
-
         MAX_TIME = compiled.MAX_TIME;
-        document.getElementById('timeSlider').max = MAX_TIME;
-        u_time = 0; document.getElementById('timeSlider').value = 0;
+
+        let key = compileRelevantKey(c);
+        if (_lastCompileKey !== undefined && key !== _lastCompileKey) {
+            // _suppressPlaybackRender unterdrückt das updateOutputs(), das
+            // applyPlayback() (siehe weiter unten) sonst SOFORT synchron für
+            // diesen Zwischenzustand auslösen würde - der abschließende
+            // updateOutputs()-Aufruf am Ende dieser Funktion rendert ohnehin
+            // den finalen Zustand, ein zweiter Render-Durchlauf wäre reine
+            // Verschwendung.
+            _suppressPlaybackRender = true;
+            playbackStore.update((p) => ({ ...p, time: 0 }));
+            _suppressPlaybackRender = false;
+        }
+        _lastCompileKey = key;
         updateOutputs();
     } catch(e) {
         document.getElementById('errorMsg').style.display = 'block';
         document.getElementById('errorMsg').innerText = `Compiler-Absturz: ${e}`;
-        isPlaying = false;
+        playbackStore.update((p) => ({ ...p, isPlaying: false }));
     }
 }
 
@@ -671,6 +527,11 @@ let AUTO_ZOOM_MIN_PX = 0;
 let RENDER_SCALE = 1;
 let EDGE_BLUR_PX = 0;
 let LINE_WIDTH_PX = 0.3;
+// Wiedergabe-Trägheit/-Geschwindigkeit - Default-Werte hier nur als
+// Fallback bis zum ersten applyConfig()-Aufruf (siehe SYSTEM A weiter oben),
+// der sie aus configStore.pauseDuration/playSpeed überschreibt.
+let ANIM_PAUSE_DURATION = 1.5;
+let ANIM_SPEED = 2.0;
 
 function resizeCanvas() {
     // Backing-Store in RENDER_SCALE physischen Pixeln pro CSS-Pixel, CSS-
@@ -1083,26 +944,20 @@ function renderFrame() {
     ctx.restore();
 }
 
-const timeSlider = document.getElementById('timeSlider');
-const modeSliderAB = document.getElementById('modeSliderAB');
+// bankZoomLabel/bankAreaLabel/autoZoomMarker/autoZoomNote werden von
+// ControlPanel.svelte gerendert (siehe mount() weiter oben), bleiben aber
+// reine Render-AUSGABEN (nicht vom Nutzer direkt editierbar) - deshalb hier
+// weiterhin per getElementById direkt von renderFrame()/updateAutoZoomIndicator()
+// gesetzt, statt über einen Store zu laufen. Existieren erst NACH dem
+// mount()-Aufruf oben, der deshalb bewusst vor diesem Block passiert.
 const bankZoomLabel = document.getElementById('bankZoomLabel');
 const bankAreaLabel = document.getElementById('bankAreaLabel');
-const timeReadout = document.getElementById('timeReadout');
-const tickInput = document.getElementById('tickInput');
-const tickLabel = document.getElementById('tickLabel');
 const autoZoomMarker = document.getElementById('autoZoomMarker');
 const autoZoomNote = document.getElementById('autoZoomNote');
-const autoZoomMinPxInput = document.getElementById('autoZoomMinPxInput');
 const numberPanel = document.getElementById('numberPanel');
 const numberPanelInner = document.getElementById('numberPanelInner');
 const bankPanel = document.getElementById('bankPanel');
 const bankPanelInner = document.getElementById('bankPanelInner');
-// Browser stellen Formularfelder beim Neuladen oft aus der History wieder
-// her, unabhängig vom value-Attribut im HTML - AUTO_ZOOM_MIN_PX muss daher
-// beim Start aus dem tatsächlichen (ggf. wiederhergestellten) Feldwert
-// gelesen werden, sonst bleibt die hart kodierte 0 wirksam, bis das Feld
-// einmal manuell angefasst wird.
-AUTO_ZOOM_MIN_PX = parseFloat(autoZoomMinPxInput.value) || 0;
 
 // Zeigt (falls Auto-Zoom aktiv, AUTO_ZOOM_MIN_PX > 0) eine Markierung auf dem
 // Modus-B-Regler an der Stelle, ab der Auto-Zoom übersteuern würde/tut -
@@ -1120,27 +975,11 @@ function updateAutoZoomIndicator(autoZoomTAB, isActive) {
     autoZoomNote.style.display = isActive ? 'block' : 'none';
 }
 
+// Zeit-/Tick-Anzeige (timeReadout/tickInput/tickLabel) liegen seit Phase 3
+// vollständig in PlaybackBar.svelte/ControlPanel.svelte (reaktiv aus
+// playbackStore/compiledStore abgeleitet, siehe dort) - hier bleibt nur noch
+// das eigentliche Canvas-/HUD-Rendering.
 function updateOutputs() {
-    // Die dünne weiße Fortschrittslinie ist kein separates Div, sondern ein
-    // Hart-Stop-Gradient auf dem Slider selbst (background-clip:content-box
-    // in der CSS hält ihn auf die 3px-Spur beschränkt, siehe dort) - so bleibt
-    // es EIN Element, das beim Hover einfach zusätzlich interaktiv wird.
-    let pct = MAX_TIME > 0 ? (u_time / MAX_TIME) * 100 : 0;
-    timeSlider.style.backgroundImage = `linear-gradient(to right, #fff ${pct}%, transparent ${pct}%)`;
-
-    // Tick-Readout: zeigt zu jedem Zeitpunkt den passenden (auch gebrochenen)
-    // Tick-Wert aus bank-core.js - der Bank-Zustand selbst ändert sich aber
-    // immer nur an ganzzahligen Ticks. Solange das Feld nicht fokussiert ist
-    // (der Nutzer also nicht gerade tippt), wird es live mitgeführt.
-    if (GLOBAL_TTM && document.activeElement !== tickInput) {
-        tickInput.value = Math.round(GLOBAL_TTM.timeToTick(u_time));
-    }
-    if (GLOBAL_TTM) {
-        tickLabel.innerText = `Tick (Vergleich mit Test-Tool) — ${GLOBAL_TTM.timeToTick(u_time).toFixed(2)} / ${GLOBAL_TTM.maxTick}`;
-        timeReadout.innerText = `${u_time.toFixed(1)} · ${Math.round(GLOBAL_TTM.timeToTick(u_time))}/${GLOBAL_TTM.maxTick}`;
-    } else {
-        timeReadout.innerText = u_time.toFixed(1);
-    }
     renderFrame(); updateHUD(u_time);
 }
 
@@ -1149,18 +988,6 @@ function formatZoomFactor(f) {
     if (f < 1000) return Math.round(f).toLocaleString('de-DE') + '×';
     return f.toExponential(1).replace('.', ',').replace('e+', ' × 10^') + '×';
 }
-
-document.getElementById('baseInput').addEventListener('change', compileSystem);
-document.getElementById('depthInput').addEventListener('change', compileSystem);
-document.getElementById('zoomThresholdInput').addEventListener('change', compileSystem);
-document.getElementById('transformMode').addEventListener('change', compileSystem);
-document.getElementById('compactionEnabledInput').addEventListener('change', compileSystem);
-document.getElementById('compactionTransitionInput').addEventListener('change', compileSystem);
-document.getElementById('zoomSpeedInput').addEventListener('change', compileSystem);
-
-timeSlider.addEventListener('input', (e) => { u_time = parseFloat(e.target.value); updateOutputs(); });
-modeSliderAB.addEventListener('input', (e) => { u_mode_AB = parseFloat(e.target.value); updateOutputs(); });
-autoZoomMinPxInput.addEventListener('input', (e) => { AUTO_ZOOM_MIN_PX = parseFloat(e.target.value) || 0; renderFrame(); });
 
 // Auskommentiert zusammen mit den Reglern in der HTML (siehe dort) -
 // Linienbreite allein (0.3px) reicht bereits aus, Supersampling/Blur bringen
@@ -1187,29 +1014,10 @@ autoZoomMinPxInput.addEventListener('input', (e) => { AUTO_ZOOM_MIN_PX = parseFl
 //     renderFrame();
 // });
 
-const lineWidthInput = document.getElementById('lineWidthInput');
-const lineWidthLabel = document.getElementById('lineWidthLabel');
-// Liest (statt wie vorher zu schreiben) aus dem Feld - respektiert damit den
-// HTML-Default UND einen eventuellen URL-Parameter-Override (siehe oben).
-LINE_WIDTH_PX = parseFloat(lineWidthInput.value) || 0;
-lineWidthLabel.innerText = LINE_WIDTH_PX.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + 'px';
-lineWidthInput.addEventListener('input', (e) => {
-    LINE_WIDTH_PX = parseFloat(e.target.value);
-    lineWidthLabel.innerText = LINE_WIDTH_PX.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + 'px';
-    renderFrame();
-});
-
-// Direkter Sprung zu einem Tick (springt exakt auf dessen Animationszeit via
-// GLOBAL_TTM.tickToTime) - erlaubt den Zustandsvergleich mit dem Test-Tool,
-// das intern nur mit Ticks arbeitet, siehe README Abschnitt 5.
-tickInput.addEventListener('change', (e) => {
-    if (!GLOBAL_TTM) return;
-    let tick = Math.max(0, Math.min(GLOBAL_TTM.maxTick, Math.round(parseFloat(e.target.value) || 0)));
-    e.target.value = tick; // Eingabe auf den tatsächlich angefahrenen (geklammerten) Tick zurückspiegeln
-    u_time = GLOBAL_TTM.tickToTime(tick);
-    timeSlider.value = u_time;
-    updateOutputs();
-});
+// Linienbreite (Regler + Label) und die Tick-Eingabe (Sprung zu einem
+// bestimmten Tick, siehe README Abschnitt 5) leben seit Phase 3 vollständig
+// in ControlPanel.svelte - dort direkt an configStore.lineWidth bzw.
+// playbackStore.time/compiledStore.GLOBAL_TTM gebunden.
 
 // PATCH V30: Bank-Zoom ist jetzt vollautomatisch (siehe getInterpolatedBankZoom()
 // in renderFrame) - kein manueller Regler mehr, nur noch das Zahlen-Readout
@@ -1246,64 +1054,40 @@ document.addEventListener('mousemove', (e) => {
     settingsPanel.classList.toggle('open', nearTopRight || overSettingsPanel);
 });
 
-const pauseDurationInput = document.getElementById('pauseDurationInput');
-let ANIM_PAUSE_DURATION = parseFloat(pauseDurationInput.value) || 0;
-pauseDurationInput.addEventListener('input', (e) => { ANIM_PAUSE_DURATION = parseFloat(e.target.value) || 1.5; });
+// Wiedergabe: Wartezeit/Geschwindigkeit (ANIM_PAUSE_DURATION/ANIM_SPEED)
+// werden seit Phase 3 in applyConfig() aus configStore gespiegelt (siehe
+// SYSTEM A weiter oben); "Zustand teilen"-Buttons (buildStateParams()) leben
+// jetzt in ControlPanel.svelte.
 
-const playSpeedInput = document.getElementById('playSpeedInput');
-let ANIM_SPEED = parseFloat(playSpeedInput.value) || 2.0;
-playSpeedInput.addEventListener('input', (e) => { ANIM_SPEED = parseFloat(e.target.value) || 2.0; });
-
-// Baut denselben Parameter-Satz, den SETTINGS (siehe ganz oben im Script)
-// beim Laden zurückliest - Gegenstück zu den "Zustand teilen"-Buttons
-// unten. Läuft über dieselbe Liste wie applyPhase(), damit neue
-// Einstellungen automatisch in beide Richtungen funktionieren.
-function buildStateParams() {
-    let p = new URLSearchParams();
-    for (let s of SETTINGS) p.set(s.key, s.get());
-    return p;
-}
-
-// Kurzes visuelles Feedback auf dem geklickten Button ("Kopiert!" für 1.2s)
-// statt eines separaten Toasts - hält es einfach, reicht für die reine
-// Test-/Link-Nutzung dieser Buttons.
-function flashCopied(btn) {
-    let original = btn.textContent;
-    btn.textContent = 'Kopiert ✓';
-    btn.classList.add('copied');
-    setTimeout(() => { btn.textContent = original; btn.classList.remove('copied'); }, 1200);
-}
-
-document.getElementById('copyUrlBtn').addEventListener('click', (e) => {
-    let url = location.origin + location.pathname + '?' + buildStateParams().toString();
-    navigator.clipboard.writeText(url).then(() => flashCopied(e.target));
-});
-document.getElementById('copyParamsBtn').addEventListener('click', (e) => {
-    navigator.clipboard.writeText(buildStateParams().toString()).then(() => flashCopied(e.target));
-});
-
+// Play/Pause + die eigentliche rAF-Animationsschleife bleiben bewusst
+// vanilla (Canvas-/Timing-Logik, siehe TOOLING_SPEC.md Abschnitt 3.2 -
+// Phase-4-Scope) - playbackStore ist hier nur die Schnittstelle nach außen:
+// PlaybackBar.svelte schreibt isPlaying/time hinein, applyPlayback()
+// spiegelt es zurück in die Modul-Scope-Variablen, die loop() nutzt.
 let lastTime = performance.now();
-const playBtn = document.getElementById('playBtn');
-// Eigene Funktion statt nur eines Inline-Klick-Handlers, damit sowohl der
-// Button als auch die URL-Einstellung "play" (siehe SETTINGS oben) denselben
-// Start-Weg nehmen - insbesondere denselben lastTime-Reset (siehe Bugfix-
-// Kommentar unten), der sonst beim URL-Auto-Start gefehlt hätte.
-function setPlaying(playing) {
-    isPlaying = playing;
-    playBtn.textContent = isPlaying ? '⏸' : '▶';
-    if (isPlaying) {
+
+function applyPlayback(p) {
+    u_time = p.time;
+    animDirection = p.direction;
+    let wasPlaying = isPlaying;
+    isPlaying = p.isPlaying;
+    if (isPlaying && !wasPlaying) {
         // Bugfix: lastTime blieb sonst auf dem Stand des letzten Loop-Aufrufs
         // (vor der Pause) stehen. Beim Wiederstart berechnete der erste Frame
         // dt dann aus der GESAMTEN Pausendauer (oft mehrere Sekunden/Minuten)
         // - u_time sprang dadurch sofort weit über die Slider-Position hinaus
         // (meist direkt auf MAX_TIME), was wie ein Ruck aussah UND wie eine
         // ignorierte Slider-Position. Reset hier stellt sicher, dass der
-        // erste Frame nach dem Start ein normal kleines dt sieht.
+        // erste Frame nach dem Start ein normal kleines dt sieht (siehe
+        // CLAUDE.md "Play/Pause-Resume-Sprung"). Gilt für JEDEN
+        // false->true-Übergang, egal ob durch Button-Klick, URL-Parameter
+        // "play=1" beim Laden oder eine künftige Fernsteuerung ausgelöst.
         lastTime = performance.now();
         requestAnimationFrame(loop);
     }
+    if (_suppressPlaybackRender) return; // eigener Schreibzugriff, s.o. - UI bereits konsistent
+    updateOutputs();
 }
-playBtn.addEventListener('click', () => setPlaying(!isPlaying));
 
 function loop(now) {
     if (!isPlaying) return;
@@ -1318,18 +1102,23 @@ function loop(now) {
         } else if (u_time <= 0) {
             u_time = 0; animDirection = 1; animPause = ANIM_PAUSE_DURATION;
         }
-        timeSlider.value = u_time; updateOutputs();
+        _suppressPlaybackRender = true;
+        playbackStore.set({ time: u_time, isPlaying, direction: animDirection });
+        _suppressPlaybackRender = false;
+        updateOutputs();
     }
     requestAnimationFrame(loop);
 }
 
-resizeCanvas();  compileSystem();
+resizeCanvas();
 
-// Laufzeit-Einstellungen (modeab/time/tick/play, siehe SETTINGS ganz oben)
-// - erst HIER anwendbar, weil sie von der gerade kompilierten Simulation
-// abhängen (MAX_TIME/GLOBAL_TTM) bzw. (play) den bereits verdrahteten
-// setPlaying() braucht.
-if (applyPhase('post')) updateOutputs();
+// Löst den ersten Compile aus (Ersatz für den früheren direkten
+// compileSystem()-Aufruf) - subscribe() ruft applyConfig() synchron sofort
+// mit dem aktuellen (ggf. schon per URL überschriebenen) configStore-Wert
+// auf. playbackStore.subscribe() startet analog dazu ggf. sofort die
+// Animation, falls die URL "play=1" gesetzt hatte (siehe applyPlayback()).
+configStore.subscribe(applyConfig);
+playbackStore.subscribe(applyPlayback);
 </script>
 </body>
 </html>
