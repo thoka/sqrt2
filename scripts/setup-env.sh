@@ -31,9 +31,9 @@ $SUDO pacman -S --noconfirm --needed pnpm
 echo "==> [4/6] System-Bibliotheken fuer Playwright/Chromium"
 # Playwright laedt ein eigenes chromium, braucht aber die Runtime-Libs.
 $SUDO pacman -S --noconfirm --needed \
-  nss at-spi2-core at-spi2-atk cups libcups libdrm libxkbcommon \
+  nss atk at-spi2-core at-spi2-atk cups libcups libdrm libxkbcommon \
   libxcomposite libxdamage libxfixes libxrandr libxshmfence \
-  libgbm pango cairo alsa-lib gtk3 libxcb libx11 mesa \
+  pango cairo alsa-lib gtk3 libxcb libx11 mesa \
   noto-fonts ttf-dejavu
 
 echo "==> [5/6] Projekt-Abhaengigkeiten via pnpm"
