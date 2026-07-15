@@ -48,9 +48,13 @@ echo "==> [5/6] Projekt-Abhaengigkeiten via pnpm"
 # KEIN 'pnpm import' aus package-lock.json (stoest auf pnpms
 # resolution-policy-Pruefung). pnpm install erzeugt eine frische
 # pnpm-lock.yaml aus package.json.
-pnpm install
-pnpm rebuild esbuild   # pnpm blockiert Build-Skripte per Default - esbuild
-                      # (vom Vite-Build benoetigt) explizit nachbauen
+# pnpm install kann mit ERR_PNPM_IGNORED_BUILDS exit!=0 enden, wenn Build-
+# Skripte blockiert sind. Das ist hier bekannt (esbuild, s. pnpm-workspace.yaml
+# onlyBuiltDependencies) und wird gezielt per 'pnpm rebuild esbuild' nachgeholt.
+# Daher Install nicht hart abbrechen lassen (set -e).
+pnpm install || echo "pnpm install: ignorierte Build-Skripte (bekannt) - werden via rebuild nachgebaut"
+pnpm rebuild esbuild   # erzwingt esbuild-Postinstall trotz 'Already up to date'
+                      # (vom Vite-Build benoetigt)
 pnpm add -D @playwright/test
 
 echo "==> [6/6] Playwright-Browser (chromium) + Build"
