@@ -1,0 +1,83 @@
+# docker-compose.yml — exhibit-relay hinter Traefik.
+#
+# Erster Start:
+#   docker compose up
+#   -> relay printet ADMIN_KEY auf die Console (persistent in relay-data:/data)
+#   -> API_KEY generiert temporaer (Production: API_KEYS setzen!)
+#
+# Traefik terminiert TLS (Let's Encrypt) und routet /ws + /api + /admin.
+# Admin-Route ist per BasicAuth-Middleware abgesichert (siehe unten).
+
+services:
+  relay:
+    build: .
+    restart: unless-stopped
+    environment:
+      PORT: 8080
+      DATA_DIR: /data
+      # Production: eigene Secrets setzen, z.B. aus .env / docker secret:
+      # API_KEYS: "exponat-sqrt2-...,exponat-film-..."
+      # ADMIN_KEY: "..."   # optional; sonst einmalig generiert + auf Console
+      TOKEN_TTL_DEFAULT: 3600
+      MAX_SEATS_DEFAULT: 4
+    volumes:
+      - relay-data:/data
+    expose:
+      - "8080"
+    networks:
+      - traefik
+    labels:
+      - "traefik.enable=true"
+
+      # HTTP-Router (redirect auf HTTPS via entrypoint)
+      - "traefik.http.routers.relay.rule=Host(`relay.example.com`)"
+      - "traefik.http.routers.relay.entrypoints=websecure"
+      - "traefik.http.routers.relay.tls=true"
+      - "traefik.http.routers.relay.tls.certresolver=letsencrypt"
+      - "traefik.http.services.relay.loadbalancer.server.port=8080"
+
+      # Health-Check-Route oeffentlich
+      - "traefik.http.routers.relay-health.rule=Host(`relay.example.com`) && PathPrefix(`/health`)"
+      - "traefik.http.routers.relay-health.entrypoints=websecure"
+      - "traefik.http.routers.relay-health.tls=true"
+      - "traefik.http.routers.relay-health.tls.certresolver=letsencrypt"
+
+      # Admin-Route: BasicAuth (User/Pass ueber env oder docker secret)
+      - "traefik.http.routers.relay-admin.rule=Host(`relay.example.com`) && PathPrefix(`/admin`)"
+      - "traefik.http.routers.relay-admin.entrypoints=websecure"
+      - "traefik.http.routers.relay-admin.tls=true"
+      - "traefik.http.routers.relay-admin.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.relay-admin.middlewares=relay-auth"
+      - "traefik.http.middlewares.relay-auth.basicauth.users=${ADMIN_BASIC_AUTH:-admin:$$apr1$$placeholder}"
+
+  traefik:
+    image: traefik:v3.1
+    restart: unless-stopped
+    command:
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-admin@example.com}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080" # Traefik-Dashboard (nur intern freigeben!)
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "traefik-certs:/letsencrypt"
+    networks:
+      - traefik
+
+volumes:
+  relay-data:
+  traefik-certs:
+
+networks:
+  traefik:
+    name: traefik

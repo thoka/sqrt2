@@ -1,0 +1,15 @@
+{
+  "name": "exhibit-relay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Generic exhibit connection/relay service (API-key -> join tokens, seats, PIN).",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "smoke": "node smoke-test.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
