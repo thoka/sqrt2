@@ -56,17 +56,19 @@ Drei Schichten, weil sie sich mit sehr unterschiedlicher Frequenz und Reichweite
 
 Jede Phase ist einzeln committ- und testbar - wichtig, damit eine künftige Sitzung nicht bei Null anfangen muss, auch wenn nicht alle Phasen in einer Sitzung passen.
 
-| Phase | Inhalt | Risiko/Aufwand |
-|---|---|---|
-| 0 | `svelte` + `@sveltejs/vite-plugin-svelte` als devDependencies, `vite.config.js` erweitern, `src/`-Struktur anlegen, eine triviale Svelte-Komponente rendert erfolgreich via `npm run dev` | niedrig, ~30 Min |
-| 1 | `compileSystem()`s nicht-DOM-Logik aus dem Inline-`<script>` in ein reines Modul `src/lib/compiler.js` extrahieren (Funktion: Config rein, kompilierter Zustand raus, kein DOM-Zugriff) - **reines Refactoring, kein Verhaltensunterschied**. `sqrt2.html` danach verifizieren (identisches Verhalten) | niedrig-mittel, höchster Hebel für alles Weitere |
-| 2 | `src/lib/stores.js`: `configStore`/`playbackStore` (writable) + `compiledStore` (derived, ruft Phase-1-Funktion). Noch keine UI-Änderung - `sqrt2.html` kann testweise weiter vanilla bleiben und nur `.subscribe()`/`.set()` auf die Stores nutzen, um die Store-Schicht isoliert zu verifizieren | mittel |
-| 3 | Control-Panel in Svelte-Komponenten umbauen, gebunden an die Stores. Verhalten mit dem alten Panel abgleichen | mittel |
-| 4 | Canvas + HUD komponentisieren (`<TargetBankCanvas>`, `<RestCounterBars>`). `updateHUD()` in die zwei Widget-Varianten aufteilen (Balken jetzt, Grid neu) | mittel-hoch (neues Grid-Widget ist Neuentwicklung, nicht nur Port) |
-| 5 | `BroadcastChannel`-Sync-Adapter + zweiter Vite-Entry (`RemoteControl.svelte`). Verifizieren: zwei Browser-Tabs bleiben synchron | mittel |
-| 6 | Politur: Widget-Auswahl-UI, admin-konfigurierbare Steuerungs-Komplexität (bereits als Wunsch in README Abschnitt 11 notiert) | niedrig, kann warten |
+| Phase | Inhalt | Risiko/Aufwand | Status |
+|---|---|---|---|
+| 0 | `svelte` + `@sveltejs/vite-plugin-svelte` als devDependencies, `vite.config.js` erweitern, `src/`-Struktur anlegen, eine triviale Svelte-Komponente rendert erfolgreich via `npm run dev` | niedrig, ~30 Min | **erledigt** |
+| 1 | `compileSystem()`s nicht-DOM-Logik aus dem Inline-`<script>` in ein reines Modul `src/lib/compiler.js` extrahieren (Funktion: Config rein, kompilierter Zustand raus, kein DOM-Zugriff) - **reines Refactoring, kein Verhaltensunterschied**. `sqrt2.html` danach verifizieren (identisches Verhalten) | niedrig-mittel, höchster Hebel für alles Weitere | **erledigt** |
+| 2 | `src/lib/stores.js`: `configStore`/`playbackStore` (writable) + `compiledStore` (derived, ruft Phase-1-Funktion). Noch keine UI-Änderung - `sqrt2.html` kann testweise weiter vanilla bleiben und nur `.subscribe()`/`.set()` auf die Stores nutzen, um die Store-Schicht isoliert zu verifizieren | mittel | offen |
+| 3 | Control-Panel in Svelte-Komponenten umbauen, gebunden an die Stores. Verhalten mit dem alten Panel abgleichen | mittel | offen |
+| 4 | Canvas + HUD komponentisieren (`<TargetBankCanvas>`, `<RestCounterBars>`). `updateHUD()` in die zwei Widget-Varianten aufteilen (Balken jetzt, Grid neu) | mittel-hoch (neues Grid-Widget ist Neuentwicklung, nicht nur Port) | offen |
+| 5 | `BroadcastChannel`-Sync-Adapter + zweiter Vite-Entry (`RemoteControl.svelte`). Verifizieren: zwei Browser-Tabs bleiben synchron | mittel | offen |
+| 6 | Politur: Widget-Auswahl-UI, admin-konfigurierbare Steuerungs-Komplexität (bereits als Wunsch in README Abschnitt 11 notiert) | niedrig, kann warten | offen |
 
-**Empfehlung für den Einstieg in die nächste Sitzung:** mit Phase 0+1 anfangen. Phase 1 ist der höchste Hebel (macht den Kern testbar/wiederverwendbar, ohne dass irgendetwas an der sichtbaren App sich ändert) und lässt sich unabhängig von der Svelte-Entscheidung selbst schon committen.
+**Stand (2026-07-15):** Phase 0+1 umgesetzt. Phase 0: `svelte`, `@sveltejs/vite-plugin-svelte`, `vitest` + `jsdom` installiert; `svelte-smoke.html`/`src/App.svelte`/`src/main.js` als triviale, per `npm run dev` UND per persistentem Vitest-Test (`src/App.test.js`, `svelte`-Kern-APIs `mount`/`unmount`/`flushSync`, siehe [offizielle Svelte-5-Testing-Doku](https://svelte.dev/docs/svelte/testing)) verifizierte Komponente. Phase 1: `src/lib/compiler.js` enthält jetzt die komplette bisherige `compileSystem()`-Logik als reine Funktion (Config-Objekt rein, kompilierter Zustand raus); `sqrt2.html`s `compileSystem()` ist nur noch ein dünner DOM-Adapter davor. Abgesichert durch `compiler.test.js` (Determinismus, Struktur-Invarianten, Tick↔Zeit-Monotonie, Kompaktierungs-Zweige) - `npm test` (66 Tests) und `npm run build` grün.
+
+**Empfehlung für den Einstieg in die nächste Sitzung:** mit Phase 2 weitermachen (Stores).
 
 ## 5. Explizite Nicht-Ziele / Abgrenzung
 
@@ -75,12 +77,14 @@ Jede Phase ist einzeln committ- und testbar - wichtig, damit eine künftige Sitz
 - Kein neuer Server/Backend in dieser Phase - nur `BroadcastChannel` (ein Rechner, mehrere Fenster/Tabs). Echte Geräte-Fernsteuerung (separates Backend, QR-Code) ist ein SPÄTERER Schritt, schon in README Abschnitt 11 vermerkt, hier nicht mit umzusetzen.
 - Visuelle/Animations-Themen (C¹-Stetigkeit für Z/R-Modi, Kompaktierung im Haupttool) sind unabhängig davon und **nicht** Teil dieses Umbaus - nicht vermischen.
 
-## 6. Offene Fragen (vor oder zu Beginn der nächsten Sitzung klären)
+## 6. Offene Fragen
 
-- **Svelte 5 (Runes) oder Svelte 4 (klassische Reaktivität)?** Empfehlung: Svelte 5, da Neuanlage (kein Migrationsdruck von bestehendem Svelte-Code) und aktueller Stand.
-- **TypeScript für den neuen Svelte-Code, oder plain JS** (wie der Rest des Projekts)? Tendenz: plain JS für Konsistenz, aber offen.
-- **Soll `selection_strategy_prototype.html` mittelfristig auch migriert werden**, oder bleibt es dauerhaft vanilla (eigenständiges Test-Tool, kein Bedarf an austauschbaren Widgets)? Keine Entscheidung nötig, um mit dem Haupttool zu starten.
-- **Namensgebung/URLs der neuen Einstiegspunkte** (z.B. `/control.html`, `/display.html`)?
+- **Svelte 5 (Runes) oder Svelte 4?** Entschieden: **Svelte 5** (`^5.56.5`, aktuell zum Zeitpunkt der Umsetzung, Juli 2026 - `next`-Dist-Tag von npm zeigt keine Svelte-6-Vorabversion, Svelte 5 bleibt die aktuelle Major-Version). Neuanlage, kein Migrationsdruck.
+- **TypeScript oder plain JS?** Entschieden: **plain JS**, für Konsistenz mit `bank-core.js`/`smoothing.js`/`sqrt2.html` (keine JSDoc-Typannotationen im restlichen Projekt, siehe Kommentar-Konvention in `src/lib/compiler.js`).
+- **Vite-Version:** Bei Umsetzung war `vite@8` (Rolldown-basiert, Bundler-Architekturwechsel von Rollup/esbuild) bereits aktuell auf npm, `vite@7.3.6` "previous". Bewusst **`vite@^7.3.6`** gewählt statt `8`: `@sveltejs/vite-plugin-svelte@7.x` verlangt `vite@^8`, aber Vite 8s Rolldown-Umstellung ist ein Architekturwechsel, der über den eigentlichen Bedarf dieses Umbaus (Svelte-Tooling ergänzen) hinausgeht und unnötiges Risiko fürs bestehende, funktionierende Zwei-Seiten-Build ist. `@sveltejs/vite-plugin-svelte@^6.2.4` unterstützt `vite@^6.3.0 || ^7.0.0` und bleibt auf der klassischen Rollup/esbuild-Pipeline - `build.rollupOptions.input` (Multi-Entry) unverändert kompatibel. Node 22.14 erfüllt beide Anforderungen (`^20.19 || >=22.12`). Bei einer künftigen Aktualisierung auf Vite 8 gesondert prüfen (Rolldown-Migrationsleitfaden: <https://vite.dev/guide/migration>).
+- **Testing-Setup für Svelte-Komponenten:** `vitest` + `jsdom`, gemäß offizieller Svelte-5-Empfehlung (kein zusätzliches `@testing-library/svelte` nötig - Svelte exportiert `mount`/`unmount`/`flushSync` direkt für Komponenten-Tests, siehe `src/App.test.js`). Läuft als zweiter Test-Schritt in `npm test`, neben dem bestehenden `node --test` für reine Logik-Module.
+- **Soll `selection_strategy_prototype.html` mittelfristig auch migriert werden**, oder bleibt es dauerhaft vanilla (eigenständiges Test-Tool, kein Bedarf an austauschbaren Widgets)? Weiterhin offen, keine Entscheidung nötig, um mit dem Haupttool weiterzumachen.
+- **Namensgebung/URLs der neuen Einstiegspunkte** (z.B. `/control.html`, `/display.html`)? `svelte-smoke.html` (Phase 0) ist nur ein Wegwerf-Kandidat für den Smoke-Test - Namensgebung für `MainApp`/`RemoteControl`/`RestDisplay` bleibt für Phase 3/4 offen.
 - **Channel-Name für `BroadcastChannel` statisch oder konfigurierbar** (falls später mehrere Exponate im selben Netz laufen)? Für den Erstwurf: statisch, siehe README-Hinweis zur Mehrbildschirm-Vision.
 
 ## 7. Noch nicht spezifiziert (bewusst offen gelassen)

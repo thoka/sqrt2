@@ -229,8 +229,8 @@
 </div>
 
 <script type="module">
-import { buildSystem, buildTickTimeMapping, computeCompactionWaypoints, makeCompactedLogicalRectLookup, computeCompactionFitStates, applyCompactionFit } from './bank-core.js';
-import { buildMonotoneSpline, buildDampedFilterBundle, buildDampedFilter } from './smoothing.js';
+import { applyCompactionFit } from './bank-core.js';
+import { compileSystem as compileSystemPure } from './src/lib/compiler.js';
 
 const COLORS = ["#cbd5e1", "#ef476f", "#ffd166", "#06d6a0", "#118ab2", "#8338ec", "#f78c6b", "#ff006e", "#3a86ff", "#fb5607", "#ffbe0b"];
 // Schaltet die Wort-Präfixe ("Länge ", "Fläche ", "Rest ") im Zahlen-Panel
@@ -398,324 +398,56 @@ let GLOBAL_COMPACTION_FIT_SPLINE = null;
 
 // === SYSTEM A: COMPILER ===
 //
-// Ziffernsuche und Bank-Algorithmus (Auswahl "isolation" + Schneiden
-// "centroid_far" + Streifen-Enden-Filter) kommen aus bank-core.js - derselben
-// Datei, die auch das Algorithmus-Spiel-Tool (selection_strategy_prototype.html)
-// nutzt. Beide Tools verhalten sich damit garantiert identisch. bank-core.js
-// zählt intern nur einen monotonen Tick (1 Tick = 1 Entnahme); die Brücke zur
-// kontinuierlichen Animationszeit dieses Tools liefert buildTickTimeMapping()
-// weiter unten (siehe Abschnitt 6.3 im README).
-
+// Die eigentliche Compiler-Logik (Ziffernsuche + Bank-Algorithmus aus
+// bank-core.js, Tick<->Zeit-Mapping, Auto-Zoom-/Kompaktierungs-Checkpoints)
+// lebt seit TOOLING_SPEC.md Phase 1 als reine Funktion in
+// src/lib/compiler.js (kein DOM-Zugriff, config rein -> kompilierter
+// Zustand raus - siehe compiler.test.js für die Verhaltens-Absicherung
+// dieser Extraktion). Hier bleibt nur noch der DOM-Adapter: Inputs lesen,
+// compileSystemPure() aufrufen, Ergebnis in die Modul-Scope-Variablen
+// zurückschreiben, die restlichen DOM-Seiteneffekte (Slider-Max, Fehler-
+// Anzeige) ausführen.
 function compileSystem() {
     try {
         document.getElementById('errorMsg').style.display = 'none';
-        N_MAX = parseInt(document.getElementById('depthInput').value);
-        BASE = parseInt(document.getElementById('baseInput').value);
-        BANK_ZOOM_THRESHOLD_POWERS = parseInt(document.getElementById('zoomThresholdInput').value) || 0;
-        let transformMode = document.getElementById('transformMode').value;
+        let config = {
+            depth: parseInt(document.getElementById('depthInput').value),
+            base: parseInt(document.getElementById('baseInput').value),
+            bankZoomThresholdPowers: parseInt(document.getElementById('zoomThresholdInput').value) || 0,
+            transformMode: document.getElementById('transformMode').value,
+            zoomSpeedCoef: parseFloat(document.getElementById('zoomSpeedInput').value) || 0.012,
+            compactionEnabled: document.getElementById('compactionEnabledInput').checked,
+            compactionTransitionTicks: parseInt(document.getElementById('compactionTransitionInput').value),
+        };
+        N_MAX = config.depth;
+        BASE = config.base;
+        BANK_ZOOM_THRESHOLD_POWERS = config.bankZoomThresholdPowers;
         document.getElementById('perfWarning').style.display = N_MAX > 5 ? 'block' : 'none';
 
-        // Beste validierte Kombination fest einprogrammiert (siehe README) -
-        // das Haupttool bietet dafür bewusst keine eigene Auswahl an (nur
-        // den Flug-Modus, siehe unten). Die Schalen-Konstruktion selbst
-        // (welche/wie viele Stücke pro Gitterzelle) kommt jetzt ebenfalls
-        // aus bank-core.js (buildSystem) - gemeinsam mit dem Test-Tool
-        // genutzt, statt einer eigenen Kopie der Schalen-Schleife hier.
-        // cellMode 'morph' (S: Strecken) nimmt ein Stück direkt, 'subdivide'
-        // (Z: Zerschneiden) BASE Stücke der nächsten Ebene pro Rand-Zelle -
-        // siehe bank-core.js für Details.
-        let cellMode = transformMode === 'Z' ? 'subdivide' : 'morph';
-        let { sim, events } = buildSystem(BASE, N_MAX, 'fixed', cellMode);
-        axes = sim.axes;
-        TOTAL_STEPS = sim.TOTAL_STEPS;
-        bank_pieces = sim.bank_pieces;
+        let compiled = compileSystemPure(config);
+        axes = compiled.axes;
+        TOTAL_STEPS = compiled.TOTAL_STEPS;
+        bank_pieces = compiled.bank_pieces;
+        render_pipeline = compiled.render_pipeline;
+        GLOBAL_N_ARR = compiled.GLOBAL_N_ARR;
+        P_FINAL = compiled.P_FINAL;
+        GLOBAL_TTM = compiled.GLOBAL_TTM;
+        tickInput.max = GLOBAL_TTM.maxTick;
+        GLOBAL_SHELL_START = compiled.GLOBAL_SHELL_START;
+        GLOBAL_AUTO_ZOOM_CHECKPOINTS = compiled.GLOBAL_AUTO_ZOOM_CHECKPOINTS;
+        GLOBAL_AUTO_ZOOM_SPLINE = compiled.GLOBAL_AUTO_ZOOM_SPLINE;
+        GLOBAL_BANK_ZOOM_TIMES = compiled.GLOBAL_BANK_ZOOM_TIMES;
+        GLOBAL_BANK_ZOOM = compiled.GLOBAL_BANK_ZOOM;
+        GLOBAL_BANK_ZOOM_SPLINE = compiled.GLOBAL_BANK_ZOOM_SPLINE;
+        COMPACTION_ENABLED = compiled.COMPACTION_ENABLED;
+        GLOBAL_COMPACTION_WAYPOINTS = compiled.GLOBAL_COMPACTION_WAYPOINTS;
+        GLOBAL_COMPACTION_LOGICAL_LOOKUP = compiled.GLOBAL_COMPACTION_LOGICAL_LOOKUP;
+        GLOBAL_COMPACTION_FIT_SPLINE = compiled.GLOBAL_COMPACTION_FIT_SPLINE;
 
-        // n_arr[m] (Ziffer an Stelle m) ergibt sich direkt aus der Anzahl der
-        // axes-Einträge mit exp===m - genau so hat bank-core.js sie erzeugt.
-        let n_arr = new Array(N_MAX + 1).fill(0);
-        for (let a of axes) n_arr[a.exp]++;
-        GLOBAL_N_ARR = n_arr;
-
-        // P_FINAL = Summe aller Achsen-Breiten (b^-exp) inkl. des Basisquadrats
-        // (exp=0) - exakt der Wert, den axes[axes.length-1].cumulative früher lieferte.
-        P_FINAL = axes.reduce((sum, a) => sum + Math.pow(BASE, -a.exp), 0);
-
-        render_pipeline = [];
-        let tickTimePairs = [];
-        let global_time = 1.0;
-        let local_max_time = 1.0;
-
-        // PATCH V28b: Bugfix "Bank ist leer" bei größerer Tiefe.
-        // Vorher wurde global_time zu Beginn jeder Schale S hart auf S*3.0
-        // zurueckgesetzt. Eine Schale hat aber (2*S+1) Stuecke, die je 0.15
-        // Zeiteinheiten verbrauchen. Sobald (2*S+1)*0.15 > 3.0 ist (ab S~10),
-        // lief die Zeit ueber das naechste Reset-Ziel hinaus - der naechste
-        // Reset sprang dann RUECKWAERTS in der Zeit. Ausserdem braucht
-        // buildTickTimeMapping() weiter unten monoton wachsende t_fly-Werte,
-        // um Tick <-> Zeit eindeutig umzurechnen - ein Zeitsprung rueckwaerts
-        // wuerde diese Abbildung brechen.
-        //
-        // Fix: kein absolutes Reset mehr, sondern ein garantiert positiver
-        // Abstand ("gap") zum tatsaechlichen Ende der vorherigen Schale.
-        // Damit ist global_time global monoton steigend, unabhaengig davon
-        // wie viele Stuecke eine Schale enthaelt.
-        const SHELL_GAP = 1.0;
-        let shell_start_time = new Array(TOTAL_STEPS).fill(0);
-
-        // events (aus bank-core.js buildSystem) sind bereits in der exakten
-        // Entnahme-Reihenfolge sortiert. Eine Rand-Zelle im Zerschneiden-
-        // Modus erscheint als `count` aufeinanderfolgende Events mit
-        // derselben Gitterposition (u,v) - diese werden hier zu EINER
-        // Zerschneiden-Gruppe (Z_source/Z_ghost/Z_micro) zusammengefasst,
-        // die anderen (count===1) direkt zu S_macro/Z_direct.
-        let lastS = 0;
-        let idx = 0;
-        while (idx < events.length) {
-            let e = events[idx];
-            let S = Math.max(e.u, e.v);
-            if (S !== lastS) {
-                global_time += SHELL_GAP;
-                shell_start_time[S] = global_time;
-                lastS = S;
-            }
-
-            if (e.count === 1) {
-                let t_fly = global_time;
-                tickTimePairs.push({ tick: e.tick, time: t_fly });
-                if (e.is_top) {
-                    render_pipeline.push({ type: 'S_macro', bp: e.piece, u: e.u, v: e.v, time_fly: t_fly });
-                } else {
-                    render_pipeline.push({ type: 'Z_direct', bp: e.piece, u: e.u, v: e.v, time_fly: t_fly });
-                }
-                local_max_time = Math.max(local_max_time, t_fly + 1.0);
-                global_time += 0.15;
-                idx++;
-            } else {
-                // Zerschneiden-Gruppe: das ganze Elternstück wird sichtbar
-                // "aufgeschnitten" (Z_source -> Z_micro) und beim
-                // Zurückspulen wieder "verschmolzen" (Z_ghost). BEKANNTER
-                // OFFENER BUG (siehe README Abschnitt 8): die Rück-
-                // Verschmelzung ist noch nicht vollständig animiert/verifiziert
-                // - absichtlich noch nicht weiter gefixt, siehe Gespräch.
-                let group = events.slice(idx, idx + e.count);
-                let t_cut = global_time - 0.5;
-                let t_fly = global_time;
-                let t_fuse = global_time + 1.0;
-                let parent_bp = bank_pieces.find(p => p.id === group[0].piece.parent_id);
-                render_pipeline.push({ type: 'Z_source', bp: parent_bp, u: e.u, v: e.v, time_cut: t_cut });
-                render_pipeline.push({ type: 'Z_ghost', bp: parent_bp, u: e.u, v: e.v, time_fuse: t_fuse });
-                for (let g of group) {
-                    tickTimePairs.push({ tick: g.tick, time: t_cut });
-                    render_pipeline.push({ type: 'Z_micro', bp: g.piece, u: e.u, v: e.v, i: g.i, time_cut: t_cut, time_fly: t_fly, time_fuse: t_fuse });
-                }
-                local_max_time = Math.max(local_max_time, t_fuse + 0.5);
-                global_time += 0.15;
-                idx += e.count;
-            }
-        }
-
-        // bank-core.js zählt Entnahmen nur als monotonen Integer-Tick (siehe
-        // Kommentar oben in bank-core.js, TEIL 3). Die bijektive Abbildung
-        // übersetzt jeden Tick zurück in die kontinuierliche Animationszeit
-        // dieses Tools; ein kleiner Versatz auf cut_time/born_time reproduziert
-        // den alten Vorlauf ("Stück ist schon sichtbar geschnitten, bevor es
-        // fliegt"). WICHTIG: dieser Versatz muss strikt kleiner sein als der
-        // kleinstmögliche Abstand zwischen zwei aufeinanderfolgenden Ticks
-        // (0.15, siehe global_time-Inkremente oben) - sonst kann ein Schnitt-
-        // Ereignis aus einem SPÄTEREN Tick durch den Versatz vor die
-        // Entnahme eines NAHEN, aber früheren Ticks rutschen und die
-        // Sichtbarkeits-Reihenfolge verfälschen (führte zu Bank-Zuständen,
-        // die vom Test-Tool bei gleichem Tick abwichen - mit 0.4 empirisch
-        // an vielen Ticks reproduzierbar, mit 0.1 an keinem einzigen mehr).
-        const CUT_BORN_LEAD = 0.1;
-        let ttm = buildTickTimeMapping(tickTimePairs);
-        for (let p of bank_pieces) {
-            p.taken_time = isFinite(p.taken_time) ? ttm.tickToTime(p.taken_time) : Infinity;
-            p.cut_time = isFinite(p.cut_time) ? ttm.tickToTime(p.cut_time) - CUT_BORN_LEAD : Infinity;
-            p.born_time = p.born_time === 0 ? 0 : ttm.tickToTime(p.born_time) - CUT_BORN_LEAD;
-        }
-        GLOBAL_TTM = ttm;
-        tickInput.max = ttm.maxTick;
-
-        GLOBAL_SHELL_START = shell_start_time;
-
-        // Auto-Zoom-Ziel (Ziel-Seite): pro Schale S der Exponent der tiefsten
-        // in dieser Schale neu sichtbaren Ziffern-Stelle - wächst mit der
-        // Animation von 0 (nur Basisquadrat) bis N_MAX, nicht von Anfang an
-        // fix auf N_MAX. Siehe getSmoothedAutoZoomExp() weiter unten.
-        //
-        // Nutzt buildMonotoneSpline() (siehe smoothing.js) statt eines
-        // kausalen Filters: die Kurve trifft an JEDEM Checkpoint GENAU den
-        // dortigen Exponenten - kein Nachhinken mehr, das (frühere Version)
-        // erst per künstlichem Zeitvorlauf UND einer zusätzlichen "harten"
-        // Sicherheits-Kopie in renderFrame() kompensiert werden musste. Für
-        // eine monoton wachsende Stützpunkt-Folge bleibt die Spline
-        // zwischen zwei Checkpoints garantiert innerhalb von deren Werten
-        // (Monotonie-Erhalt, siehe smoothing.js) - das allein reicht bereits
-        // als Sichtbarkeits-Garantie, siehe smoothing.test.js.
-        //
-        // { onlyChanges: true }: axes[S].exp wiederholt sich über mehrere
-        // Schalen hinweg (bei Basis 10/Tiefe 16 sind nur 15 von 56 Schalen
-        // echte Wertwechsel, siehe Gesprächsverlauf) - ohne diese Option
-        // erzwingt jeder Wiederholungspunkt eine Nulltangente (siehe
-        // smoothing.js), was jeden Wertwechsel zu einer isolierten Mini-
-        // Rampe zwischen "toten" Haltepunkten macht ("weiche Stufen" statt
-        // durchgehender Bewegung). Die Sichtbarkeits-Garantie bleibt dabei
-        // erhalten (siehe smoothing.test.js/auto-zoom-visibility.test.js).
-        GLOBAL_AUTO_ZOOM_CHECKPOINTS = [];
-        for (let S = 0; S < TOTAL_STEPS; S++) {
-            GLOBAL_AUTO_ZOOM_CHECKPOINTS.push({ t: shell_start_time[S], exp: axes[S].exp });
-        }
-        GLOBAL_AUTO_ZOOM_SPLINE = buildMonotoneSpline(
-            GLOBAL_AUTO_ZOOM_CHECKPOINTS.map(c => ({ t: c.t, v: c.exp })),
-            { onlyChanges: true }
-        );
-
-        // PATCH V32: Auto-Zoom für die Bank - grundlegend überarbeitet.
-        //
-        // Vorherige Version (festes Zentrum 0.5/0.5) blieb hängen, weil der
-        // Rest sich systematisch zu einer Seite hin verlagert (Entnahme
-        // bevorzugt niedrige x/y, Zerschneiden bevorzugt hohe x/y) - er liegt
-        // fast nie zentriert im Einheitsquadrat. Ein festes Zentrum verlangt
-        // dann fälschlich Platz bis zum GEGENÜBERLIEGENDEN Rand, obwohl die
-        // Box selbst längst geschrumpft ist.
-        //
-        // Neu: Zentrum und Zoom werden pro Checkpoint aus der ECHTEN
-        // Bounding-Box (samt ihres eigenen Mittelpunkts) berechnet - das
-        // Zentrum wandert also mit. Damit eine Überblendung zwischen zwei
-        // verschiedenen Zentren dennoch garantiert sicher bleibt, wird NICHT
-        // (wie zuvor) zwischen den Zoom-PARAMETERN interpoliert, sondern
-        // zwischen den fertig transformierten BILDSCHIRM-POSITIONEN
-        // (siehe getBankTransformed() weiter unten): Für einen Punkt, der
-        // während des Übergangs sichtbar ist, liegt sowohl die alte als auch
-        // die neue Position nachweislich in [0,1] (Box-Schachtelung: die Box
-        // schrumpft monoton, jeder später sichtbare Punkt war Teil jeder
-        // früheren Box). Da [0,1] konvex ist, liegt JEDE gewichtete Mischung
-        // dieser zwei sicheren Positionen ebenfalls in [0,1] - unabhängig
-        // davon, wie stark sich das Zentrum zwischen den Checkpoints
-        // verschiebt. Das ist mathematisch immer sicher, nicht nur im
-        // statistischen Mittel.
-        //
-        // Checkpoints werden aus den tatsächlichen Entnahme-Zeitpunkten
-        // gewonnen (viel feinkörniger als "einmal pro Schale"), damit der
-        // Zoom nicht in großen Sprüngen, sondern in vielen kleinen, stetigen
-        // Schritten wächst. Bei sehr tiefer Rekursion wird auf eine
-        // Obergrenze heruntergesampelt, um die Kompilierzeit zu begrenzen.
-        // PATCH V39: Kein Sicherheitsrand mehr (war 0.2) - damit ist der
-        // Zoom beim Startzustand (volles [0,1]-Quadrat) exakt 1.0 statt
-        // 0.83. Da der Zoom nachweislich monoton wächst, ist 1.0 damit der
-        // garantierte MINIMALE Zoom über die gesamte Laufzeit.
-        const ZOOM_MARGIN = 0;
-        const MAX_CHECKPOINTS = 400;
-
-        let eventTimesSet = new Set([0]);
-        for (let p of bank_pieces) { if (isFinite(p.taken_time)) eventTimesSet.add(p.taken_time); }
-        eventTimesSet.add(local_max_time);
-        let eventTimes = Array.from(eventTimesSet).sort((a, b) => a - b);
-        if (eventTimes.length > MAX_CHECKPOINTS) {
-            let sampled = [];
-            for (let i = 0; i < MAX_CHECKPOINTS; i++) {
-                sampled.push(eventTimes[Math.floor(i * (eventTimes.length - 1) / (MAX_CHECKPOINTS - 1))]);
-            }
-            eventTimes = Array.from(new Set(sampled));
-        }
-
-        // PATCH V35: Zoom-Schwellwert aus dem Algorithmus-Spiel-Tool
-        // übernommen. Stücke, die mehr als BANK_ZOOM_THRESHOLD_POWERS
-        // Potenzen von BASE kleiner sind als das größte gerade sichtbare
-        // Stück, fließen NICHT ins Zoom-Framing ein (werden aber weiter
-        // gezeichnet) - verhindert, dass ein einzelner winziger Einzelgänger
-        // den Zoom aufhält und die Ansicht "unverständlich" wirken lässt.
-        const kThresholdDiff = 2 * BANK_ZOOM_THRESHOLD_POWERS;
-        let bank_zoom_states = new Array(eventTimes.length);
-        for (let i = 0; i < eventTimes.length; i++) {
-            let t = eventTimes[i];
-            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, found = false;
-            let area = 0;
-            let visibleNow = bank_pieces.filter(p => t >= p.born_time && t < p.cut_time && t < p.taken_time);
-            let kMin = visibleNow.length > 0 ? Math.min(...visibleNow.map(p => p.k)) : 0;
-            for (let p of visibleNow) {
-                area += p.w * p.h; // Fläche zählt IMMER, auch für ausgeblendete (nur fürs Framing irrelevant)
-                if (BANK_ZOOM_THRESHOLD_POWERS > 0 && p.k > kMin + kThresholdDiff) continue;
-                found = true;
-                if (p.x < minX) minX = p.x;
-                if (p.x + p.w > maxX) maxX = p.x + p.w;
-                if (p.y < minY) minY = p.y;
-                if (p.y + p.h > maxY) maxY = p.y + p.h;
-            }
-            if (!found) { minX = 0; maxX = 1; minY = 0; maxY = 1; area = 1; }
-            let cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
-            let halfW = Math.max((maxX - minX) / 2, 1e-9) * (1 + ZOOM_MARGIN);
-            let halfH = Math.max((maxY - minY) / 2, 1e-9) * (1 + ZOOM_MARGIN);
-            let z = Math.min(0.5 / halfW, 0.5 / halfH);
-            let offsetX = 0.5 - cx * z, offsetY = 0.5 - cy * z;
-            bank_zoom_states[i] = { z, cx, cy, offsetX, offsetY, area };
-        }
-        GLOBAL_BANK_ZOOM_TIMES = eventTimes;
-        GLOBAL_BANK_ZOOM = bank_zoom_states;
-        // buildDampedFilterBundle() statt buildMonotoneSplineBundle(): der
-        // Bank-Zoom hat bis zu MAX_CHECKPOINTS=400 dicht getaktete Wegpunkte
-        // (oft nur einen Tick auseinander, ein Wegpunkt pro Entnahme) - eine
-        // exakte Spline reagiert auf JEDEN davon sofort, was sich als
-        // unruhige/zappelige Bewegung zeigt (Regression, siehe
-        // Gesprächsverlauf). Der Bank-Zoom BRAUCHT diese Exaktheit auch gar
-        // nicht: sein Sicherheitsbeweis ("Konvexkombination bereits sicherer
-        // Positionen bleibt sicher") gilt für JEDE Zeitkonstante TAU, siehe
-        // README Abschnitt 6.1 - anders als beim Auto-Zoom-Exponenten
-        // (dort MUSS jeder Wegpunkt exakt getroffen werden, siehe
-        // getSmoothedAutoZoomExp() weiter unten). Der Koeffizient (Anteil von
-        // local_max_time) ist einstellbar (zoomSpeedInput, "Trägheit" -
-        // kleiner = schneller folgt die Kamera) statt fest verdrahtet:
-        // frühere feste 0.03 fühlten sich fürs Ausstellungsstück "viel zu
-        // langsam" an (Gesprächsverlauf), Default hier daher niedriger.
-        const ZOOM_SPEED_COEF = parseFloat(document.getElementById('zoomSpeedInput').value) || 0.012;
-        const BANK_ZOOM_TAU = Math.max(local_max_time * ZOOM_SPEED_COEF, 0.5);
-        GLOBAL_BANK_ZOOM_SPLINE = buildDampedFilterBundle(
-            eventTimes.map((t, i) => ({ t, ...bank_zoom_states[i] })),
-            ['z', 'offsetX', 'offsetY', 'area'],
-            BANK_ZOOM_TAU
-        );
-
-        // Kompaktierung ("Zeilen/Spalten ausblenden", siehe bank-core.js
-        // TEIL 2) - nur berechnet, wenn die Einstellung aktiv ist (nicht
-        // kostenlos bei tiefer Rekursion). Ersetzt bei aktiver Kompaktierung
-        // den obigen bankT-basierten Auto-Zoom für die Bank-Darstellung
-        // vollständig (siehe project() in renderFrame()) - beide Modi sind
-        // bewusst gegenseitig exklusiv, analog zum Algorithmus-Spiel-Tool.
-        COMPACTION_ENABLED = document.getElementById('compactionEnabledInput').checked;
-        if (COMPACTION_ENABLED) {
-            // transitionTicks einstellbar (compactionTransitionInput, siehe
-            // README Abschnitt 6.2 "Siebte Voraussetzung") - Default hier
-            // niedriger als der Bibliotheks-Default in bank-core.js (weniger
-            // Wartezeit bis eine Lücke sichtbar schließt, Gesprächsverlauf).
-            let transitionTicks = parseInt(document.getElementById('compactionTransitionInput').value);
-            if (!(transitionTicks >= 0)) transitionTicks = 3;
-            GLOBAL_COMPACTION_WAYPOINTS = computeCompactionWaypoints(bank_pieces, local_max_time, transitionTicks);
-            // Schnell/exakt: "wo steht jedes Stück im kompaktierten Layout"
-            // (computeSegmentBlend()-basiert, für die Nichtüberlappungs-
-            // Garantie - siehe bank-core.js).
-            GLOBAL_COMPACTION_LOGICAL_LOOKUP = makeCompactedLogicalRectLookup(GLOBAL_COMPACTION_WAYPOINTS);
-            // Gedämpft: "wie wird das Layout aufs [0,1]-Fenster gezoomt" -
-            // dieselbe (jetzt einstellbare) Zeitkonstante wie beim regulären
-            // Bank-Zoom oben, UNABHÄNGIG von den schnellen Logical-Rects.
-            // Sicherheit bleibt erhalten, weil JEDE gemeinsame affine
-            // Skalierung+Verschiebung Nichtüberlappung bewahrt, siehe
-            // computeCompactionFitStates()-Kommentar.
-            GLOBAL_COMPACTION_FIT_SPLINE = buildDampedFilterBundle(
-                computeCompactionFitStates(GLOBAL_COMPACTION_WAYPOINTS),
-                ['z', 'offsetX', 'offsetY'],
-                BANK_ZOOM_TAU
-            );
-        } else {
-            GLOBAL_COMPACTION_WAYPOINTS = [];
-            GLOBAL_COMPACTION_LOGICAL_LOOKUP = null;
-            GLOBAL_COMPACTION_FIT_SPLINE = null;
-        }
-
-        MAX_TIME = local_max_time;
+        MAX_TIME = compiled.MAX_TIME;
         document.getElementById('timeSlider').max = MAX_TIME;
         u_time = 0; document.getElementById('timeSlider').value = 0;
-        updateOutputs(); 
+        updateOutputs();
     } catch(e) {
         document.getElementById('errorMsg').style.display = 'block';
         document.getElementById('errorMsg').innerText = `Compiler-Absturz: ${e}`;

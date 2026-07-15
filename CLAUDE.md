@@ -161,3 +161,49 @@ Sonderfälle (z.B. ein alternativer URL-Parameter wie `tick` statt `time`)
 gehören als `resolveFromUrl()`-Hook AUF den jeweiligen Eintrag, nicht als
 Extra-`if`-Zweig außerhalb der generischen Schleife - sonst wächst dieselbe
 Zersplitterung an anderer Stelle einfach nach.
+
+## Tooling-Updates: kleinstmöglicher sicherer Versionssprung, nicht blind "latest"
+
+Beim Hinzufügen/Aktualisieren von Build-Tooling (Vite, Bundler, Test-Runner,
+…) NICHT automatisch die npm-`latest`-Version nehmen, wenn eine ältere,
+noch aktuelle Major-Version die eigentliche Anforderung genauso erfüllt und
+dabei einen Architekturwechsel vermeidet.
+
+**Warum:** Beim Svelte-Tooling-Umbau (siehe `TOOLING_SPEC.md`) war
+`vite@8` (Rolldown-Bundler statt Rollup/esbuild) bereits `latest` auf npm,
+`vite@7.3.6` nur `previous` - obwohl 7.x zum Umsetzungszeitpunkt (Juli 2026)
+noch eine aktuelle, unter aktiver Pflege stehende Major-Version war. Der
+eigentliche Bedarf (Svelte-Plugin ergänzen) hatte mit dem Rolldown-Wechsel
+nichts zu tun; ein Bundler-Architekturwechsel am bestehenden,
+funktionierenden Zwei-Seiten-Build wäre unnötiges Risiko für den eigentlichen
+Task gewesen.
+
+**Wie anwenden:** Vor einem Versions-Bump (insbesondere über eine
+Major-Grenze) kurz prüfen: (1) `npm view <pkg> dist-tags` - gibt es eine
+`previous`/vorletzte Major-Version, die noch aktuell ist? (2) Ändert der
+Sprung auf `latest` die zugrundeliegende Architektur (Bundler-Engine,
+Rendering-Modell, o.ä.) oder nur Features/Fixes? Bei (2) = Architekturwechsel
+UND der Task braucht das nicht: die kleinere, noch aktuelle Version wählen
+und die Abwägung im jeweiligen Spec-Dokument festhalten (siehe
+`TOOLING_SPEC.md` Abschnitt 6 als Beispiel), damit eine spätere bewusste
+Aktualisierung nicht als vergessen wirkt.
+
+## Svelte-Komponenten-Tests: vitest + jsdom, keine zusätzliche Testing-Library
+
+Für Svelte-5-Komponenten (`src/**/*.svelte`) werden Tests mit `vitest` +
+`environment: 'jsdom'` geschrieben, direkt mit Sveltes eigenen
+`mount()`/`unmount()`/`flushSync()`-APIs (siehe `src/App.test.js`) - NICHT
+mit `@testing-library/svelte` oder Playwright/Browser-Mode.
+
+**Warum:** Das ist die offizielle Svelte-5-Empfehlung (svelte.dev/docs/svelte/testing)
+und kommt ohne zusätzliche Abhängigkeit aus. Passt außerdem zum bestehenden
+Projekt-Grundsatz, keine schwergewichtigen Browser-Test-Harnesses
+(Playwright o.ä.) unaufgefordert aufzusetzen.
+
+**Wie anwenden:** Reine Logik-Module (`bank-core.js`, `smoothing.js`,
+`src/lib/compiler.js`, …) bleiben bei `node --test` mit Test-Dateien auf
+Root-Ebene (`*.test.js`, per `npm test`). Svelte-Komponenten-Tests laufen
+separat über `vitest run` (ebenfalls Teil von `npm test`), Dateien unter
+`src/**/*.test.js` (siehe `vite.config.js` `test.include`). Beide Runner
+bewusst nebeneinander, nicht vereinheitlicht - unterschiedliche Aufgabe
+(reine Funktionen vs. Komponenten mit DOM-Mounting).
