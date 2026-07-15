@@ -13,9 +13,11 @@ für andere Exponate (Spiele, synchronisierte Filme, gemeinsame Steuerung)
 wiederverwendbar.
 
 > Status: Konzept + lauffähiges Fundament (`infra/connection-service/`).
-> Server-Logik ist minimal, aber real (Token-Minting, Seat-Limit, PIN,
-> Broadcast). Produktions-Härtung (Persistenz, Redis-Adapter, Rate-Limit)
-> ist als Nächstes markiert.
+> Server-Logik ist real (Token-Minting, Seat-Limit, PIN, Broadcast, TLS) und
+> um Status-Page (`/`), CORS (`ALLOWED_ORIGINS` + Preflight) sowie eine
+> admin-geschützte Admin-UI (`/admin`, nutzt die REST-API) ergänzt.
+> Produktions-Härtung (Persistenz, Redis-Adapter, Rate-Limit, Brute-Force-
+> Schutz) ist als Nächstes markiert.
 
 ---
 
@@ -309,9 +311,13 @@ aber exponat-agnostisch und mit der geforderten Zwei-Stufen-Auth
    mit `tailscale cert`→TLS); Traefik-Stack nur bei eigener Domain via
    `--profile edge`. `ADMIN_KEY` beim ersten Start aus der Console erfassen.
 6. (Optional) Redis-Adapter für Horizontal-Skalierung.
-7. **Status-Page** (`/` als HTML über http/https) + **Admin-UI (Svelte)** unter
-   `/admin` — Funktionsumfang (Seat-Freigabe, Stats, Debug-View) gem. §8
-   noch zu klären; UI nutzt bestehende Admin-REST-API (§5).
+7. **Status-Page** (`/` als HTML über http/https) + **Admin-UI** unter
+    `/admin` — **erledigt** (§8): Status-Page liefert Dienstname, Version,
+    Uptime, Transport-Modus, Räume/Seats/Verbindungen; Admin-UI (dependency-
+    freies HTML, nutzt ausschließlich die Admin-REST-API §5) mit Token-Liste,
+    Belegung, PIN-Kennzeichnung und Revoke-Aktion. Svelte-Variante optional
+    möglich; Funktionsumfang Seat-Freigabe/Stats/Debug-View (§8) bei Bedarf
+    über die Admin-API erweiterbar.
 
 > **Tests:** Jede Stufe (Token-Minting, Seat-Limit, PIN/Rotation, Host/Guest,
 > TLS) ist durch `infra/connection-service/smoke-test.mjs` abgedeckt

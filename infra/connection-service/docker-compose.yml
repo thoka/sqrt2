@@ -20,6 +20,9 @@ services:
       # ADMIN_KEY: "..."   # optional; sonst einmalig generiert + auf Console
       TOKEN_TTL_DEFAULT: 3600
       MAX_SEATS_DEFAULT: 4
+      # CORS: komma-getrennte Origins, die die REST-API/WS aus dem Browser
+      # nutzen duerfen (z.B. das Exponat-Frontend). Leer = keine CORS-Antwort.
+      # ALLOWED_ORIGINS: "https://exponat.example.com"
     volumes:
       - relay-data:/data
     # Auf dem Host publizieren, damit der Relay ueber die Tailnet-IP /

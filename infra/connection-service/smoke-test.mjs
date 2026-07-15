@@ -1,29 +1,68 @@
-// Smoke-Test für exhibit-relay: Token-Minting, WS-Relay, Seat-Limit, PIN.
-// TLS-Stage: TLS=1 -> https/wss gegen self-signed Zertifikat (NODE_TLS_*
-// unten auf 0 gesetzt). Server wird extern mit TLS_CERT/TLS_KEY gestartet.
+// Smoke-Test für exhibit-relay: Token-Minting, WS-Relay, Seat-Limit, PIN,
+// Status-Page, CORS, Admin-UI.
+//
+// Plain: startet einen eigenen Server (gesteuertes Env) auf PORT.
+// TLS:   TLS=1 -> verbindet gegen extern gestarteten Server mit TLS_CERT/TLS_KEY
+//        (NODE_TLS_REJECT_UNAUTHORIZED=0). Dann muss der Server extern laufen.
+import { spawn } from 'node:child_process';
+import { rmSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { WebSocket } from 'ws';
 
 const TLS = process.env.TLS === '1';
 if (TLS) process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 const WS_PROTO = TLS ? 'wss' : 'ws';
 const HTTP_PROTO = TLS ? 'https' : 'http';
-const BASE = `${HTTP_PROTO}://localhost:${process.env.PORT ?? 8080}`;
+const PORT = TLS ? Number(process.env.PORT ?? 8080) : 8099;
+const BASE = `${HTTP_PROTO}://localhost:${PORT}`;
 const API_KEY = process.env.API_KEYS ?? 'testkey';
 const ADMIN_KEY = process.env.ADMIN_KEY ?? 'testadmin';
+const ALLOWED = process.env.ALLOWED_ORIGINS ?? 'https://exhibit.example.com';
 
-function req(method, path, body, auth) {
-  const headers = { 'content-type': 'application/json' };
-  if (auth) headers.authorization = `Bearer ${auth}`;
+let server;
+async function startServer() {
+  if (TLS) return; // TLS-Modus: externen Server nutzen (TLS_CERT/TLS_KEY)
+  const dataDir = mkdtempSync(join(tmpdir(), 'relay-'));
+  server = spawn(process.execPath, ['server.js'], {
+    cwd: new URL('.', import.meta.url).pathname,
+    env: {
+      ...process.env,
+      PORT: String(PORT),
+      DATA_DIR: dataDir,
+      API_KEYS: API_KEY,
+      ADMIN_KEY,
+      ALLOWED_ORIGINS: ALLOWED,
+    },
+    stdio: ['ignore', 'ignore', 'inherit'],
+  });
+  // kurz warten, bis der Port horcht
+  await new Promise((r) => setTimeout(r, 600));
+  return dataDir;
+}
+function stopServer(dataDir) {
+  if (server) server.kill();
+  if (dataDir) rmSync(dataDir, { recursive: true, force: true });
+}
+
+function req(method, path, body, auth, headers = {}) {
+  const h = { 'content-type': 'application/json', ...headers };
+  if (auth) h.authorization = `Bearer ${auth}`;
   return fetch(BASE + path, {
     method,
-    headers,
+    headers: h,
     body: body ? JSON.stringify(body) : undefined,
-  }).then(async (r) => ({ status: r.status, json: await r.json().catch(() => null) }));
+  }).then(async (r) => {
+    const text = await r.text().catch(() => '');
+    let json = null;
+    try { json = text ? JSON.parse(text) : null; } catch {}
+    return { status: r.status, json, headers: r.headers, text };
+  });
 }
 
 const openWs = (token, role = 'guest', pin = null) =>
   new Promise((resolve, reject) => {
-    const u = `${WS_PROTO}://localhost:${process.env.PORT ?? 8080}/ws?token=${token}&role=${role}${pin ? `&pin=${pin}` : ''}`;
+    const u = `${WS_PROTO}://localhost:${PORT}/ws?token=${token}&role=${role}${pin ? `&pin=${pin}` : ''}`;
     const ws = new WebSocket(u);
     const msgs = [];
     ws.on('message', (m) => msgs.push(JSON.parse(m.toString())));
@@ -37,6 +76,8 @@ let failures = 0;
 const check = (name, cond) => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}`); if (!cond) failures++; };
 
 const main = async () => {
+  const dataDir = await startServer();
+
   // 1) Token minten (mit API-Key)
   const mint = await req('POST', '/api/token', { seats: 2, pin: '1234' }, API_KEY);
   check('mint 201', mint.status === 201);
@@ -59,7 +100,7 @@ const main = async () => {
   // 4) Dritter Gast -> seats_exhausted (limit 2)
   const c = await openWs(token, 'guest', '1234');
   await wait(100);
-  check('seat limit enforced', c.ws._closed?.c !== undefined && a.msgs.concat(b.msgs).some((m) => m.type === 'error' && m.code === 'seats_exhausted') === false ? true : c.ws._closed !== undefined);
+  check('seat limit enforced', c.ws._closed !== undefined);
   c.ws.close?.();
 
   // 5) Falsche PIN -> pin_mismatch
@@ -83,12 +124,40 @@ const main = async () => {
 
   // 8) Health
   const h = await req('GET', '/health');
-  check('health ok', h.status === 200 && h.json.ok === true);
+  check('health ok', h.status === 200 && h.json.ok === true && h.json.version);
+
+  // 9) Status-Page (§8) als HTML
+  const status = await req('GET', '/', null, null, { origin: ALLOWED });
+  check('status page 200 html', status.status === 200 && /text\/html/.test(status.headers.get('content-type')));
+  check('status page content', /exhibit-relay/.test(status.text) && /Seats/.test(status.text));
+
+  // 10) CORS: erlaubtes Origin bekommt ACAO
+  check('cors allowed origin', status.headers.get('access-control-allow-origin') === ALLOWED);
+
+  // 11) CORS: fremdes Origin -> kein ACAO
+  const foreign = await req('GET', '/health', null, null, { origin: 'https://evil.example.com' });
+  check('cors foreign denied', !foreign.headers.get('access-control-allow-origin'));
+
+  // 12) CORS: OPTIONS-Preflight
+  const pre = await fetch(BASE + '/api/token', {
+    method: 'OPTIONS',
+    headers: { origin: ALLOWED, 'access-control-request-method': 'POST' },
+  });
+  check('cors preflight 204', pre.status === 204 && pre.headers.get('access-control-allow-origin') === ALLOWED);
+
+  // 13) Admin-UI ohne Key -> 401
+  const uiNoKey = await req('GET', '/admin');
+  check('admin ui gated', uiNoKey.status === 401);
+
+  // 14) Admin-UI mit Key (Bearer + ?k=) -> 200 HTML
+  const uiKey = await req('GET', `/admin?k=${ADMIN_KEY}`, null, ADMIN_KEY);
+  check('admin ui served', uiKey.status === 200 && /Admin/.test(uiKey.text));
 
   a.ws.close(); b.ws.close(); host.ws.close();
   await wait(100);
+  stopServer(dataDir);
   console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
   process.exit(failures === 0 ? 0 : 1);
 };
 
-main().catch((e) => { console.error(e); process.exit(1); });
+main().catch((e) => { console.error(e); stopServer(); process.exit(1); });
