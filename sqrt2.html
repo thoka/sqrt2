@@ -152,11 +152,19 @@ import RestCounterBars from './src/components/RestCounterBars.svelte';
 import RestCounterGrid from './src/components/RestCounterGrid.svelte';
 import TargetBankCanvas from './src/components/TargetBankCanvas.svelte';
 import { displayStore } from './src/lib/displayStore.js';
+import { initSync } from './src/lib/syncedStore.js';
 
 const COLORS = ["#cbd5e1", "#ef476f", "#ffd166", "#06d6a0", "#118ab2", "#8338ec", "#f78c6b", "#ff006e", "#3a86ff", "#fb5607", "#ffbe0b"];
 // Schaltet die Wort-Präfixe ("Länge ", "Fläche ", "Rest ") im Zahlen-Panel
 // oben rechts an/aus - Standard aus (nur kurze Symbole l/l²/R).
 const NUMBER_PANEL_VERBOSE = false;
+
+// === Fensterübergreifender Sync (TOOLING_SPEC.md Phase 5) ===
+// Öffnet den BroadcastChannel und bindet configStore/playbackStore an den
+// Kanal, BEVOR die ersten Store-Änderungen (URL-Sync weiter unten)
+// passieren - so ist dieser Tab sofort mit bereits laufenden Peers
+// synchron. Idempotent; remote-control.html ruft initSync() ebenfalls auf.
+initSync();
 
 // === Einstellungen: configStore/playbackStore + URL-Sync (TOOLING_SPEC.md
 // Phase 3) ===

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>&radic;2-Flächenmodell – Fernsteuerung</title>
+  <style>
+    html, body { margin: 0; background: #0f172a; }
+  </style>
+</head>
+<body>
+  <div id="remoteMount"></div>
+  <script type="module">
+    // Zweiter Vite-Entry (TOOLING_SPEC.md Phase 5): reine Fernsteuerung,
+    // synchronisiert mit sqrt2.html über BroadcastChannel (syncedStore).
+    import { mount } from 'svelte';
+    import RemoteControl from './src/components/RemoteControl.svelte';
+    import { initSync } from './src/lib/syncedStore.js';
+
+    initSync();
+    mount(RemoteControl, { target: document.getElementById('remoteMount') });
+  </script>
+</body>
+</html>

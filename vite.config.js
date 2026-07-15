@@ -9,6 +9,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         sqrt2: resolve(import.meta.dirname, 'sqrt2.html'),
+        remoteControl: resolve(import.meta.dirname, 'remote-control.html'),
         selectionStrategyPrototype: resolve(import.meta.dirname, 'selection_strategy_prototype.html'),
         svelteSmoke: resolve(import.meta.dirname, 'svelte-smoke.html'),
       },

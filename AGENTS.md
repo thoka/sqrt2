@@ -44,6 +44,15 @@ npm test         # node --test *.test.js  (reine Logik)
   Playwright-E2E (`pnpm test:e2e`) über `dist/sqrt2.html` nutzen - hebt die
   „kein Browser"-Blockade (siehe `TOOLING_ENV_SPEC.md`).
 - Branches: aktive Arbeit auf `migrate-to-svelte`.
+- **Commit-Regel (Feature-Branch):** befinden wir uns in einem Feature-Branch
+  (nicht `main`/`master`), ist nach Abschluss einer abgeschlossenen
+  Arbeitsphase **immer zu committen** - auch ohne explizite Einzel-Aufforderung.
+  Eine "Arbeitsphase" ist z.B. eine fertige Migration-Phase (TOOLING_SPEC §4),
+  ein abgeschlossenes Feature oder eine gefixt-gewesene Test-Suite. Commit
+  umfasst nur die zur Phase gehörenden Dateien (kein `git add -A` über
+  unzusammenhängende Änderungen); Message kurz und im Repo-Stil (siehe
+  `git log`). Nicht pushen, nicht amenden, keine leeren Commits - und keine
+  Secrets/Keys committen.
 
 ## GOTCHAS (spart einem nächsten Agenten Zeit)
 
