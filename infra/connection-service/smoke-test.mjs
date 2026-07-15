@@ -1,7 +1,13 @@
 // Smoke-Test für exhibit-relay: Token-Minting, WS-Relay, Seat-Limit, PIN.
+// TLS-Stage: TLS=1 -> https/wss gegen self-signed Zertifikat (NODE_TLS_*
+// unten auf 0 gesetzt). Server wird extern mit TLS_CERT/TLS_KEY gestartet.
 import { WebSocket } from 'ws';
 
-const BASE = `http://localhost:${process.env.PORT ?? 8080}`;
+const TLS = process.env.TLS === '1';
+if (TLS) process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+const WS_PROTO = TLS ? 'wss' : 'ws';
+const HTTP_PROTO = TLS ? 'https' : 'http';
+const BASE = `${HTTP_PROTO}://localhost:${process.env.PORT ?? 8080}`;
 const API_KEY = process.env.API_KEYS ?? 'testkey';
 const ADMIN_KEY = process.env.ADMIN_KEY ?? 'testadmin';
 
@@ -17,7 +23,7 @@ function req(method, path, body, auth) {
 
 const openWs = (token, role = 'guest', pin = null) =>
   new Promise((resolve, reject) => {
-    const u = `ws://localhost:${process.env.PORT ?? 8080}/ws?token=${token}&role=${role}${pin ? `&pin=${pin}` : ''}`;
+    const u = `${WS_PROTO}://localhost:${process.env.PORT ?? 8080}/ws?token=${token}&role=${role}${pin ? `&pin=${pin}` : ''}`;
     const ws = new WebSocket(u);
     const msgs = [];
     ws.on('message', (m) => msgs.push(JSON.parse(m.toString())));

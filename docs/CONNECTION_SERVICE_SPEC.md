@@ -186,9 +186,12 @@ erreichbar:
   publizieren. Handy lädt `http://<host>.<tailnet>.ts.net:8080/...`.
   Da die Seite selbst über HTTP serviert wird, ist `ws://` erlaubt
   (Mixed-Content blockiert erst bei HTTPS-Seiten). Kein Traefik/Let's Encrypt.
-- **Produktionsnah auf dem Tailnet:** `tailscale serve --https=8080` (oder
-  `tailscale cert` + eigener TLS) liefert TLS für `*.ts.net`, damit auch
-  `wss://` klappt. Der Transport ist ohnehin E2E-WireGuard-verschlüsselt.
+- **TLS im Prototyp (empfohlen):** `tailscale cert <host>.<tailnet>.ts.net`
+  schreibt `*.crt`/`.key` (PEM). Diese als `TLS_CERT`/`TLS_KEY` (env) an den
+  Relay mounten → der Dienst startet **https + wss://** (siehe Server-Log
+  `https/wss`). Damit ist bereits production-nahe Verschlüsselung aktiv,
+  ohne eigenen Reverse-Proxy. `tailscale serve --https=8080` macht das
+  equivalent auf Proxy-Ebene.
 - **Öffentlich (externe Besucher ohne Tailscale):** `tailscale funnel 8080`
   veröffentlicht den Port mit Tailscale-TLS — kein eigener Reverse-Proxy nötig.
 
@@ -264,10 +267,17 @@ aber exponat-agnostisch und mit der geforderten Zwei-Stufen-Auth
 ## 11. Nächste Schritte
 
 1. Server-Logik vervollständigen (Persistenz optional, Rate-Limit, CORS).
-2. sqrt2 anbinden: `configStore`/`playbackStore` über WS relayen
+2. **Entwicklungs-Sandbox bekommt eine eigene Tailscale-IP** (eigenes
+   Tailnet-Device / eigener Hostname), damit Prototyp-Tests vom Handy aus
+   ohne lokale Netzwerk-Sonderkonfiguration laufen.
+3. sqrt2 anbinden: `configStore`/`playbackStore` über WS relayen
    (BroadcastChannel als Same-Browser-Fast-Path beibehalten).
-3. QR-Code auf dem Exponat + PIN-Anzeige im ControlPanel.
-4. Testen über Tailnet (`<host>.<tailnet>.ts.net:8080` bzw. Vite-Port);
-   Traefik-Stack nur bei eigener Domain via `--profile edge`. `ADMIN_KEY`
-   beim ersten Start aus der Console erfassen.
-5. (Optional) Redis-Adapter für Horizontal-Skalierung.
+4. QR-Code auf dem Exponat + PIN-Anzeige im ControlPanel.
+5. Testen über Tailnet (`<host>.<tailnet>.ts.net:8080` bzw. Vite-Port,
+   mit `tailscale cert`→TLS); Traefik-Stack nur bei eigener Domain via
+   `--profile edge`. `ADMIN_KEY` beim ersten Start aus der Console erfassen.
+6. (Optional) Redis-Adapter für Horizontal-Skalierung.
+
+> **Tests:** Jede Stufe (Token-Minting, Seat-Limit, PIN/Rotation, Host/Guest,
+> TLS) ist durch `infra/connection-service/smoke-test.mjs` abgedeckt
+> (Plain + TLS, je 13 Checks). Neue Stufen erfordern neue Checks.

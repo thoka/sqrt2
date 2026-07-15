@@ -7,6 +7,7 @@
 // Start generiert und auf stdout + in /data/admin_key geschrieben.
 
 import http from 'node:http';
+import https from 'node:https';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { WebSocketServer } from 'ws';
@@ -86,7 +87,7 @@ function publicWsUrl(req) {
   return `${proto}://${host}/ws`;
 }
 
-const server = http.createServer(async (req, res) => {
+async function requestHandler(req, res) {
   try {
     const url = new URL(req.url, `http://${req.headers.host ?? 'localhost'}`);
     const p = url.pathname;
@@ -176,10 +177,19 @@ const server = http.createServer(async (req, res) => {
   } catch (err) {
     sendJson(res, 400, { error: 'bad_request', message: String(err?.message ?? err) });
   }
-});
+}
 
 // --- WebSocket-Relay -----------------------------------------------------
-const wss = new WebSocketServer({ server, path: '/ws' });
+// TLS ueber Tailscale-Zertifikate: `tailscale cert <host>.<tailnet>.ts.net`
+// schreibt .crt/.key; per TLS_CERT/TLS_KEY einhaengen -> https + wss://.
+const tlsOn = !!(process.env.TLS_CERT && process.env.TLS_KEY);
+const httpServer = tlsOn
+  ? https.createServer(
+      { cert: fs.readFileSync(process.env.TLS_CERT), key: fs.readFileSync(process.env.TLS_KEY) },
+      requestHandler,
+    )
+  : http.createServer(requestHandler);
+const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
 
 wss.on('connection', (ws, req) => {
   const url = new URL(req.url, 'http://localhost');
@@ -246,11 +256,12 @@ const heartbeat = setInterval(() => {
 }, HEARTBEAT_MS);
 wss.on('close', () => clearInterval(heartbeat));
 
-server.listen(PORT, () => {
+httpServer.listen(PORT, () => {
   console.log('========================================================');
   console.log(' exhibit-relay gestartet');
   console.log(` ADMIN_KEY (nur einmal, in ${DATA_DIR}/admin_key):`);
   console.log(`   ${ADMIN_KEY}`);
-  console.log(` HTTP/WS auf Port ${PORT}  (/health, /api/token, /ws)`);
+  const scheme = tlsOn ? 'https/wss' : 'http/ws';
+  console.log(` ${scheme} auf Port ${PORT}  (/health, /api/token, /ws)`);
   console.log('========================================================');
 });

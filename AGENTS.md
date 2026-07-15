@@ -48,9 +48,16 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
   Änderung (Bugfix, Refactor, Docs, Config). Nur die phasen-zugehörigen
   Dateien (`git add` einzeln, nicht `-A`), Message kurz im Repo-Stil.
   **Nicht** pushen/amenden, keine leeren Commits, keine Secrets.
-  Qualitäts-Gate (`pnpm check`) vorzugsweise grün, aber ein laufendes
-  Feature muss nicht erst auf perfekte Tests warten, um committet zu
-  werden (der User entscheidet über weitere Tests).
+  Qualitäts-Gate (`pnpm check`) vorzugsweise grün. Ein laufendes Feature
+  muss nicht erst auf *vollständige/polierte* Tests warten – aber je Stufe
+  muss mindestens ein Test existieren (siehe Regel "Tests für alle Stufen").
+- **Tests für alle Stufen (Pflicht):** Jede Stufe / jeder Schritt eines
+  Features bekommt eigene Tests (Unit und/oder e2e/Integration, wo
+  sinnvoll). Eine Funktionsstufe ohne Tests gilt als **nicht abgeschlossen**.
+  Bestehende Logik: `tests/unit/*.test.js` + `tests/e2e/*.test.js`.
+  Der Connection-Service deckt seine Stufen via
+  `infra/connection-service/smoke-test.mjs` ab (Plain + TLS, je 13 Checks);
+  neue Stufen erfordern neue Checks.
 - **Stetige Ableitung (C¹)** für ALLE automatisierten Bewegungen →
   `smoothing.js`. Exakt/ohne Verzögerung: `buildMonotoneSpline()`. Mehrere
   ordnungs-invariante Werte: `computeSegmentBlend()`. Träge Folge (Kamera/Zoom):
