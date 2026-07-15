@@ -50,6 +50,11 @@
             display: flex; align-items: center; gap: 14px;
             padding: 10px 20px; pointer-events: none;
         }
+        #playbackBarMount {
+            display: flex; align-items: center; gap: 14px;
+            width: 100%; flex: 1 1 auto; min-width: 0;
+        }
+        #playbackBarMount #timeSlider { flex: 1 1 auto; min-width: 0; }
         #bottomBar #playBtn {
             opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
             background: none; border: none; color: #f8fafc; font-size: 1.3em; cursor: pointer;

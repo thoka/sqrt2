@@ -70,6 +70,9 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
 ## Frischer Start - Stolpersteine
 
 - `mise trust mise.toml` einmalig (sonst wird `[env]`-PATH ignoriert).
+- **npm blockiert:** `scripts/bin/npm` gibt Fehlermeldung aus, `.envrc` blendet
+  `scripts/bin` via `PATH_add` ein. Shell-Funktionen in `.envrc` reichen NICHT
+  (mise-Activation überschattet sie) - nur ein echtes Skript im PATH zuverlässig.
 - **E2E stale dist:** `playwright.config.js` nutzt `reuseExistingServer: true`.
   Ein aus einem früheren Run noch laufender `vite preview` serviert ALTEN Build
   → neue Entries (z.B. `remote-control.html`) als 404. Vor `pnpm test:e2e`

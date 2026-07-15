@@ -170,12 +170,12 @@
 
   function renderFrame() {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
     if (render_pipeline.length === 0) return;
 
     ctx.setTransform(RENDER_SCALE, 0, 0, RENDER_SCALE, 0, 0);
-    const W = canvas.width / RENDER_SCALE;
-    const H = canvas.height / RENDER_SCALE;
+    const W = canvasEl.width / RENDER_SCALE;
+    const H = canvasEl.height / RENDER_SCALE;
 
     const SQRT2 = Math.SQRT2;
     const LOGICAL_MAX_W = SQRT2 + 0.1 + 1.0;
@@ -361,10 +361,10 @@
   }
 
   function resizeCanvas() {
-    canvas.width = window.innerWidth * RENDER_SCALE;
-    canvas.height = window.innerHeight * RENDER_SCALE;
-    canvas.style.width = window.innerWidth + 'px';
-    canvas.style.height = window.innerHeight + 'px';
+    canvasEl.width = window.innerWidth * RENDER_SCALE;
+    canvasEl.height = window.innerHeight * RENDER_SCALE;
+    canvasEl.style.width = window.innerWidth + 'px';
+    canvasEl.style.height = window.innerHeight + 'px';
     renderFrame();
   }
 
