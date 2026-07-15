@@ -49,21 +49,19 @@ echo "==> [5/6] Projekt-Abhaengigkeiten via pnpm"
 # resolution-policy-Pruefung). pnpm install erzeugt eine frische
 # pnpm-lock.yaml aus package.json.
 # pnpm install kann mit ERR_PNPM_IGNORED_BUILDS exit!=0 enden, wenn Build-
-# Skripte blockiert sind. Das ist hier bekannt (esbuild, s. pnpm-workspace.yaml
-# onlyBuiltDependencies) und wird gezielt per 'pnpm rebuild esbuild' nachgeholt.
-# Daher Install nicht hart abbrechen lassen (set -e).
-pnpm install || echo "pnpm install: ignorierte Build-Skripte (bekannt) - werden via rebuild nachgebaut"
+# Skripte blockiert sind (z.B. esbuild). Das ist unkritisch - esbuild wird
+# nach Freigabe via 'pnpm rebuild esbuild' nachgebaut. Install daher nicht
+# hart abbrechen lassen (set -e).
+pnpm install || echo "pnpm install: ignorierte Build-Skripte (bekannt) - gleich freigeben"
 # esbuild braucht ein Build-Skript (Postinstall = plattspezifisches Binary).
-# Frischer Clone: via onlyBuiltDependencies in pnpm-workspace.yaml erlaubt.
-# Bestehender node_modules ohne Approval: 'pnpm rebuild esbuild' reicht ggf.
-# nicht -> Fallback: projektweit Build-Skripte kurz erlauben, bauen, dann
-# .npmrc-Eintrag wieder entfernen (Repo bleibt sauber).
-pnpm rebuild esbuild || true
+# pnpm 11 blockiert Build-Skripte per Default - hier einmalig interaktiv
+# freigeben (kein nicht-interaktiver Weg noetig):
+echo ">>> JETZT bitte manuell ausfuehren:   pnpm approve-builds"
+echo ">>> (esbuild auswaehlen, um sein Build-Skript zu erlauben)"
+read -p "    Enter druecken, sobald esbuild freigegeben ist ... " _
+pnpm rebuild esbuild   # erzwingt esbuild-Postinstall nach Freigabe
 if ! pnpm exec esbuild --version >/dev/null 2>&1; then
-  echo "esbuild nicht gebaut -> Fallback: Build-Skripte projektweit kurz erlauben"
-  pnpm config set --location project dangerously-allow-all-builds true
-  pnpm rebuild esbuild
-  pnpm config delete --location project dangerously-allow-all-builds
+  echo "WARNUNG: esbuild scheint nicht gebaut - Vite-Build (Schritt 6) wird fehlschlagen."
 fi
 pnpm add -D @playwright/test
 
