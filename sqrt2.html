@@ -119,11 +119,13 @@
             position: fixed; left: 20px; bottom: 60px; z-index: 15;
             width: 300px; display: none;
         }
+
+        #canvasMount { position: fixed; inset: 0; z-index: 0; }
     </style>
 </head>
 <body>
 
-<canvas id="glCanvas"></canvas>
+<div id="canvasMount"></div>
 
 <div id="numberPanel"><div id="numberPanelInner"></div></div>
 <div id="bankPanel"><div id="bankPanelMount"></div></div>
@@ -148,6 +150,7 @@ import ControlPanel from './src/components/ControlPanel.svelte';
 import PlaybackBar from './src/components/PlaybackBar.svelte';
 import RestCounterBars from './src/components/RestCounterBars.svelte';
 import RestCounterGrid from './src/components/RestCounterGrid.svelte';
+import TargetBankCanvas from './src/components/TargetBankCanvas.svelte';
 import { displayStore } from './src/lib/displayStore.js';
 
 const COLORS = ["#cbd5e1", "#ef476f", "#ffd166", "#06d6a0", "#118ab2", "#8338ec", "#f78c6b", "#ff006e", "#3a86ff", "#fb5607", "#ffbe0b"];
@@ -187,6 +190,10 @@ mount(PlaybackBar, { target: document.getElementById('playbackBarMount') });
 // gerade sichtbar ist, steuert displayStore (siehe subscribe unten).
 mount(RestCounterBars, { target: document.getElementById('bankPanelMount') });
 mount(RestCounterGrid, { target: document.getElementById('restGridMount') });
+// Canvas-Rendering (Phase 4a) - <TargetBankCanvas> kapselt ab hier das
+// gesamte renderFrame()/Loop/HUD-Lese-Zugriffe; sqrt2.html hält nur
+// noch die Zahlentafel (updateHUD) + die Settings-/Reveal-Logik.
+mount(TargetBankCanvas, { target: document.getElementById('canvasMount') });
 
 let N_MAX = 16; let BASE = 10;
 let TOTAL_STEPS = 0; let MAX_TIME = 0; let P_FINAL = 0;
@@ -475,8 +482,10 @@ function updateNumberPanelScale() {
     numberPanelInner.style.transform = `scale(${scale})`;
 }
 
-// === SYSTEM C: RENDER ENGINE ===
-const canvas = document.getElementById('glCanvas'); const ctx = canvas.getContext('2d');
+// === SYSTEM C: RENDER ENGINE — seit Phase 4a vollständig nach
+// src/components/TargetBankCanvas.svelte ausgelagert. Der Rest dieses
+// Blocks (renderFrame() + Helfer + Loop + die unten stehenden toten
+// Funktionen) ist jetzt uncalled/tot — beim Aufräumen entfernen.
 let isPlaying = false; let animDirection = 1; let animPause = 0;
 let u_time = 0.0; let u_mode_AB = 0.0;
 // Auto-Zoom: Mindestbreite (Canvas-Pixel) für die feinste Ziffern-Stelle im
@@ -511,7 +520,7 @@ function resizeCanvas() {
     canvas.style.height = window.innerHeight + 'px';
     renderFrame();
 }
-window.addEventListener('resize', resizeCanvas);
+// resizeCanvas() (und sein Listener) lebt jetzt in TargetBankCanvas.svelte
 
 // Liefert die Auto-Zoom-Transformation der Bank für Zeitpunkt "time" -
 // Zentrum UND Zoom wandern mit dem tatsächlichen Rest mit (statt eines
@@ -945,10 +954,11 @@ function updateAutoZoomIndicator(autoZoomTAB, isActive) {
 
 // Zeit-/Tick-Anzeige (timeReadout/tickInput/tickLabel) liegen seit Phase 3
 // vollständig in PlaybackBar.svelte/ControlPanel.svelte (reaktiv aus
-// playbackStore/compiledStore abgeleitet, siehe dort) - hier bleibt nur noch
-// das eigentliche Canvas-/HUD-Rendering.
+// playbackStore/compiledStore abgeleitet, siehe dort). Das Canvas-Rendering
+// selbst liegt seit Phase 4a in <TargetBankCanvas> (siehe mount() oben) -
+// hier bleibt nur noch die Zahlentafel (updateHUD).
 function updateOutputs() {
-    renderFrame(); updateHUD(u_time);
+    updateHUD(u_time);
 }
 
 function formatZoomFactor(f) {
@@ -1078,15 +1088,20 @@ function loop(now) {
     requestAnimationFrame(loop);
 }
 
-resizeCanvas();
-
 // Löst den ersten Compile aus (Ersatz für den früheren direkten
 // compileSystem()-Aufruf) - subscribe() ruft applyConfig() synchron sofort
 // mit dem aktuellen (ggf. schon per URL überschriebenen) configStore-Wert
-// auf. playbackStore.subscribe() startet analog dazu ggf. sofort die
-// Animation, falls die URL "play=1" gesetzt hatte (siehe applyPlayback()).
+// auf. configStore.subscribe() startet analog dazu ggf. sofort die
+// Animation, falls die URL "play=1" gesetzt hatte - das geschieht
+// aber jetzt in <TargetBankCanvas> (dort liegen Loop + Canvas, siehe
+// mount() oben); hier läuft nur noch die schlanke Zahlentafel-
+// Aktualisierung aus playbackStore.time.
 configStore.subscribe(applyConfig);
-playbackStore.subscribe(applyPlayback);
+// Playback-Brücke für DIE ZAHLENTAFEL (l/l²/R): spiegelt
+// playbackStore.time in u_time (Modul-Scope, von updateHUD genutzt)
+// und rendert die Tafel neu. Die eigentliche rAF-Loop + das
+// Canvas-Rendering liegen seit Phase 4a in <TargetBankCanvas>.
+playbackStore.subscribe((p) => { u_time = p.time; updateHUD(u_time); });
 // Widget-Auswahl (displayStore, siehe ControlPanel): zeigt entweder das
 // vertikale Balken-Widget (#bankPanel) ODER das horizontale Grid-Widget
 // (#restGridPanel), nie beide gleichzeitig. Lokaler UI-Zustand, wird NICHT
