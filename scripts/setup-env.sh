@@ -43,6 +43,8 @@ echo "==> [5/6] Projekt-Abhaengigkeiten via pnpm"
 #pnpm-lock.yaml aus package.json (reproduzierbar, sofern die Lock eingecheckt
 #wird). npm package-lock.json wird dabei ignoriert.
 pnpm install
+pnpm rebuild esbuild   # pnpm 11 blockiert Build-Skripte per Default - esbuild
+                      # (vom Vite-Build benoetigt) explizit nachbauen
 pnpm add -D @playwright/test
 
 echo "==> [6/6] Playwright-Browser (chromium) + Build"
