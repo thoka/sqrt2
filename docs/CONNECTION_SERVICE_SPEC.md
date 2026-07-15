@@ -269,18 +269,31 @@ als Erweiterung der Admin-API zu spezifizieren (Stufe: eigenes Ticket).
 
 ---
 
-## 10. Wiederverwendbarkeit
+## 10. Betriebsmodell: EIN Server pro Exponat (embedded Relay)
 
-Der Dienst kennt **keine** Exponat-Logik. Wiederverwendung durch:
-- generische `app`-Nachrichten (jedes Exponat definiert sein eigenes
-  Payload-Schema, z.B. sqrt2: `configStore`/`playbackStore`-Deltas).
-- mehrere Exponate = mehrere `API_KEYS`; jedes mintet eigene Tokens.
-- dieselbe Instanz kann parallel Filme-Sync, Spiele, Steuerung bedienen —
-  getrennt nur durch unterschiedliche Tokens/Räume.
+Ursprünglich war der Relay als **eigener, zentraler Dienst** für mehrere
+Exponate/Apps geplant (Multi-Tenant). Für den realen Einsatz — ein Exponat
+(oder wenige), deren Oberfläche vom **selben** Server kommt — ist das
+überflüssig: zwei Prozesse/Origins bringen nur CORS- und Config-Aufwand,
+keinen Nutzen (Traffic ist minimal).
 
-Empfehlung: Service in **eigenes Repo** auslagern (z.B. `exhibit-relay`),
-sqrt2 bindet ihn via Compose/URL ein. Hier vorerst unter
-`infra/connection-service/` zur Konzept-Phase.
+**Entscheidung:** der Relay ist eine **Bibliothek** (`createRelay()` in
+`server.js`), die **embedded** im Exponat-Server läuft:
+
+- `exponat-server.mjs` (Produktion): ein Node-Prozess serviert `dist/`
+  (Statics) **und** den Relay unter `/api` + `/ws` — **ein Origin, kein
+  CORS, kein zweiter Prozess**.
+- Vite-Dev/Preview (Entwicklung): Vite proxyed `/api` + `/ws` auf einen
+  Relay-Hintergrundprozess (`scripts/relay-dev.sh`) → ebenfalls ein Origin.
+
+`server.js` bleibt als **standalone-Entry** erhaltbar (eigener Port), falls
+jemand den Relay doch separat betreiben will — das ist aber nicht der
+Empfehlungspfad.
+
+Wiederverwendbarkeit entsteht trotzdem: `createRelay()` ist exponat-agnostisch
+(generische `app`-Nachrichten, mehrere `API_KEYS`); es wird nur **nicht**
+mehr als separater Multi-Tenant-Dienst betrieben, sondern pro Exponat
+eingebettet.
 
 ---
 
@@ -317,10 +330,15 @@ aber exponat-agnostisch und mit der geforderten Zwei-Stufen-Auth
    (`ControlPanel.svelte`: Sitzung starten → Token minten → QR (`qrcode`) +
    PIN; `RemoteControl.svelte` joint per WS, wenn der QR-Link `ws`/`token`/
    `pin` trägt).
-5. Testen über Tailnet (`<host>.<tailnet>.ts.net:8080` bzw. Vite-Port,
-   mit `tailscale cert`→TLS); Traefik-Stack nur bei eigener Domain via
+5. **Betriebsmodell vereinfacht (ein Server):** Relay als Bibliothek
+   `createRelay()` (kein eigenes `listen()` mehr), embedded in
+   `exponat-server.mjs` (Statics + Relay, ein Origin, kein CORS) sowie als
+   Vite-Proxy-Ziel (`scripts/relay-dev.sh`) für Dev/Preview. `server.js`
+   bleibt optional als standalone-Entry. — **erledigt**.
+6. Testen über Tailnet (`<host>.<tailnet>.ts.net` bzw. Vite-Port, mit
+   `tailscale cert`→TLS); Traefik-Stack nur bei eigener Domain via
    `--profile edge`. `ADMIN_KEY` beim ersten Start aus der Console erfassen.
-6. (Optional) Redis-Adapter für Horizontal-Skalierung.
+7. (Optional, vorerst nicht benötigt) Redis-Adapter für Horizontal-Skalierung.
 7. **Status-Page** (`/` als HTML über http/https) + **Admin-UI** unter
    `/admin` — **erledigt** (§8): Status-Page liefert Dienstname, Version,
    Uptime, Transport-Modus, Räume/Seats/Verbindungen; Admin-UI (dependency-

@@ -100,7 +100,11 @@
 	const LS_RELAY = 'sqrt2.relayUrl';
 	const LS_APIKEY = 'sqrt2.apiKey';
 
-	let relayUrl = $state(localStorage.getItem(LS_RELAY) ?? 'http://localhost:8080');
+	// Default: selber Origin (Vite-Proxy bzw. exponat-server.mjs leiten
+	// /api + /ws auf den embedded Relay weiter) -> kein CORS, kein Port-
+	// Unterschied. Nur wer den Relay standalone auf einem anderen Port
+	// betreibt, aendert das hier.
+	let relayUrl = $state(localStorage.getItem(LS_RELAY) ?? location.origin);
 	let apiKey = $state(localStorage.getItem(LS_APIKEY) ?? '');
 	let seats = $state(4);
 	let pinInput = $state('');

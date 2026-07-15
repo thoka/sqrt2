@@ -15,11 +15,32 @@ Anwendungslogik im Server.
 
 ## Schnellstart
 
-### Lokal (Node, HTTP/ws)
+Der Relay läuft **embedded** im Exponat-Server (ein Prozess, ein Origin,
+kein CORS). Für die sqrt2-Oberfläche ist das der Empfehlungspfad.
+
+### A) Exponat-Server (Produktion, ein Prozess)
+
+```bash
+pnpm build                              # erzeugt dist/
+cd infra/connection-service
+DATA_DIR=./data API_KEYS=mein-key PORT=5173 node exponat-server.mjs
+# serviert sqrt2 (dist/) + Relay unter EINEM Port/Origin
+# -> http://localhost:5173  (Oberflaeche + /api/token + /ws)
+```
+
+### B) Vite-Dev/Preview + Relay im Hintergrund (Entwicklung)
+
+```bash
+scripts/relay-dev.sh start              # Relay auf :8080 im Hintergrund
+pnpm dev                                # Vite proxyed /api + /ws -> :8080
+# ControlPanel-Relay-URL = Vite-Origin (Default location.origin), kein CORS
+```
+
+### C) Standalone (nur Relay, eigener Port) — nicht der Empfehlungspfad
 
 ```bash
 npm install          # nur die ws-Abhaengigkeit
-API_KEYS=mein-key node server.js
+DATA_DIR=./data API_KEYS=mein-key node server.js
 # ADMIN_KEY wird beim ersten Start auf die Console gedruckt (persistent in ./data)
 ```
 
@@ -91,7 +112,7 @@ Beispiel:
 | `ADMIN_KEY` | (einmalig generiert, in `DATA_DIR`) | Admin-REST/UI-Schlüssel |
 | `TOKEN_TTL_DEFAULT` | `3600` | Token-Gültigkeit in Sekunden |
 | `MAX_SEATS_DEFAULT` | `4` | Seats, wenn Token kein `seats` angibt |
-| `ALLOWED_ORIGINS` | (leer) | CORS: komma-getrennte Origins |
+| `ALLOWED_ORIGINS` | (leer) | CORS: komma-getrennte Origins. **Bei embedded Betrieb (ein Origin) nicht nötig** — nur bei standalone Relay mit anderer Origin der Oberfläche setzen. |
 | `TLS_CERT` / `TLS_KEY` | (leer) | PEM-Pfade → startet **https + wss://** |
 | `HEARTBEAT_MS` | `30000` | WS-Heartbeat-Intervall |
 | `RATE_LIMIT_MAX` / `RATE_LIMIT_WINDOW_MS` | `120` / `60000` | Minting-Rate-Limit pro API-Key |
@@ -175,7 +196,25 @@ function broadcast(payload) {
 
 ---
 
-## Tests
+## Dateien
+
+```
+server.js             Relay als Bibliothek: createRelay() (requestHandler +
+                      attachWs) + optionaler standalone-Entry
+exponat-server.mjs    EIN Server: dist/-Statics + embedded Relay (ein Origin)
+ratelimit.js          Brute-Force-Härtung (Rate-Limit + PIN-Backoff)
+test-helpers.mjs      Gemeinsame Helfer (Server-Start, req, openWs, checker)
+test-api.mjs          REST-API-Zugangstests (25 Checks)
+test-connection.mjs   WebSocket-Relay-Tests (19 Checks)
+test-sqrt2-sync.mjs   E2E: sqrt2-Store-Sync durch den echten Relay
+relay.sh              start/stop/restart/status/logs (standalone, node)
+scripts/relay-dev.sh  Relay-Hintergrundprozess für Vite-Proxy (Entwicklung)
+setup-tailscale.sh    config / check / reachable / https
+docker-compose.yml    Relay (+ optionales Traefik via --profile edge)
+Dockerfile            node:22-alpine Image
+relay.env             (generiert) Konfiguration des Helfers — nicht committen
+certs/                (generiert) tailscale-Zertifikate — nicht committen
+```
 
 Zwei fokussierte Testscripts, jeweils mit eigenem, gestartetem Relay-Server
 (Plain http/ws, deterministische Secrets):
@@ -198,12 +237,16 @@ gemeinsamen Server-Start, `req()` und `openWs()` bereit.
 ## Dateien
 
 ```
-server.js             Relay-Server (REST + WebSocket), RAM-only
+server.js             Relay als Bibliothek: createRelay() (requestHandler +
+                      attachWs) + optionaler standalone-Entry
+exponat-server.mjs    EIN Server: dist/-Statics + embedded Relay (ein Origin)
 ratelimit.js          Brute-Force-Härtung (Rate-Limit + PIN-Backoff)
 test-helpers.mjs      Gemeinsame Helfer (Server-Start, req, openWs, checker)
 test-api.mjs          REST-API-Zugangstests (25 Checks)
 test-connection.mjs   WebSocket-Relay-Tests (19 Checks)
-relay.sh              start/stop/restart/status/logs (lokal, node)
+test-sqrt2-sync.mjs   E2E: sqrt2-Store-Sync durch den echten Relay
+relay.sh              start/stop/restart/status/logs (standalone, node)
+scripts/relay-dev.sh  Relay-Hintergrundprozess für Vite-Proxy (Entwicklung)
 setup-tailscale.sh    config / check / reachable / https
 docker-compose.yml    Relay (+ optionales Traefik via --profile edge)
 Dockerfile            node:22-alpine Image

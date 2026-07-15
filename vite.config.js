@@ -2,6 +2,18 @@ import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 
+// Dev/Preview-Proxy auf den embedded Relay: sqrt2 und Relay laufen damit
+// unter EINEM Origin (Vite-Port) -> kein CORS, kein zweiter Prozess. Der
+// Relay (infra/connection-service) wird dafür als eigener Hintergrund-
+// prozess gestartet (siehe scripts/relay-dev.sh) und hier durchgereicht.
+// Produktion: exponat-server.mjs (Statics + Relay in einem Prozess).
+const RELAY_TARGET = process.env.RELAY_TARGET ?? 'http://localhost:8080';
+const relayProxy = {
+	'/api': { target: RELAY_TARGET, changeOrigin: true },
+	'/ws': { target: RELAY_TARGET, ws: true, changeOrigin: true },
+	'/admin': { target: RELAY_TARGET, changeOrigin: true },
+};
+
 export default defineConfig({
 	// Mehrseiten-App (index.html + remote-control.html): KEIN SPA-Fallback,
 	// damit unbekannte/clean-URLs nicht stumm auf index.html umgeleitet
@@ -12,8 +24,8 @@ export default defineConfig({
 	// host:true -> an alle Interfaces binden (0.0.0.0), damit z.B. Windows 11
 	// aus WSL die Dev-/Preview-Server per localhost erreicht (Default ist nur
 	// localhost, von ausserhalb des WSL-Gasts nicht erreichbar).
-	server: { host: true },
-	preview: { host: true },
+	server: { host: true, proxy: relayProxy },
+	preview: { host: true, proxy: relayProxy },
 	plugins: [svelte()],
 	build: {
 		rollupOptions: {
