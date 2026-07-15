@@ -3,6 +3,11 @@ import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 
 export default defineConfig({
+  // Mehrseiten-App (index.html + remote-control.html): KEIN SPA-Fallback,
+  // damit unbekannte/clean-URLs nicht stumm auf index.html umgeleitet
+  // werden (sonst "index für alle Pfade"). Nur reale .html-Dateien werden
+  // ausgeliefert, der Rest antwortet mit 404.
+  appType: 'mpa',
   base: process.env.GITHUB_PAGES ? '/sqrt2/' : '/',
   plugins: [svelte()],
   build: {
