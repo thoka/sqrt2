@@ -5,27 +5,22 @@ import { defineConfig, devices } from '@playwright/test';
 // Vite-Preview-Server ueber das gebauter dist/ und prueft das Haupttool
 // (Canvas-Rendering + Rest-Widget + Steuerung) real im Chromium.
 export default defineConfig({
-  testDir: './tests/e2e',
-  timeout: 30000,
-  expect: { timeout: 10000 },
-  fullyParallel: true,
-  reporter: [
-    ['list'],
-    ['html', { outputFolder: 'playwright-report', open: 'never' }],
-  ],
-  use: {
-    baseURL: 'http://localhost:4173',
-    headless: true,
-    screenshot: 'only-on-failure',
-    trace: 'retain-on-failure',
-  },
-  projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-  ],
-  webServer: {
-    command: 'node_modules/.bin/vite preview --port 4173 --strictPort',
-    url: 'http://localhost:4173/',
-    reuseExistingServer: true,
-    timeout: 60000,
-  },
+	testDir: './tests/e2e',
+	timeout: 30000,
+	expect: { timeout: 10000 },
+	fullyParallel: true,
+	reporter: [['list'], ['html', { outputFolder: 'playwright-report', open: 'never' }]],
+	use: {
+		baseURL: 'http://localhost:4173',
+		headless: true,
+		screenshot: 'only-on-failure',
+		trace: 'retain-on-failure',
+	},
+	projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+	webServer: {
+		command: 'node_modules/.bin/vite preview --port 4173 --strictPort',
+		url: 'http://localhost:4173/',
+		reuseExistingServer: true,
+		timeout: 60000,
+	},
 });

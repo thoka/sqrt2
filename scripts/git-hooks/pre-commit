@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Spiegelt das CI-Quality-Gate (pnpm check): Svelte-Diagnose + ESLint +
+# ungenutzte Dependencies + Prettier-Format-Check. Blockt den Commit,
+# wenn einer der Checks fehlschlägt.
+pnpm check

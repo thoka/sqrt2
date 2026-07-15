@@ -15,24 +15,24 @@ import { compileSystem } from './compiler.js';
 // bleibt in Phase 2 unverändert, siehe Spec-Tabelle Phase 2 "noch keine
 // UI-Änderung").
 export const configStore = writable({
-    base: 10,
-    depth: 16,
-    transformMode: 'S',
-    bankZoomThresholdPowers: 0,
-    autoZoomMinPx: 3,
-    zoomSpeedCoef: 0.012,
-    compactionEnabled: false,
-    compactionTransitionTicks: 3,
-    lineWidth: 0.3,
-    pauseDuration: 1.5,
-    playSpeed: 2.0,
-    modeAB: 0.0,
+	base: 10,
+	depth: 16,
+	transformMode: 'S',
+	bankZoomThresholdPowers: 0,
+	autoZoomMinPx: 3,
+	zoomSpeedCoef: 0.012,
+	compactionEnabled: false,
+	compactionTransitionTicks: 3,
+	lineWidth: 0.3,
+	pauseDuration: 1.5,
+	playSpeed: 2.0,
+	modeAB: 0.0,
 });
 
 export const playbackStore = writable({
-    time: 0.0,
-    isPlaying: false,
-    direction: 1,
+	time: 0.0,
+	isPlaying: false,
+	direction: 1,
 });
 
 // derived statt eines manuell verdrahteten subscribe(): läuft automatisch

@@ -68,80 +68,93 @@
 // erst kurz vor dem neuen) - der alte, exakte Zeitpunkt jedes Wertwechsels
 // bleibt aber weiterhin exakt getroffen (Kern-Garantie bleibt erhalten).
 export function buildMonotoneSpline(points, opts) {
-    opts = opts || {};
-    // Duplikate/nicht-monotone t-Werte defensiv entfernen (nachfolgende
-    // Segment-Mathematik setzt strikt wachsende t voraus, sonst Division
-    // durch Null) - im Normalfall bereits durch die Aufrufer sichergestellt
-    // (z.B. per Set() dedupliziert), hier trotzdem zur Sicherheit.
-    let pts = [];
-    for (let p of points) {
-        if (pts.length > 0 && p.t <= pts[pts.length - 1].t + 1e-9) continue;
-        if (opts.onlyChanges && pts.length > 0 && p.v === pts[pts.length - 1].v) continue;
-        pts.push(p);
-    }
+	opts = opts || {};
+	// Duplikate/nicht-monotone t-Werte defensiv entfernen (nachfolgende
+	// Segment-Mathematik setzt strikt wachsende t voraus, sonst Division
+	// durch Null) - im Normalfall bereits durch die Aufrufer sichergestellt
+	// (z.B. per Set() dedupliziert), hier trotzdem zur Sicherheit.
+	let pts = [];
+	for (let p of points) {
+		if (pts.length > 0 && p.t <= pts[pts.length - 1].t + 1e-9) continue;
+		if (opts.onlyChanges && pts.length > 0 && p.v === pts[pts.length - 1].v) continue;
+		pts.push(p);
+	}
 
-    if (pts.length === 0) return () => 0;
-    if (pts.length === 1) { let v0 = pts[0].v; return () => v0; }
+	if (pts.length === 0) return () => 0;
+	if (pts.length === 1) {
+		let v0 = pts[0].v;
+		return () => v0;
+	}
 
-    let n = pts.length;
-    let t = pts.map(p => p.t);
-    let v = pts.map(p => p.v);
+	let n = pts.length;
+	let t = pts.map((p) => p.t);
+	let v = pts.map((p) => p.v);
 
-    // Sekanten-Steigung je Segment.
-    let d = new Array(n - 1);
-    for (let i = 0; i < n - 1; i++) d[i] = (v[i + 1] - v[i]) / (t[i + 1] - t[i]);
+	// Sekanten-Steigung je Segment.
+	let d = new Array(n - 1);
+	for (let i = 0; i < n - 1; i++) d[i] = (v[i + 1] - v[i]) / (t[i + 1] - t[i]);
 
-    // Tangenten an den Stützpunkten. Ränder bewusst auf 0 gepinnt (siehe
-    // Kommentar oben) statt der sonst üblichen einseitigen Sekanten-Schätzung.
-    let m = new Array(n);
-    m[0] = 0;
-    m[n - 1] = 0;
-    for (let i = 1; i < n - 1; i++) {
-        if (d[i - 1] === 0 || d[i] === 0 || (d[i - 1] < 0) !== (d[i] < 0)) {
-            // Lokales Extremum oder Vorzeichenwechsel der Sekanten - die
-            // Tangente MUSS hier 0 sein, sonst überschwingt die Kurve.
-            m[i] = 0;
-        } else {
-            // Gewichteter harmonischer Mittelwert (Fritsch-Butland-Formel) -
-            // Standardwahl für den Startwert vor dem Rescale unten.
-            let hL = t[i] - t[i - 1], hR = t[i + 1] - t[i];
-            let w1 = 2 * hR + hL, w2 = hR + 2 * hL;
-            m[i] = (w1 + w2) / (w1 / d[i - 1] + w2 / d[i]);
-        }
-    }
+	// Tangenten an den Stützpunkten. Ränder bewusst auf 0 gepinnt (siehe
+	// Kommentar oben) statt der sonst üblichen einseitigen Sekanten-Schätzung.
+	let m = new Array(n);
+	m[0] = 0;
+	m[n - 1] = 0;
+	for (let i = 1; i < n - 1; i++) {
+		if (d[i - 1] === 0 || d[i] === 0 || d[i - 1] < 0 !== d[i] < 0) {
+			// Lokales Extremum oder Vorzeichenwechsel der Sekanten - die
+			// Tangente MUSS hier 0 sein, sonst überschwingt die Kurve.
+			m[i] = 0;
+		} else {
+			// Gewichteter harmonischer Mittelwert (Fritsch-Butland-Formel) -
+			// Standardwahl für den Startwert vor dem Rescale unten.
+			let hL = t[i] - t[i - 1],
+				hR = t[i + 1] - t[i];
+			let w1 = 2 * hR + hL,
+				w2 = hR + 2 * hL;
+			m[i] = (w1 + w2) / (w1 / d[i - 1] + w2 / d[i]);
+		}
+	}
 
-    // Fritsch-Carlson-Rescale je Segment: verhindert Überschwinger, falls
-    // eine der beiden Randtangenten zu groß im Verhältnis zur Sekante ist
-    // (alpha² + beta² > 9 ist das Standard-Monotonie-Kriterium).
-    for (let i = 0; i < n - 1; i++) {
-        if (d[i] === 0) { m[i] = 0; m[i + 1] = 0; continue; }
-        let alpha = m[i] / d[i], beta = m[i + 1] / d[i];
-        let s = alpha * alpha + beta * beta;
-        if (s > 9) {
-            let tau = 3 / Math.sqrt(s);
-            m[i] = tau * alpha * d[i];
-            m[i + 1] = tau * beta * d[i];
-        }
-    }
+	// Fritsch-Carlson-Rescale je Segment: verhindert Überschwinger, falls
+	// eine der beiden Randtangenten zu groß im Verhältnis zur Sekante ist
+	// (alpha² + beta² > 9 ist das Standard-Monotonie-Kriterium).
+	for (let i = 0; i < n - 1; i++) {
+		if (d[i] === 0) {
+			m[i] = 0;
+			m[i + 1] = 0;
+			continue;
+		}
+		let alpha = m[i] / d[i],
+			beta = m[i + 1] / d[i];
+		let s = alpha * alpha + beta * beta;
+		if (s > 9) {
+			let tau = 3 / Math.sqrt(s);
+			m[i] = tau * alpha * d[i];
+			m[i + 1] = tau * beta * d[i];
+		}
+	}
 
-    return function at(time) {
-        if (time <= t[0]) return v[0];
-        if (time >= t[n - 1]) return v[n - 1];
-        let lo = 0, hi = n - 1;
-        while (hi - lo > 1) {
-            let mid = (lo + hi) >> 1;
-            if (t[mid] <= time) lo = mid; else hi = mid;
-        }
-        let h = t[lo + 1] - t[lo];
-        let s = (time - t[lo]) / h;
-        let s2 = s * s, s3 = s2 * s;
-        // Kubische Hermite-Basisfunktionen (h00, h10, h01, h11).
-        let h00 = 2 * s3 - 3 * s2 + 1;
-        let h10 = s3 - 2 * s2 + s;
-        let h01 = -2 * s3 + 3 * s2;
-        let h11 = s3 - s2;
-        return h00 * v[lo] + h10 * h * m[lo] + h01 * v[lo + 1] + h11 * h * m[lo + 1];
-    };
+	return function at(time) {
+		if (time <= t[0]) return v[0];
+		if (time >= t[n - 1]) return v[n - 1];
+		let lo = 0,
+			hi = n - 1;
+		while (hi - lo > 1) {
+			let mid = (lo + hi) >> 1;
+			if (t[mid] <= time) lo = mid;
+			else hi = mid;
+		}
+		let h = t[lo + 1] - t[lo];
+		let s = (time - t[lo]) / h;
+		let s2 = s * s,
+			s3 = s2 * s;
+		// Kubische Hermite-Basisfunktionen (h00, h10, h01, h11).
+		let h00 = 2 * s3 - 3 * s2 + 1;
+		let h10 = s3 - 2 * s2 + s;
+		let h01 = -2 * s3 + 3 * s2;
+		let h11 = s3 - s2;
+		return h00 * v[lo] + h10 * h * m[lo] + h01 * v[lo + 1] + h11 * h * m[lo + 1];
+	};
 }
 
 // Komfort-Wrapper für mehrere Felder, die dieselbe Zeitachse teilen (z.B.
@@ -153,15 +166,19 @@ export function buildMonotoneSpline(points, opts) {
 // denselben Zeitpunkten viele Wiederholungen hat).
 // Rückgabe: { at(time) => { [key]: number, ... } }.
 export function buildMonotoneSplineBundle(points, keys, opts) {
-    let splines = {};
-    for (let k of keys) splines[k] = buildMonotoneSpline(points.map(p => ({ t: p.t, v: p[k] })), opts);
-    return {
-        at(time) {
-            let result = {};
-            for (let k of keys) result[k] = splines[k](time);
-            return result;
-        }
-    };
+	let splines = {};
+	for (let k of keys)
+		splines[k] = buildMonotoneSpline(
+			points.map((p) => ({ t: p.t, v: p[k] })),
+			opts,
+		);
+	return {
+		at(time) {
+			let result = {};
+			for (let k of keys) result[k] = splines[k](time);
+			return result;
+		},
+	};
 }
 
 // ============================================================================
@@ -203,18 +220,20 @@ export function buildMonotoneSplineBundle(points, keys, opts) {
 // des Bereichs: lo===hi===0 bzw. lo===hi===letzter Index, s=0). Aufrufer
 // blenden ihre eigenen Werte an waypoints[lo]/waypoints[hi] selbst mit s.
 export function computeSegmentBlend(times, time) {
-    let n = times.length;
-    if (n === 0) return null;
-    if (n === 1 || time <= times[0]) return { lo: 0, hi: 0, s: 0 };
-    if (time >= times[n - 1]) return { lo: n - 1, hi: n - 1, s: 0 };
-    let lo = 0, hi = n - 1;
-    while (hi - lo > 1) {
-        let mid = (lo + hi) >> 1;
-        if (times[mid] <= time) lo = mid; else hi = mid;
-    }
-    let raw = (time - times[lo]) / (times[hi] - times[lo]);
-    let s = raw * raw * (3 - 2 * raw);
-    return { lo, hi, s };
+	let n = times.length;
+	if (n === 0) return null;
+	if (n === 1 || time <= times[0]) return { lo: 0, hi: 0, s: 0 };
+	if (time >= times[n - 1]) return { lo: n - 1, hi: n - 1, s: 0 };
+	let lo = 0,
+		hi = n - 1;
+	while (hi - lo > 1) {
+		let mid = (lo + hi) >> 1;
+		if (times[mid] <= time) lo = mid;
+		else hi = mid;
+	}
+	let raw = (time - times[lo]) / (times[hi] - times[lo]);
+	let s = raw * raw * (3 - 2 * raw);
+	return { lo, hi, s };
 }
 
 // ============================================================================
@@ -248,33 +267,40 @@ export function computeSegmentBlend(times, time) {
 // gewichtete Summe mit nicht-negativen, sich zu 1 aufsummierenden Gewichten
 // über bereits sichere Werte, das bleibt für JEDES TAU sicher.
 export function buildDampedFilter(points, tau) {
-    if (points.length === 0) return () => 0;
-    if (points.length === 1) { let v0 = points[0].v; return () => v0; }
-    let k = 1 / tau;
-    function h(tauElapsed) {
-        if (tauElapsed <= 0) return 0;
-        return 1 - Math.exp(-k * tauElapsed) * (1 + k * tauElapsed);
-    }
-    return function at(time) {
-        let v = points[0].v;
-        for (let i = 1; i < points.length; i++) {
-            v += (points[i].v - points[i - 1].v) * h(time - points[i].t);
-        }
-        return v;
-    };
+	if (points.length === 0) return () => 0;
+	if (points.length === 1) {
+		let v0 = points[0].v;
+		return () => v0;
+	}
+	let k = 1 / tau;
+	function h(tauElapsed) {
+		if (tauElapsed <= 0) return 0;
+		return 1 - Math.exp(-k * tauElapsed) * (1 + k * tauElapsed);
+	}
+	return function at(time) {
+		let v = points[0].v;
+		for (let i = 1; i < points.length; i++) {
+			v += (points[i].v - points[i - 1].v) * h(time - points[i].t);
+		}
+		return v;
+	};
 }
 
 // Komfort-Wrapper für mehrere Felder, die dieselbe Zeitachse UND dieselbe
 // Zeitkonstante teilen (z.B. {t, z, offsetX, offsetY, area}) - siehe
 // buildMonotoneSplineBundle() weiter oben für das Analogon ohne Dämpfung.
 export function buildDampedFilterBundle(points, keys, tau) {
-    let filters = {};
-    for (let k of keys) filters[k] = buildDampedFilter(points.map(p => ({ t: p.t, v: p[k] })), tau);
-    return {
-        at(time) {
-            let result = {};
-            for (let k of keys) result[k] = filters[k](time);
-            return result;
-        }
-    };
+	let filters = {};
+	for (let k of keys)
+		filters[k] = buildDampedFilter(
+			points.map((p) => ({ t: p.t, v: p[k] })),
+			tau,
+		);
+	return {
+		at(time) {
+			let result = {};
+			for (let k of keys) result[k] = filters[k](time);
+			return result;
+		},
+	};
 }

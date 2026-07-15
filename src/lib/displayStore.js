@@ -9,5 +9,5 @@
 import { writable } from 'svelte/store';
 
 export const displayStore = writable({
-  restWidget: 'bars', // 'bars' | 'grid'
+	restWidget: 'bars', // 'bars' | 'grid'
 });

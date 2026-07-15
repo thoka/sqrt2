@@ -3,114 +3,326 @@
    die teils von in App.svelte gemounteten Kind-Komponenten gerendert werden;
    ein globales Stylesheet vermeidet Svelte-Scoping-Konflikte. */
 
-body, html { margin: 0; padding: 0; width: 100%; height: 100%; font-family: system-ui, sans-serif; background: #0b1120; overflow: hidden; }
-canvas { display: block; width: 100%; height: 100%; }
+body,
+html {
+	margin: 0;
+	padding: 0;
+	width: 100%;
+	height: 100%;
+	font-family: system-ui, sans-serif;
+	background: #0b1120;
+	overflow: hidden;
+}
+canvas {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
 
 #numberPanel {
-    position: fixed; top: 24px; right: 150px; z-index: 10; pointer-events: none; width: 700px;
-    color: #94a3b8; font-size: 1.6em; line-height: 1.6; text-align: left;
+	position: fixed;
+	top: 24px;
+	right: 150px;
+	z-index: 10;
+	pointer-events: none;
+	width: 700px;
+	color: #94a3b8;
+	font-size: 1.6em;
+	line-height: 1.6;
+	text-align: left;
 }
 #numberPanelInner {
-    display: inline-block; transform-origin: left top;
+	display: inline-block;
+	transform-origin: left top;
 }
 #bankPanel {
-    position: fixed; top: 0; bottom: 0; right: 20px; z-index: 10; pointer-events: none;
-    width: 150px; display: flex; flex-direction: column; justify-content: center;
+	position: fixed;
+	top: 0;
+	bottom: 0;
+	right: 20px;
+	z-index: 10;
+	pointer-events: none;
+	width: 150px;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
 }
 #bankPanelInner {
-    display: flex; flex-direction: column; gap: 5px; transform-origin: right center;
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+	transform-origin: right center;
 }
 
-.bank-row { display: flex; align-items: center; gap: 8px; font-family: monospace; }
-.bank-bar { flex-grow: 1; display: flex; justify-content: flex-end; align-items: center; gap: 2px; height: 24px; overflow: hidden; }
-.bank-exp { width: 24px; text-align: right; font-weight: bold; font-size: 1.95em; flex-shrink: 0; }
+.bank-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-family: monospace;
+}
+.bank-bar {
+	flex-grow: 1;
+	display: flex;
+	justify-content: flex-end;
+	align-items: center;
+	gap: 2px;
+	height: 24px;
+	overflow: hidden;
+}
+.bank-exp {
+	width: 24px;
+	text-align: right;
+	font-weight: bold;
+	font-size: 1.95em;
+	flex-shrink: 0;
+}
 
 #settingsPanel {
-    position: fixed; top: 20px; right: 20px; width: 400px;
-    max-height: calc(100vh - 40px); overflow-y: auto; z-index: 20;
-    opacity: 0; transform: translateY(-8px) scale(0.98); pointer-events: none;
-    transition: opacity 0.25s ease, transform 0.25s ease;
+	position: fixed;
+	top: 20px;
+	right: 20px;
+	width: 400px;
+	max-height: calc(100vh - 40px);
+	overflow-y: auto;
+	z-index: 20;
+	opacity: 0;
+	transform: translateY(-8px) scale(0.98);
+	pointer-events: none;
+	transition:
+		opacity 0.25s ease,
+		transform 0.25s ease;
 }
-#settingsPanel.open { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+#settingsPanel.open {
+	opacity: 1;
+	transform: translateY(0) scale(1);
+	pointer-events: auto;
+}
 
 #bottomBar {
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
-    display: flex; align-items: center; gap: 14px;
-    padding: 10px 20px; pointer-events: none;
+	position: fixed;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 20;
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	padding: 10px 20px;
+	pointer-events: none;
 }
 #playbackBarMount {
-    display: flex; align-items: center; gap: 14px;
-    width: 100%; flex: 1 1 auto; min-width: 0;
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	width: 100%;
+	flex: 1 1 auto;
+	min-width: 0;
 }
-#playbackBarMount #timeSlider { flex: 1 1 auto; min-width: 0; }
+#playbackBarMount #timeSlider {
+	flex: 1 1 auto;
+	min-width: 0;
+}
 #bottomBar #playBtn {
-    opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
-    background: none; border: none; color: #f8fafc; font-size: 1.3em; cursor: pointer;
-    width: 32px; height: 32px; flex-shrink: 0; padding: 0;
-    display: flex; align-items: center; justify-content: center;
-    text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 0.2s ease;
+	background: none;
+	border: none;
+	color: #f8fafc;
+	font-size: 1.3em;
+	cursor: pointer;
+	width: 32px;
+	height: 32px;
+	flex-shrink: 0;
+	padding: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
 #bottomBar #timeReadout {
-    opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
-    color: #cbd5e1; font-family: monospace; font-size: 0.85em; flex-shrink: 0;
-    text-shadow: 0 1px 3px rgba(0,0,0,0.8); white-space: nowrap;
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 0.2s ease;
+	color: #cbd5e1;
+	font-family: monospace;
+	font-size: 0.85em;
+	flex-shrink: 0;
+	text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+	white-space: nowrap;
 }
-#bottomBar.visible #playBtn, #bottomBar.visible #timeReadout { opacity: 1; pointer-events: auto; }
-#bottomBar #playBtn:hover { color: #3b82f6; }
+#bottomBar.visible #playBtn,
+#bottomBar.visible #timeReadout {
+	opacity: 1;
+	pointer-events: auto;
+}
+#bottomBar #playBtn:hover {
+	color: #3b82f6;
+}
 
 #timeSlider {
-    flex-grow: 1; width: auto; border: none; -webkit-appearance: none; appearance: none;
-    height: 3px; border-radius: 2px; background-color: rgba(255,255,255,0.25);
-    background-clip: content-box; outline: none; cursor: pointer; pointer-events: auto;
-    padding: 10px 0; box-sizing: content-box;
+	flex-grow: 1;
+	width: auto;
+	border: none;
+	-webkit-appearance: none;
+	appearance: none;
+	height: 3px;
+	border-radius: 2px;
+	background-color: rgba(255, 255, 255, 0.25);
+	background-clip: content-box;
+	outline: none;
+	cursor: pointer;
+	pointer-events: auto;
+	padding: 10px 0;
+	box-sizing: content-box;
 }
 #timeSlider::-webkit-slider-thumb {
-    -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%;
-    background: #fff; opacity: 0; transition: opacity 0.2s ease; cursor: pointer;
+	-webkit-appearance: none;
+	width: 12px;
+	height: 12px;
+	border-radius: 50%;
+	background: #fff;
+	opacity: 0;
+	transition: opacity 0.2s ease;
+	cursor: pointer;
 }
 #timeSlider::-moz-range-thumb {
-    width: 12px; height: 12px; border-radius: 50%; border: none;
-    background: #fff; opacity: 0; transition: opacity 0.2s ease; cursor: pointer;
+	width: 12px;
+	height: 12px;
+	border-radius: 50%;
+	border: none;
+	background: #fff;
+	opacity: 0;
+	transition: opacity 0.2s ease;
+	cursor: pointer;
 }
-#timeSlider::-moz-range-track { height: 3px; border-radius: 2px; background: transparent; }
+#timeSlider::-moz-range-track {
+	height: 3px;
+	border-radius: 2px;
+	background: transparent;
+}
 #bottomBar.visible #timeSlider::-webkit-slider-thumb,
-#bottomBar.visible #timeSlider::-moz-range-thumb { opacity: 1; }
+#bottomBar.visible #timeSlider::-moz-range-thumb {
+	opacity: 1;
+}
 
 .overlay-panel {
-    background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px;
-    color: #f8fafc; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);
-    pointer-events: auto; box-sizing: border-box; width: 100%; position: relative;
+	background: rgba(15, 23, 42, 0.9);
+	backdrop-filter: blur(12px);
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	border-radius: 12px;
+	color: #f8fafc;
+	padding: 20px;
+	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+	pointer-events: auto;
+	box-sizing: border-box;
+	width: 100%;
+	position: relative;
 }
 
-.piece-block { width: 15px; height: 20px; border-radius: 3px; flex-shrink: 0; }
+.piece-block {
+	width: 15px;
+	height: 20px;
+	border-radius: 3px;
+	flex-shrink: 0;
+}
 
-.control-group { display: flex; flex-direction: column; gap: 8px; font-size: 0.9em; margin-bottom: 5px;}
-.control-row { display: flex; gap: 10px; }
-.control-row > div { flex: 1; }
-input[type=range], input[type=number], select { width: 100%; cursor: pointer; background: #1e293b; color: #fff; border: 1px solid #334155; border-radius: 4px; padding: 6px; box-sizing: border-box;}
+.control-group {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	font-size: 0.9em;
+	margin-bottom: 5px;
+}
+.control-row {
+	display: flex;
+	gap: 10px;
+}
+.control-row > div {
+	flex: 1;
+}
+input[type='range'],
+input[type='number'],
+select {
+	width: 100%;
+	cursor: pointer;
+	background: #1e293b;
+	color: #fff;
+	border: 1px solid #334155;
+	border-radius: 4px;
+	padding: 6px;
+	box-sizing: border-box;
+}
 
 .settings-btn {
-    width: 100%; cursor: pointer; background: #1e293b; color: #fff; border: 1px solid #334155;
-    border-radius: 4px; padding: 8px 6px; box-sizing: border-box; font-size: 0.85em; transition: background 0.15s ease;
+	width: 100%;
+	cursor: pointer;
+	background: #1e293b;
+	color: #fff;
+	border: 1px solid #334155;
+	border-radius: 4px;
+	padding: 8px 6px;
+	box-sizing: border-box;
+	font-size: 0.85em;
+	transition: background 0.15s ease;
 }
-.settings-btn:hover { background: #334155; }
-.settings-btn.copied { background: #06d6a0; color: #0b1120; border-color: #06d6a0; }
+.settings-btn:hover {
+	background: #334155;
+}
+.settings-btn.copied {
+	background: #06d6a0;
+	color: #0b1120;
+	border-color: #06d6a0;
+}
 
-.warning { color: #f59e0b; font-size: 0.8em; margin-top: -5px; }
-.error-msg { color: #ef476f; font-weight: bold; font-size: 0.9em; display: none; }
-.zoom-readout { color: #3b82f6; font-weight: bold; }
+.warning {
+	color: #f59e0b;
+	font-size: 0.8em;
+	margin-top: -5px;
+}
+.error-msg {
+	color: #ef476f;
+	font-weight: bold;
+	font-size: 0.9em;
+	display: none;
+}
+.zoom-readout {
+	color: #3b82f6;
+	font-weight: bold;
+}
 
-.slider-with-marker { position: relative; }
+.slider-with-marker {
+	position: relative;
+}
 .auto-zoom-marker {
-    position: absolute; top: 0; bottom: 0; width: 3px; margin-left: -1.5px;
-    background: #f59e0b; border-radius: 2px; pointer-events: none; display: none;
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	width: 3px;
+	margin-left: -1.5px;
+	background: #f59e0b;
+	border-radius: 2px;
+	pointer-events: none;
+	display: none;
 }
-.auto-zoom-note { color: #f59e0b; font-size: 0.8em; margin-top: -4px; display: none; }
+.auto-zoom-note {
+	color: #f59e0b;
+	font-size: 0.8em;
+	margin-top: -4px;
+	display: none;
+}
 
 #restGridPanel {
-    position: fixed; left: 20px; bottom: 60px; z-index: 15;
-    width: 300px; display: none;
+	position: fixed;
+	left: 20px;
+	bottom: 60px;
+	z-index: 15;
+	width: 300px;
+	display: none;
 }
 
-#canvasMount { position: fixed; inset: 0; z-index: 0; }
+#canvasMount {
+	position: fixed;
+	inset: 0;
+	z-index: 0;
+}

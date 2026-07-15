@@ -55,7 +55,10 @@ function req(method, path, body, auth, headers = {}) {
   }).then(async (r) => {
     const text = await r.text().catch(() => '');
     let json = null;
-    try { json = text ? JSON.parse(text) : null; } catch {}
+    try { 			json = text ? JSON.parse(text) : null;
+		} catch {
+			// ignore parse errors
+		}
     return { status: r.status, json, headers: r.headers, text };
   });
 }

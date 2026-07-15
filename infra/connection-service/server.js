@@ -373,7 +373,10 @@ wss.on('connection', (ws, req) => {
   const connId = crypto.randomUUID();
 
   const fail = (code, msg) => {
-    try { ws.send(JSON.stringify({ type: 'error', code, message: msg })); } catch {}
+    try { 			ws.send(JSON.stringify({ type: 'error', code, message: msg }));
+		} catch {
+			// ignore send failures
+		}
     ws.close();
   };
 
@@ -425,7 +428,10 @@ const heartbeat = setInterval(() => {
   for (const ws of wss.clients) {
     if (ws.isAlive === false) { ws.terminate(); continue; }
     ws.isAlive = false;
-    try { ws.ping(); } catch {}
+    try { 			ws.ping();
+		} catch {
+			// ignore ping failures
+		}
   }
 }, HEARTBEAT_MS);
 wss.on('close', () => clearInterval(heartbeat));

@@ -22,11 +22,13 @@ vollständig lesen - hier nur das Nötigste.
 ## Build / Test / Run
 
 ```bash
-pnpm install      # pnpm (NICHT npm), siehe unten
+pnpm install      # pnpm (NICHT npm), siehe unten; aktiviert auch pre-commit-Hook
 pnpm dev          # Vite-Dev-Server (live-reload)
 pnpm build        # -> dist/sqrt2.html (+ assets)
 pnpm test         # node --test *.test.js  +  vitest run
-pnpm check        # Qualitäts-Gate: svelte-check && eslint . && knip --dependencies
+pnpm check        # Qualitäts-Gate: svelte-check && eslint . && knip --dependencies && prettier --check .
+pnpm format       # Prettier --write .  (Formatierung, nutzt prettier-plugin-svelte)
+pnpm format:check # Prettier --check .  (nur Prüfung, Teil von pnpm check)
 pnpm test:env     # Umgebungs-Check (Node/pnpm/Chromium headless)
 pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
 ```
@@ -36,7 +38,13 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
 - **CLI im PATH:** `mise.toml` blendet `node_modules/.bin` per `[env] _.path`
   ein → `vite`/`playwright`/`svelte-check`/`eslint`/`knip` direkt nutzbar
   (nicht nur `pnpm exec`). Einmalig `mise trust mise.toml` nötig.
-- **`pnpm check`** ist das Gate (CI läuft es vor `test`/`build`).
+- **`pnpm check`** ist das Gate (CI läuft es vor `test`/`build`); enthält jetzt
+  auch `prettier --check .`. Vor Commit `pnpm format` laufen lassen, sonst
+  blockt das Gate (bzw. der pre-commit-Hook).
+- **Pre-commit-Hook:** `pnpm install` (bzw. `pnpm prepare`) setzt
+  `core.hooksPath=scripts/git-hooks`; `scripts/git-hooks/pre-commit` führt
+  `pnpm check` aus und blockt den Commit bei Fehlern. Nur mit
+  `git commit --no-verify` umgehen (vermeiden).
 - **E2E möglich:** Playwright + Chromium laufen (`~/.cache/ms-playwright`).
 
 ## Regeln
