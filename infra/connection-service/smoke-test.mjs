@@ -4,7 +4,8 @@
 // Plain: startet einen eigenen Server (gesteuertes Env) auf PORT.
 // TLS:   TLS=1 -> verbindet gegen extern gestarteten Server mit TLS_CERT/TLS_KEY
 //        (NODE_TLS_REJECT_UNAUTHORIZED=0). Dann muss der Server extern laufen.
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
+import fs from 'node:fs';
 import { rmSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -86,6 +87,22 @@ const check = (name, cond) => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}`
 
 const main = async () => {
   const dataDir = await startServer();
+
+  // 0) Ops-Skripte vorhanden + bash-Syntax gueltig (Einrichtungs-Helferlein).
+  const SCRIPT_DIR = new URL('.', import.meta.url).pathname;
+  const scriptOk = (name) => {
+    const p = join(SCRIPT_DIR, name);
+    if (!fs.existsSync(p)) return false;
+    try {
+      execFileSync('bash', ['-n', p], { stdio: 'ignore' });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  check('relay.sh exists + bash -n', scriptOk('relay.sh'));
+  check('setup-tailscale.sh exists + bash -n', scriptOk('setup-tailscale.sh'));
+  check('README.md exists', fs.existsSync(join(SCRIPT_DIR, 'README.md')));
 
   // 1) Token minten (mit API-Key)
   const mint = await req('POST', '/api/token', { seats: 2, pin: '1234' }, API_KEY);
