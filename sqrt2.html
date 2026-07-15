@@ -114,6 +114,11 @@
             background: #f59e0b; border-radius: 2px; pointer-events: none; display: none;
         }
         .auto-zoom-note { color: #f59e0b; font-size: 0.8em; margin-top: -4px; display: none; }
+
+        #restGridPanel {
+            position: fixed; left: 20px; bottom: 60px; z-index: 15;
+            width: 300px; display: none;
+        }
     </style>
 </head>
 <body>
@@ -122,6 +127,7 @@
 
 <div id="numberPanel"><div id="numberPanelInner"></div></div>
 <div id="bankPanel"><div id="bankPanelMount"></div></div>
+<div class="overlay-panel" id="restGridPanel"><div id="restGridMount"></div></div>
 
 <div class="overlay-panel" id="settingsPanel">
     <div class="error-msg" id="errorMsg"></div>
@@ -141,6 +147,8 @@ import { parseConfigFromUrl, parsePlaybackFromUrl } from './src/lib/urlState.js'
 import ControlPanel from './src/components/ControlPanel.svelte';
 import PlaybackBar from './src/components/PlaybackBar.svelte';
 import RestCounterBars from './src/components/RestCounterBars.svelte';
+import RestCounterGrid from './src/components/RestCounterGrid.svelte';
+import { displayStore } from './src/lib/displayStore.js';
 
 const COLORS = ["#cbd5e1", "#ef476f", "#ffd166", "#06d6a0", "#118ab2", "#8338ec", "#f78c6b", "#ff006e", "#3a86ff", "#fb5607", "#ffbe0b"];
 // Schaltet die Wort-Präfixe ("Länge ", "Fläche ", "Rest ") im Zahlen-Panel
@@ -172,10 +180,13 @@ playbackStore.update((p) => ({ ...p, ...parsePlaybackFromUrl(URL_PARAMS, get(com
 // Dokuments (implizites "defer").
 mount(ControlPanel, { target: document.getElementById('controlPanelMount') });
 mount(PlaybackBar, { target: document.getElementById('playbackBarMount') });
-// Rest-Anzeige als austauschbares Widget (TOOLING_SPEC.md Phase 4) -
+// Rest-Anzeige als austauschbare Widgets (TOOLING_SPEC.md Phase 4) -
 // RestCounterBars rendert die Bank-Balken in #bankPanelMount (die
-// eigentliche #bankPanelInner-Skalierung liegt in der Komponente selbst).
+// eigentliche #bankPanelInner-Skalierung liegt in der Komponente selbst),
+// RestCounterGrid als horizontales 4×4-Grid in #restGridMount. Welches
+// gerade sichtbar ist, steuert displayStore (siehe subscribe unten).
 mount(RestCounterBars, { target: document.getElementById('bankPanelMount') });
+mount(RestCounterGrid, { target: document.getElementById('restGridMount') });
 
 let N_MAX = 16; let BASE = 10;
 let TOTAL_STEPS = 0; let MAX_TIME = 0; let P_FINAL = 0;
@@ -912,6 +923,7 @@ const autoZoomNote = document.getElementById('autoZoomNote');
 const numberPanel = document.getElementById('numberPanel');
 const numberPanelInner = document.getElementById('numberPanelInner');
 const bankPanel = document.getElementById('bankPanel');
+const restGridPanel = document.getElementById('restGridPanel');
 // #bankPanelInner (inkl. seiner Skalierung) wird seit Phase 4 von
 // <RestCounterBars> gerendert, hier nicht mehr per getElementById geholt.
 
@@ -1075,6 +1087,15 @@ resizeCanvas();
 // Animation, falls die URL "play=1" gesetzt hatte (siehe applyPlayback()).
 configStore.subscribe(applyConfig);
 playbackStore.subscribe(applyPlayback);
+// Widget-Auswahl (displayStore, siehe ControlPanel): zeigt entweder das
+// vertikale Balken-Widget (#bankPanel) ODER das horizontale Grid-Widget
+// (#restGridPanel), nie beide gleichzeitig. Lokaler UI-Zustand, wird NICHT
+// über BroadcastChannel synchronisiert (nur configStore/playbackStore).
+displayStore.subscribe((d) => {
+    let grid = d.restWidget === 'grid';
+    bankPanel.style.display = grid ? 'none' : '';
+    restGridPanel.style.display = grid ? 'block' : 'none';
+});
 </script>
 </body>
 </html>

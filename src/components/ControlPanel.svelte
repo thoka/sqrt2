@@ -12,6 +12,7 @@
   // (modeAB/autoZoomMinPx/lineWidth/pause/speed) reagieren dagegen live
   // (oninput), genau wie im alten Panel.
   import { configStore, playbackStore, compiledStore } from '../lib/stores.js';
+  import { displayStore } from '../lib/displayStore.js';
   import { buildStateParams } from '../lib/urlState.js';
 
   function onChangeInt(field, fallback) {
@@ -144,6 +145,15 @@
 </label>
 <label class="control-group">Wiedergabe: Geschwindigkeit (Multiplikator)
     <input type="number" min="0.1" max="20" step="0.1" value={$configStore.playSpeed} oninput={onInputFloat('playSpeed', 2.0)}>
+</label>
+
+<hr style="border: 1px solid #334155; margin: 10px 0;">
+
+<label class="control-group" style="margin-top:6px;">Rest-Anzeige (austauschbares Widget)
+    <select value={$displayStore.restWidget} onchange={(e) => displayStore.update((d) => ({ ...d, restWidget: e.target.value }))}>
+        <option value="bars">Balken (vertikal)</option>
+        <option value="grid">Grid (4×4, horizontal)</option>
+    </select>
 </label>
 
 <hr style="border: 1px solid #334155; margin: 10px 0;">
