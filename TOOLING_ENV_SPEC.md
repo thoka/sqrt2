@@ -56,7 +56,9 @@ damit die Einschränkungen aus §2 wegfallen.
    möglich.
 2. **Aktuelle Node + pnpm:** Node (Current/LTS) und pnpm global verfügbar;
    das Projekt nutzt künftig pnpm (`pnpm install`, `pnpm dev`, `pnpm build`,
-   `pnpm test`).
+   `pnpm test`). **Umgesetzt via mise + direnv:** `node`/`pnpm` deklarativ in
+   `mise.toml` gepinnt, `.envrc` aktiviert sie automatisch (`scripts/
+   setup-env.sh` installiert `mise`+`direnv` + `mise install`).
 3. **Vitest + echtes Browser-Env:** `environment: 'jsdom'` bleibt für
    Komponententests, plus Playwright-basierte E2E (`*.e2e.test.js`) als
    zweiter Runner - ersetzt den bisherigen Verzicht auf Browser-Mode.

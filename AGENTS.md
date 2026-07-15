@@ -72,6 +72,11 @@ npm test         # node --test *.test.js  (reine Logik)
    - **Paketmanager:** **pnpm** (nicht npm) - bewusste Lern-/Ausrichtungs-
      entscheidung des Users (Discourse-Stack). pnpm gereift + bessere
      Reproduzierbarkeit (strikt `node_modules`, kein Phantom-Dep).
+   - **Toolchain-Pinning:** `node` (22) + `pnpm` (11) sind deklarativ in
+     `mise.toml` gepinnt; `.envrc` aktiviert sie via `mise`/`direnv`
+     automatisch beim Betreten des Repos. `scripts/setup-env.sh` installiert
+     `mise`+`direnv` und läuft `mise install` - kein manuelles corepack/
+     Global-Install mehr.
 6. **`SETTINGS`-Array:** neue einstellbare Größe = EIN neuer Eintrag
    `{ key, phase, get(), set(v) }` in `sqrt2.html`; nie wieder vier parallele
    Listen pflegen (`bindEl()` für input/select/checkbox, `phase:'pre'` vor
