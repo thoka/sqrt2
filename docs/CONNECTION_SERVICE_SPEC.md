@@ -12,7 +12,7 @@ generic JSON-Nachrichten zwischen den Mitgliedern eines Raums. Damit ist er
 für andere Exponate (Spiele, synchronisierte Filme, gemeinsame Steuerung)
 wiederverwendbar.
 
-> Status: Konzept + lauffähiges Fundament (`infra/connection-service/`).
+> Status: Konzept + lauffähiges Fundament (Relay in `server/relay/`, embedded im Exponat-Server `server/index.js`).
 > Server-Logik ist real (Token-Minting, Seat-Limit, PIN, Broadcast, TLS) und
 > um Status-Page (`/`), CORS (`ALLOWED_ORIGINS` + Preflight), eine
 > admin-geschützte Admin-UI (`/admin`, nutzt die REST-API) sowie
@@ -175,7 +175,7 @@ Client → Server:
 
 ## 7. Deployment
 
-Siehe `infra/connection-service/docker-compose.yml`. Zwei Wege:
+Siehe `docker-compose.yml`. Zwei Wege:
 
 ### Variante A — Tailscale (empfohlen für Test & Intern)
 
@@ -280,7 +280,7 @@ keinen Nutzen (Traffic ist minimal).
 **Entscheidung:** der Relay ist eine **Bibliothek** (`createRelay()` in
 `server.js`), die **embedded** im Exponat-Server läuft:
 
-- `exponat-server.mjs` (Produktion): ein Node-Prozess serviert `dist/`
+- `server/index.js` (Produktion): ein Node-Prozess serviert `dist/`
   (Statics) **und** den Relay unter `/api` + `/ws` — **ein Origin, kein
   CORS, kein zweiter Prozess**.
 - Vite-Dev/Preview (Entwicklung): Vite proxyed `/api` + `/ws` auf einen
@@ -332,7 +332,7 @@ aber exponat-agnostisch und mit der geforderten Zwei-Stufen-Auth
    `pin` trägt).
 5. **Betriebsmodell vereinfacht (ein Server):** Relay als Bibliothek
    `createRelay()` (kein eigenes `listen()` mehr), embedded in
-   `exponat-server.mjs` (Statics + Relay, ein Origin, kein CORS) sowie als
+   `server/index.js` (Statics + Relay, ein Origin, kein CORS) sowie als
    Vite-Proxy-Ziel (`scripts/relay-dev.sh`) für Dev/Preview. `server.js`
    bleibt optional als standalone-Entry. — **erledigt**.
 6. Testen über Tailnet (`<host>.<tailnet>.ts.net` bzw. Vite-Port, mit
@@ -348,6 +348,6 @@ aber exponat-agnostisch und mit der geforderten Zwei-Stufen-Auth
    über die Admin-API erweiterbar.
 
 > **Tests:** Jede Stufe (Token-Minting, Seat-Limit, PIN/Rotation, Host/Guest,
-> CORS, Rate-Limit) ist durch `infra/connection-service/test-api.mjs`
-> (REST) und `test-connection.mjs` (WebSocket) abgedeckt. Neue Stufen
+> CORS, Rate-Limit) ist durch `tests/relay/test-api.mjs`
+> (REST) und `tests/relay/test-connection.mjs` (WebSocket) abgedeckt. Neue Stufen
 > erfordern neue Checks.

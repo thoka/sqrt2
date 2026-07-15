@@ -1,0 +1,90 @@
+# docker-compose.yml — Exponat (Frontend + embedded Relay) hinter Traefik.
+#
+# Erster Start:
+#   docker compose up
+#   -> Server printet ADMIN_KEY auf die Console (persistent in exponat-data:/data)
+#   -> API_KEY generiert temporaer (Production: API_KEYS setzen!)
+#
+# Traefik terminiert TLS (Let's Encrypt) und routet /ws + /api + /admin.
+# Admin-Route ist per BasicAuth-Middleware abgesichert (siehe unten).
+#
+# Variante A (Tailscale-Testing): den `traefik`-Service weglassen (profiles:
+# edge) und Port 8080 auf dem Host publizieren -> ueber die Tailnet-IP /
+# <host>.<tailnet>.ts.net direkt erreichbar, kein Traefik noetig.
+
+services:
+  exponat:
+    build: .
+    restart: unless-stopped
+    environment:
+      PORT: 8080
+      DATA_DIR: /data
+      # Production: eigene Secrets setzen, z.B. aus .env / docker secret:
+      # API_KEYS: "exponat-sqrt2-...,exponat-film-..."
+      # ADMIN_KEY: "..."   # optional; sonst einmalig generiert + auf Console
+      TOKEN_TTL_DEFAULT: 3600
+      MAX_SEATS_DEFAULT: 4
+      # CORS: komma-getrennte Origins (nur fuer eigenstaendige Relay-Nutzung
+      # noetig; im embedded Betrieb wird dieselbe Origin bedient, kein CORS).
+      # ALLOWED_ORIGINS: "https://exponat.example.com"
+    volumes:
+      - exponat-data:/data
+    ports:
+      - '8080:8080'
+    networks:
+      - traefik
+    labels:
+      - 'traefik.enable=true'
+
+      - 'traefik.http.routers.exponat.rule=Host(`exponat.example.com`)'
+      - 'traefik.http.routers.exponat.entrypoints=websecure'
+      - 'traefik.http.routers.exponat.tls=true'
+      - 'traefik.http.routers.exponat.tls.certresolver=letsencrypt'
+      - 'traefik.http.services.exponat.loadbalancer.server.port=8080'
+
+      - 'traefik.http.routers.exponat-health.rule=Host(`exponat.example.com`) && PathPrefix(`/health`)'
+      - 'traefik.http.routers.exponat-health.entrypoints=websecure'
+      - 'traefik.http.routers.exponat-health.tls=true'
+      - 'traefik.http.routers.exponat-health.tls.certresolver=letsencrypt'
+
+      - 'traefik.http.routers.exponat-admin.rule=Host(`exponat.example.com`) && PathPrefix(`/admin`)'
+      - 'traefik.http.routers.exponat-admin.entrypoints=websecure'
+      - 'traefik.http.routers.exponat-admin.tls=true'
+      - 'traefik.http.routers.exponat-admin.tls.certresolver=letsencrypt'
+      - 'traefik.http.routers.exponat-admin.middlewares=exponat-auth'
+      - 'traefik.http.middlewares.exponat-auth.basicauth.users=${ADMIN_BASIC_AUTH:-admin:$$apr1$$placeholder}'
+
+  traefik:
+    image: traefik:v3.1
+    # Nur bei eigenem Domain-Stack: `docker compose --profile edge up`.
+    # Fuer Tailscale-Testing wird Traefik nicht benoetigt.
+    profiles: ['edge']
+    restart: unless-stopped
+    command:
+      - '--api.dashboard=true'
+      - '--providers.docker=true'
+      - '--providers.docker.exposedbydefault=false'
+      - '--entrypoints.web.address=:80'
+      - '--entrypoints.web.http.redirections.entrypoint.to=websecure'
+      - '--entrypoints.web.http.redirections.entrypoint.scheme=https'
+      - '--entrypoints.websecure.address=:443'
+      - '--certificatesresolvers.letsencrypt.acme.tlschallenge=true'
+      - '--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-admin@example.com}'
+      - '--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json'
+    ports:
+      - '80:80'
+      - '443:443'
+      - '8080:8080'
+    volumes:
+      - '/var/run/docker.sock:/var/run/docker.sock:ro'
+      - 'traefik-certs:/letsencrypt'
+    networks:
+      - traefik
+
+volumes:
+  exponat-data:
+  traefik-certs:
+
+networks:
+  traefik:
+    name: traefik

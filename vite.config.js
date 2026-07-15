@@ -4,9 +4,9 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 
 // Dev/Preview-Proxy auf den embedded Relay: sqrt2 und Relay laufen damit
 // unter EINEM Origin (Vite-Port) -> kein CORS, kein zweiter Prozess. Der
-// Relay (infra/connection-service) wird dafür als eigener Hintergrund-
-// prozess gestartet (siehe scripts/relay-dev.sh) und hier durchgereicht.
-// Produktion: exponat-server.mjs (Statics + Relay in einem Prozess).
+// Relay (server/relay) wird dafür als eigener Hintergrund-prozess gestartet
+// (siehe scripts/relay-dev.sh) und hier durchgereicht.
+// Produktion: server/index.js (Statics + Relay in einem Prozess).
 const RELAY_TARGET = process.env.RELAY_TARGET ?? 'http://localhost:8080';
 const relayProxy = {
 	'/api': { target: RELAY_TARGET, changeOrigin: true },

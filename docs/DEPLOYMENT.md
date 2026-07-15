@@ -17,14 +17,14 @@ Node-Prozess unter derselben URL** (ein Origin). Dadurch:
 - Besucher laden die Oberfläche und joinen den Relay über **dieselbe URL**.
 
 Der Relay ist dafür eine **Bibliothek** (`createRelay()` in
-`infra/connection-service/server.js`), die embedded mitläuft — nicht mehr
+`server/relay/server.js`), die embedded mitläuft — nicht mehr
 ein eigenständiger Dienst.
 
 Zwei Betriebswege (beide = ein Origin):
 
 | Weg | Nutzung | Was läuft |
 |-----|---------|-----------|
-| **A. Exponat-Server** | Produktion | `exponat-server.mjs`: ein Prozess serviert `dist/` (Statics) **+** Relay (`/api`,`/ws`) |
+| **A. Exponat-Server** | Produktion | `server/index.js`: ein Prozess serviert `dist/` (Statics) **+** Relay (`/api`,`/ws`) |
 | **B. Vite + Relay-Hintergrund** | Entwicklung | Vite proxyed `/api`+`/ws` auf `scripts/relay-dev.sh` (Relay auf `:8080`) |
 
 ---
@@ -34,8 +34,8 @@ Zwei Betriebswege (beide = ein Origin):
 ```bash
 pnpm install
 pnpm build                                   # erzeugt dist/
-cd infra/connection-service
-DATA_DIR=./data API_KEYS=<dein-key> PORT=5173 node exponat-server.mjs
+
+DATA_DIR=./data API_KEYS=<dein-key> PORT=5173 node server/index.js
 # -> http://localhost:5173  (Oberflaeche + /api/token + /ws, ein Origin)
 ```
 
@@ -92,12 +92,12 @@ Devices):
 
 - Exponat in Tailscale einhängen → Magic-DNS-Name `<host>.<tailnet>.ts.net`.
 - Weg A oder B auf diesem Hostnamen betreiben (Vite `server.host:true` /
-  `exponat-server` bindet ohnehin an alle Interfaces).
+  `server/index.js` bindet ohnehin an alle Interfaces).
 - Das Handy (in dasselbe Tailnet oder via `tailscale funnel`) erreicht
   `http://<host>.<tailnet>.ts.net:<port>` → lädt Oberfläche + joint Relay.
 - **Verschlüsselung (production-nahe):** `tailscale cert <host>` schreibt
   `.crt`/`.key`; Relay via `TLS_CERT`/`TLS_KEY` starten → `https`+`wss://`.
-  Siehe `infra/connection-service/setup-tailscale.sh`.
+   Siehe `scripts/setup-tailscale.sh`.
 
 > CORS ist auch hier kein Thema, solange Oberfläche und Relay **denselben**
 > Tailnet-Hostnamen/Port teilen (ein Origin).
@@ -118,7 +118,7 @@ Devices):
 ```bash
 pnpm test                 # Unit (node --test) + vitest (Svelte) - lokal
 pnpm check                # Gate: svelte-check && eslint && knip && prettier
-cd infra/connection-service
+
 node test-api.mjs         # REST: Minting, PIN, Verify, Revoke, Admin, CORS, Rate-Limit
 node test-connection.mjs  # WS: Host/Guest-Join, Relay, Presence, Seats, PIN-Backoff
 node test-sqrt2-sync.mjs  # E2E: sqrt2-Store-Sync durch den echten Relay

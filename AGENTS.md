@@ -45,9 +45,9 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
   im Repo-Stil. **Nicht** pushen/amenden, keine leeren Commits, keine Secrets.
 - **Tests für alle Stufen:** Jede Stufe eines Features braucht eigene Tests
   (Unit und/oder e2e). Stufe ohne Tests = nicht abgeschlossen.
-  Logik: `tests/unit/*.test.js` + `tests/e2e/*.test.js`. Connection-Service:
-  `infra/connection-service/test-api.mjs` + `test-connection.mjs`
-  (REST- + WebSocket-Tests; neue Stufen → neue).
+  Logik: `tests/unit/*.test.js` + `tests/e2e/*.test.js`. Connection-Service
+  (embedded Relay, `server/relay/`): `tests/relay/test-api.mjs` +
+  `test-connection.mjs` (REST- + WebSocket-Tests; neue Stufen → neue).
 - **Thread-Ökonomie:** Nach Abschluss einer Arbeit einen kurzen Hinweis
   geben, ob gleicher oder neuer Thread ökonomischer ist (andere Domäne +
   langer Verlauf → neuer; direktes Aufbauen → gleicher). Details in CLAUDE.md.
@@ -69,7 +69,9 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
    `{ key, phase, get(), set(v) }` in `sqrt2.html`; nie vier parallele Listen.
 5. **Vite:** bewusst `vite@7` (kein Rolldown-Wechsel). Upgrade = eigener
    Branch + `@sveltejs/vite-plugin-svelte` 6→7.
-6. **Connection-Service:** `infra/connection-service/` - `node server.js` bzw.
+6. **Connection-Service:** Relay als Bibliothek `createRelay()` in
+   `server/relay/server.js`, embedded im Exponat-Server `server/index.js`
+   (Statics + `/api`/`/ws`, ein Origin, kein CORS). Start: `pnpm serve` bzw.
    `docker compose up`; Admin-Key beim 1. Start auf Console (persistent
    `/data`); TLS via `tailscale cert` → `TLS_CERT`/`TLS_KEY`. Spec:
    `docs/CONNECTION_SERVICE_SPEC.md`.

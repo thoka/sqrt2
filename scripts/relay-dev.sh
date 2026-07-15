@@ -3,14 +3,14 @@
 # Vite (server + preview) proxyed /api + /ws auf diesen Relay (Port 8080),
 # sqrt2 und Relay laufen damit unter EINEM Origin -> kein CORS.
 #
-#   scripts/relay-dev.sh start    # startet infra/connection-service/server.js
+#   scripts/relay-dev.sh start    # startet server/relay/server.js
 #   scripts/relay-dev.sh stop     # stoppt es (PID-Datei, kein pkill)
 #   scripts/relay-dev.sh restart
 #   scripts/relay-dev.sh status
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-RELAY_DIR="$ROOT/infra/connection-service"
+RELAY_DIR="$ROOT/server/relay"
 PIDFILE="$ROOT/.relay.pid"
 LOG="$ROOT/.relay.log"
 
@@ -29,7 +29,7 @@ stop_old() {
 start() {
   stop_old
   cd "$RELAY_DIR"
-  DATA_DIR="$ROOT/infra/connection-service/data" PORT="${RELAY_PORT:-8080}" \
+  DATA_DIR="$ROOT/server/relay/data" PORT="${RELAY_PORT:-8080}" \
     node server.js >"$LOG" 2>&1 &
   echo $! >"$PIDFILE"
   echo "Relay gestartet (PID $(cat "$PIDFILE")), Log: $LOG"

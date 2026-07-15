@@ -5,8 +5,8 @@
 // Gefrickel. Das Handy laedt die Oberflaeche und joint den Relay ueber
 // dieselbe URL (z.B. http://<host>:5173 oder <host>.<tailnet>.ts.net).
 //
-//   node exponat-server.mjs
-//   DATA_DIR=./data API_KEYS=mein-key PORT=5173 node exponat-server.mjs
+//   node server/index.js
+//   DATA_DIR=./data API_KEYS=mein-key PORT=5173 node server/index.js
 //
 // Statics: erwartet ein zuvor gebautes dist/ (pnpm build). Fuer reines
 // Entwickeln reicht Vite + Proxy (siehe vite.config.js); dieser Server ist
@@ -15,10 +15,10 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createRelay } from './server.js';
+import { createRelay } from './relay/server.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, '../..');
+const ROOT = path.resolve(__dirname, '..');
 const DIST = path.resolve(ROOT, 'dist');
 const PORT = Number(process.env.PORT ?? 5173);
 
@@ -78,7 +78,9 @@ relay.attachWs(server);
 server.listen(PORT, () => {
 	console.log('========================================================');
 	console.log(' sqrt2 Exponat-Server gestartet');
-	console.log(` STATICS: ${fs.existsSync(path.join(DIST, 'index.html')) ? DIST : '(dist/ fehlt - zuerst pnpm build)'}`);
+	console.log(
+		` STATICS: ${fs.existsSync(path.join(DIST, 'index.html')) ? DIST : '(dist/ fehlt - zuerst pnpm build)'}`,
+	);
 	console.log(` ADMIN_KEY (Relay, in ${process.env.DATA_DIR ?? './data'}/admin_key):`);
 	console.log(`   ${relay.ADMIN_KEY}`);
 	console.log(` http://localhost:${PORT}  (/health, /api/token, /ws)`);

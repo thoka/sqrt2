@@ -9,3 +9,8 @@ e2e/artifacts/
 
 # npm-Rest (Projekt nutzt pnpm - siehe AGENTS.md) nicht zurückkriechen lassen
 package-lock.json
+
+# Relay-/Exponat-Server-Laufzeitdaten (admin_key etc.) + Relay-PID/Log
+data/
+.relay.pid
+.relay.log

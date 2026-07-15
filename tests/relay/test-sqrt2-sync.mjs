@@ -8,7 +8,7 @@
 // beiden Seiten synchron ankommen (BroadcastChannel als Fast-Path ist hier
 // bewusst NICHT im Spiel - reine Netzwerk-Verbindung).
 //
-//   node test-sqrt2-sync.mjs   (aus infra/connection-service/)
+//   node tests/relay/test-sqrt2-sync.mjs
 import { startServer, wait, makeChecker } from './test-helpers.mjs';
 import { WebSocket } from 'ws';
 import { writable } from 'svelte/store';
@@ -88,7 +88,10 @@ const main = async () => {
 	// 5) Gast -> Host: playbackStore-Änderung relayed (bidirektional)
 	guestPlayback.update((p) => ({ ...p, time: 3.5, isPlaying: true }));
 	await wait(200);
-	check('Gast->Host: playback.time=3.5', snap(hostPlayback).time === 3.5 && snap(hostPlayback).isPlaying === true);
+	check(
+		'Gast->Host: playback.time=3.5',
+		snap(hostPlayback).time === 3.5 && snap(hostPlayback).isPlaying === true,
+	);
 
 	// 6) Zweite Gast-Seite konvergiert auf den Stand der ersten (Initial-State
 	//    via Handshake request/state)
@@ -106,7 +109,9 @@ const main = async () => {
 	await handle.stop();
 
 	const failed = checker.failures;
-	console.log(failed === 0 ? '\nSQRT2-SYNC E2E: ALL PASS' : `\nSQRT2-SYNC E2E: ${failed} FAILURE(S)`);
+	console.log(
+		failed === 0 ? '\nSQRT2-SYNC E2E: ALL PASS' : `\nSQRT2-SYNC E2E: ${failed} FAILURE(S)`,
+	);
 	process.exit(failed === 0 ? 0 : 1);
 };
 

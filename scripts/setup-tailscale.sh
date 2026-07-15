@@ -182,7 +182,7 @@ cmd_check() {
   if curl -s -m 2 "http://localhost:$PORT/health" >/dev/null 2>&1; then
     echo "[OK]   relay lokal erreichbar (:${PORT}/health)"
   else
-    echo "[WARN] relay lokal nicht erreichbar (gestartet? './relay.sh start')"
+    echo "[WARN] relay lokal nicht erreichbar (gestartet? 'pnpm serve' (bzw. scripts/relay-dev.sh start))"
   fi
 
   echo
@@ -237,9 +237,9 @@ cmd_https() {
   set_env_key "RELAY_TLS" "1"
   echo "[OK] TLS_CERT/TLS_KEY in relay.env gesetzt."
 
-  echo "Relay mit TLS neu starten (./relay.sh restart) und https testen ..."
-  if [[ -x "$DIR/relay.sh" ]]; then
-    "$DIR/relay.sh" restart >/dev/null 2>&1 || true
+  echo "Relay mit TLS neu starten (RELAY_TLS=1 pnpm serve) und https testen ..."
+  if [[ -x "$DIR/scripts/relay-dev.sh" ]]; then
+    "$DIR/scripts/relay-dev.sh" restart >/dev/null 2>&1 || true
     sleep 1
   fi
 
@@ -250,7 +250,7 @@ cmd_https() {
   else
     echo
     echo "[WARN] https nicht erreichbar - relay mit TLS starten:"
-    echo "       RELAY_TLS=1 ./relay.sh restart"
+    echo "       RELAY_TLS=1 pnpm serve"
   fi
 }
 

@@ -100,7 +100,7 @@
 	const LS_RELAY = 'sqrt2.relayUrl';
 	const LS_APIKEY = 'sqrt2.apiKey';
 
-	// Default: selber Origin (Vite-Proxy bzw. exponat-server.mjs leiten
+	// Default: selber Origin (Vite-Proxy bzw. server/index.js leiten
 	// /api + /ws auf den embedded Relay weiter) -> kein CORS, kein Port-
 	// Unterschied. Nur wer den Relay standalone auf einem anderen Port
 	// betreibt, aendert das hier.

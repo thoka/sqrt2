@@ -1,6 +1,6 @@
 // Unit-Tests für den Netzwerk-Transport / die Session-Helfer
 // (src/lib/connection.js, CONNECTION_SERVICE_SPEC.md §6 + §12 3/4).
-// Live-WS-Relay-Tests liegen in infra/connection-service/test-*.mjs;
+// Live-WS-Relay-Tests liegen in tests/relay/test-*.mjs;
 // hier werden die clientseitigen Bausteine (URL-Bau, REST-Helfer mit
 // gemocktem fetch, WS-Room-Dispatch mit gemocktem WebSocket) geprüft.
 import { test, after, before } from 'node:test';

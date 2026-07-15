@@ -1,7 +1,0 @@
-node_modules/
-*.log
-data/
-relay.env
-certs/
-.relay.pid
-.relay.log
