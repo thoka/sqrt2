@@ -8,9 +8,9 @@ Science-Center/Schul-Kontext. Kernidee: √2 wird ziffernweise (digit-by-digit)
 schneiden und neu zusammenlegen"). Perspektivisch als Exponat mit
 QR-Code-Fernsteuerung und Mehrbildschirm-Betrieb gedacht (Ziel/Rest/Steuerung
 auf getrennten Displays) - die **Svelte-Migration** (austauschbare Rest-Widgets
-+ Store-Architektur) ist umgesetzt (Phasen 0-4, siehe `TOOLING_SPEC.md`),
-die **Fernsteuerung** (Phase 5, `BroadcastChannel` + zweiter Vite-Entry) ist
-noch offen.
++ Store-Architektur) ist umgesetzt (Phasen 0-5, siehe `TOOLING_SPEC.md`).
+Die **Fernsteuerung** (Phase 5, `BroadcastChannel` + zweiter Vite-Entry) ist
+umgesetzt; Phase 6 (Politur) ist offen.
 
 ## 2. Schnellstart: aktuellen Stand ausprobieren
 
@@ -36,9 +36,9 @@ pnpm test             # node --test *.test.js (reine Logik) UND vitest run (Svel
   Dauer in Ticks), `zoomspeed` (Bank-Zoom-Trägheit).
 - **Test-Tool** (Bank-Algorithmus isoliert, Stücke an echten Positionen):
   `selection_strategy_prototype.html` (über Dev-Server oder als statische Datei).
-- **Kein Browser/Visuelle Verifikation in dieser Sandbox möglich** (headless
-  chromium hängt an DBus/Netzwerk) - siehe `AGENTS.md`. Hier nur
-  `pnpm build` + `pnpm test` als Korrektheits-Gate.
+- **Visuelle Verifikation** via Playwright (`pnpm test:e2e`), aber nur mit
+  frischem Build - siehe `AGENTS.md` (stale-dist-Falle). Korrektheits-Gate:
+  `pnpm build` + `pnpm test` + `pnpm test:e2e`.
 
 ## 3. Dateien und ihr Zweck
 
