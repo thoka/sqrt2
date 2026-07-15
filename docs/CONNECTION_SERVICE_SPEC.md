@@ -170,9 +170,33 @@ Client → Server:
 
 ---
 
-## 7. Deployment (Docker Compose + Traefik)
+## 7. Deployment
 
-Siehe `infra/connection-service/docker-compose.yml`. Wesentliche Punkte:
+Siehe `infra/connection-service/docker-compose.yml`. Zwei Wege:
+
+### Variante A — Tailscale (empfohlen für Test & Intern)
+
+Tailscale ist im persönlichen Gebrauch **kostenlos** (bis 100 Devices) und
+bei uns bereits im Einsatz. Jedes Device bekommt eine Tailnet-IP (100.x.x.x)
+und einen Magic-DNS-Namen `<host>.<tailnet>.ts.net`. Der Relay (und der
+Vite-Server) ist damit **ohne öffentliche DNS/TLS** direkt vom Handy
+erreichbar:
+
+- **Test (einfachste Variante):** Relay mit `ports: 8080:8080` auf dem Host
+  publizieren. Handy lädt `http://<host>.<tailnet>.ts.net:8080/...`.
+  Da die Seite selbst über HTTP serviert wird, ist `ws://` erlaubt
+  (Mixed-Content blockiert erst bei HTTPS-Seiten). Kein Traefik/Let's Encrypt.
+- **Produktionsnah auf dem Tailnet:** `tailscale serve --https=8080` (oder
+  `tailscale cert` + eigener TLS) liefert TLS für `*.ts.net`, damit auch
+  `wss://` klappt. Der Transport ist ohnehin E2E-WireGuard-verschlüsselt.
+- **Öffentlich (externe Besucher ohne Tailscale):** `tailscale funnel 8080`
+  veröffentlicht den Port mit Tailscale-TLS — kein eigener Reverse-Proxy nötig.
+
+Traefik ist damit **optional** (nur bei eigenem Domain-Stack); der
+`traefik`-Service im Compose trägt `profiles: ["edge"]` und startet nur mit
+`docker compose --profile edge up`.
+
+### Variante B — Traefik / eigene Domain
 
 - **Admin-Key auf Console**: Beim ersten Start generiert der Entrypoint
   `ADMIN_KEY` (32 Byte hex), schreibt ihn nach `/data/admin_key` (Volume)
@@ -180,7 +204,7 @@ Siehe `infra/connection-service/docker-compose.yml`. Wesentliche Punkte:
 - **API-Key**: via env (`API_KEYS`) — vom Betreiber vorgegeben, NICHT
   automatisch generiert (Geheimnis des Exponats).
 - **Traefik-Labels** am `relay`-Service: Host-Routing, TLS (Let's Encrypt
-  via `certResolver`), Port-Export `8080`. Admin-Route optional per
+  via `certResolver`), Port-Export `8080`. Admin-Route per
   BasicAuth-Middleware abgesichert.
 - **Volumes**: `relay-data:/data` (admin_key + optional Token-DB).
 - **Skalierung (später)**: Redis-Adapter für mehrere Relay-Instanzen.
@@ -189,8 +213,11 @@ Siehe `infra/connection-service/docker-compose.yml`. Wesentliche Punkte:
 
 ## 8. Sicherheit
 
-- `ws://` nur auf localhost; für echte Domains **zwingend `wss://`** (Traefik
-  terminiert TLS). Browser erlauben keine ungesicherten WS auf https-Seiten.
+- `ws://` nur auf localhost **oder innerhalb des Tailnets**; für echte
+  öffentliche Domains **zwingend `wss://`**. Grund: Browser erlauben keine
+  ungesicherten WS auf HTTPS-Seiten (Mixed-Content). Auf dem Tailnet reicht
+  `ws://`, weil (a) die Seite selbst über HTTP serviert werden kann und
+  (b) der WireGuard-Transport ohnehin E2E-verschlüsselt ist.
 - `API_KEY` und `ADMIN_KEY` sind Secrets → nur via env/Volume, nie im Image.
 - Brute-Force-Schutz (später): Token-Rate-Limit, kurze `ttlSec`-Defaults,
   exponentielles Backoff bei falscher PIN.
@@ -240,5 +267,7 @@ aber exponat-agnostisch und mit der geforderten Zwei-Stufen-Auth
 2. sqrt2 anbinden: `configStore`/`playbackStore` über WS relayen
    (BroadcastChannel als Same-Browser-Fast-Path beibehalten).
 3. QR-Code auf dem Exponat + PIN-Anzeige im ControlPanel.
-4. Traefik-Stack auf Ziel-Host ausrollen, `ADMIN_KEY` sicher erfassen.
+4. Testen über Tailnet (`<host>.<tailnet>.ts.net:8080` bzw. Vite-Port);
+   Traefik-Stack nur bei eigener Domain via `--profile edge`. `ADMIN_KEY`
+   beim ersten Start aus der Console erfassen.
 5. (Optional) Redis-Adapter für Horizontal-Skalierung.

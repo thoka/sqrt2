@@ -22,8 +22,10 @@ services:
       MAX_SEATS_DEFAULT: 4
     volumes:
       - relay-data:/data
-    expose:
-      - "8080"
+    # Auf dem Host publizieren, damit der Relay ueber die Tailnet-IP /
+    # <host>.<tailnet>.ts.net direkt erreichbar ist (kein Traefik noetig).
+    ports:
+      - "8080:8080"
     networks:
       - traefik
     labels:
@@ -52,6 +54,9 @@ services:
 
   traefik:
     image: traefik:v3.1
+    # Nur bei eigenem Domain-Stack: `docker compose --profile edge up`.
+    # Fuer Tailscale-Testing wird Traefik nicht benoetigt.
+    profiles: ["edge"]
     restart: unless-stopped
     command:
       - "--api.dashboard=true"
