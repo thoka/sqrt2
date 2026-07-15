@@ -9,6 +9,11 @@ export default defineConfig({
   // ausgeliefert, der Rest antwortet mit 404.
   appType: 'mpa',
   base: process.env.GITHUB_PAGES ? '/sqrt2/' : '/',
+  // host:true -> an alle Interfaces binden (0.0.0.0), damit z.B. Windows 11
+  // aus WSL die Dev-/Preview-Server per localhost erreicht (Default ist nur
+  // localhost, von ausserhalb des WSL-Gasts nicht erreichbar).
+  server: { host: true },
+  preview: { host: true },
   plugins: [svelte()],
   build: {
     rollupOptions: {
