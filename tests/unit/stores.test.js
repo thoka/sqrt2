@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { get } from 'svelte/store';
-import { configStore, playbackStore, compiledStore } from './src/lib/stores.js';
+import { configStore, playbackStore, compiledStore } from '../../src/lib/stores.js';
 
 test('compiledStore leitet sich deterministisch aus configStore ab (kein manuelles Neu-Kompilieren nötig)', () => {
     let r1 = get(compiledStore);

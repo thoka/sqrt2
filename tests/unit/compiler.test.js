@@ -6,7 +6,7 @@
 // configStore, siehe TOOLING_SPEC.md 3.1).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { compileSystem } from './src/lib/compiler.js';
+import { compileSystem } from '../../src/lib/compiler.js';
 
 const BASE_CONFIG = {
     base: 10, depth: 3, transformMode: 'S',

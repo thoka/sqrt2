@@ -169,6 +169,7 @@
   }
 
   function renderFrame() {
+    if (!ctx) return; // 2D-Kontext fehlt (z.B. jsdom/SSR) - Rendering überspringen
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
     if (render_pipeline.length === 0) return;
@@ -361,6 +362,7 @@
   }
 
   function resizeCanvas() {
+    if (!ctx) return;
     canvasEl.width = window.innerWidth * RENDER_SCALE;
     canvasEl.height = window.innerHeight * RENDER_SCALE;
     canvasEl.style.width = window.innerWidth + 'px';

@@ -4,7 +4,7 @@ import { test, expect } from '@playwright/test';
 // der alten Sandbox ohne Browser offen blieb: prueft, dass die Svelte-
 // Komponenten tatsaechlich mounten und das Canvas-Rendering greift.
 test('Haupttool: Mounts + Canvas + Rest-Widget + Steuerung', async ({ page }) => {
-  await page.goto('/sqrt2.html');
+  await page.goto('/');
 
   // Canvas-Rendering liegt in <TargetBankCanvas> (mountet in #canvasMount).
   await expect(page.locator('#canvasMount canvas')).toBeVisible({ timeout: 10000 });
@@ -26,7 +26,7 @@ test('Haupttool: Mounts + Canvas + Rest-Widget + Steuerung', async ({ page }) =>
 
 // Rest-Widget-Umschaltung (displayStore) via ControlPanel-Select.
 test('Rest-Anzeige umschaltbar (Balken <-> Grid)', async ({ page }) => {
-  await page.goto('/sqrt2.html');
+  await page.goto('/');
   // Das Rest-Widget-Select ist dasjenige mit der 'grid'-Option (das
   // transformMode-Select ist das erste und hat 'S'/'Z'-Optionen).
   const select = page.locator('#controlPanelMount select').filter({ has: page.locator('option[value="grid"]') });
@@ -45,7 +45,7 @@ test('Rest-Anzeige umschaltbar (Balken <-> Grid)', async ({ page }) => {
 // "kein Canvas zu sehen"-Bug (Canvas-Variable undefined -> leeres 300x150
 // Canvas) fehl.
 test('Canvas zeigt zwei weisse Quadrate nach Initialisierung', async ({ page }) => {
-  await page.goto('/sqrt2.html');
+  await page.goto('/');
 
   await expect(page.locator('#canvasMount canvas')).toBeVisible({ timeout: 10000 });
 
@@ -113,7 +113,7 @@ test('Canvas zeigt zwei weisse Quadrate nach Initialisierung', async ({ page }) 
 // den Bug, bei dem #playbackBarMount kein Flex-Container war und Button +
 // Slider/Readout untereinander stapelten.
 test('PlaybackBar: Play-Button vor Slider, Slider spannnt Breite', async ({ page }) => {
-  await page.goto('/sqrt2.html');
+  await page.goto('/');
   await expect(page.locator('#playbackBarMount')).toBeVisible();
 
   const b = await page.evaluate(() => {

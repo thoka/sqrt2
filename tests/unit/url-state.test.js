@@ -4,7 +4,7 @@
 // CLAUDE.md "Svelte-Komponenten-Tests").
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseConfigFromUrl, parsePlaybackFromUrl, buildStateParams } from './src/lib/urlState.js';
+import { parseConfigFromUrl, parsePlaybackFromUrl, buildStateParams } from '../../src/lib/urlState.js';
 
 const DEFAULT_CONFIG = {
     base: 10, depth: 16, transformMode: 'S',

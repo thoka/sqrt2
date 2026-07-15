@@ -6,7 +6,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test *.test.js && vitest run",
+    "test": "node --test tests/unit/*.test.js && vitest run",
     "e2e:install": "playwright install chromium",
     "test:e2e": "playwright test",
     "test:env": "node --test scripts/check-env.mjs",

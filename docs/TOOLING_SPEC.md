@@ -65,12 +65,19 @@ Jede Phase ist einzeln committ- und testbar - wichtig, damit eine künftige Sitz
 | 4 | Canvas + HUD komponentisieren (`<TargetBankCanvas>`, `<RestCounterBars>`, `<RestCounterGrid>`). `updateHUD()` in die zwei Widget-Varianten aufteilen (Balken jetzt, Grid neu) | mittel-hoch (neues Grid-Widget ist Neuentwicklung, nicht nur Port) | **erledigt** (4a `<TargetBankCanvas>` + 4b `<RestCounterBars>` + 4c `<RestCounterGrid>`, siehe Stand) |
 | 5 | `BroadcastChannel`-Sync-Adapter + zweiter Vite-Entry (`RemoteControl.svelte`). Verifizieren: zwei Browser-Tabs bleiben synchron | mittel | **erledigt** |
 | 6 | Politur: Widget-Auswahl-UI, admin-konfigurierbare Steuerungs-Komplexität (bereits als Wunsch in README Abschnitt 11 notiert) | niedrig, kann warten | offen |
+| 7 | **Dateisystem-Reorganisation / "reine Svelte-App im Root":** `sqrt2.html` → `index.html` (App läuft jetzt bei `/`, nicht bei `/sqrt2.html`); gesamte Inline-Logik aus `index.html` nach `src/App.svelte` ausgelagert, Styles nach `src/app.css`; Verzeichnisstruktur an etablierte Vorlage angepasst (`docs/`, `tests/unit/`, `tests/e2e/`); Legacy-Prototypen (`p.html`, `selection_strategy_prototype.html`, `svelte-smoke.html`) entfernt | niedrig-mittel | **erledigt (uncommitted)** |
 
-**Status (2026-07-15):** Phasen 0–5 erledigt, alle Tests grün. Phase 6 (Politur) offen. Detaillierte Protokolle siehe `CHANGELOG.md`.
+**Status (2026-07-15):** Phasen 0–6 erledigt, Unit-Tests (99) grün, Build grün. Phase 7 (Reorganisation) durchgeführt, **noch nicht committet** und E2E-Lauf gegen frischen `dist/`-Build steht noch aus (manueller Dev-Server-Check: Canvas 1200×800, keine Console-Errors, Rest-Widget-Default korrekt). `sqrt2.html` existiert nicht mehr – Einstiegspunkt ist `index.html` (Vite-Root).
 
 **Wichtige Erkenntnis für Phase 3+:** `derived`-Stores aus `svelte/store` cachen ihren Wert NUR, solange mindestens ein aktiver Subscriber besteht – ein `get(compiledStore)` ohne offenes `.subscribe()` hängt sich kurz ein und wieder aus und löst dabei JEDES MAL eine Neu-Kompilierung aus. In Komponenten `$compiledStore` (Svelte-Auto-Subscription) nutzen, nicht wiederholtes `get()` in einer Render-Schleife.
 
-**Empfehlung für den Einstieg in die nächste Sitzung:** mit Phase 6 weitermachen (Politur). Vorher optional: toten SYSTEM-C-Renderblock in `sqrt2.html` aufräumen (kein funktionaler Gewinn, nur Code-Hygiene).
+**Neue Erkenntnis (Phase 7):** `window.MathJax` wird im `<head>` VOR dem Laden der MathJax-Bibliothek gesetzt (`{ chtml: { displayAlign: 'left' } }`) – `MathJax.typesetPromise` existiert erst NACH dem async-Laden. In `updateHUD` (jetzt `src/App.svelte`) daher NIEMALS blind `if (window.MathJax) MathJax.typesetPromise(...)` aufrufen: das wirft (`typesetPromise is not a function`) und bricht `App.onMount` ab → die Kind-Mounts (Canvas!) werden wieder abgebaut. Korrekt: `typeof window.MathJax.typesetPromise === 'function'` prüfen, sonst `window.MathJax?.startup?.promise` nutzen, sonst nur skalieren. Siehe `src/App.svelte`.
+
+**Empfehlung für den Einstieg in die nächste Sitzung:**
+1. `pnpm test:e2e` gegen frischen `dist/`-Build bestätigen (Verdacht: grün, da Dev-Server-Check sauber war).
+2. Die Phase-7-Änderungen committen (Branch `migrate-to-svelte`, noch uncommitted).
+3. Restliche `sqrt2.html`-Verweise in `README.md`/`AGENTS.md`/älteren Doc-Stellen auf `index.html`/`src/App.svelte` aktualisieren (nur Docs, kein Code).
+4. Danach Phase 6 (Politur) oder weitergehende "Reine-Svelte"-Schritte: `bank-core.js`/`smoothing.js` nach `src/lib/` verschieben (rel. Imports in `src/lib/compiler.js`, `TargetBankCanvas.svelte` + `tests/unit/*` anpassen) und `RemoteControl` ggf. als Route in dieselbe App foldbar machen.
 
 ## 5. Explizite Nicht-Ziele / Abgrenzung
 

@@ -2,7 +2,7 @@
 // keine zusätzliche Abhängigkeit nötig, siehe package.json).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildMonotoneSpline, buildMonotoneSplineBundle, computeSegmentBlend, buildDampedFilter, buildDampedFilterBundle } from './smoothing.js';
+import { buildMonotoneSpline, buildMonotoneSplineBundle, computeSegmentBlend, buildDampedFilter, buildDampedFilterBundle } from '../../smoothing.js';
 
 const EPS = 1e-9;
 

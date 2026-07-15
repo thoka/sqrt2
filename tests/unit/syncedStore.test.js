@@ -5,7 +5,7 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { writable } from 'svelte/store';
-import { syncedStore, closeAllSync } from './src/lib/syncedStore.js';
+import { syncedStore, closeAllSync } from '../../src/lib/syncedStore.js';
 
 // Offene BroadcastChannel-Kanäle würden den Node-Prozess am Leben halten.
 after(() => closeAllSync());

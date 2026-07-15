@@ -11,8 +11,8 @@
 // Kopie, die sqrt2.html vorher zusätzlich brauchte.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createBankSimulation, buildSystem } from './bank-core.js';
-import { buildMonotoneSpline } from './smoothing.js';
+import { createBankSimulation, buildSystem } from '../../bank-core.js';
+import { buildMonotoneSpline } from '../../smoothing.js';
 
 // Repliziert NUR die Schalen-Start-Zeit-Berechnung aus compileSystem() in
 // sqrt2.html, für den dortigen Default-Flugmodus 'morph' (cellMode='morph'),
