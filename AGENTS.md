@@ -41,10 +41,16 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
 
 ## Regeln
 
-- **Commit (Feature-Branch):** auf Feature-Branch nach jeder abgeschlossenen
-  Arbeitsphase **immer committen** (auch ohne Einzel-Aufforderung). Nur die
-  phasen-zugehörigen Dateien (`git add` einzeln, nicht `-A`), Message kurz im
-  Repo-Stil. Nicht pushen/amenden, keine leeren Commits, keine Secrets.
+- **Commit ist Pflicht, kein Optional:** Ein Task / eine Arbeitsphase ist
+  erst dann **abgeschlossen**, wenn er committet ist – **auch und gerade
+  ohne ausdrückliche Aufforderung**. Nie die Antwort mit "ist erledigt"
+  beenden, ohne vorher zu committen. Gilt für JEDE abgeschlossene
+  Änderung (Bugfix, Refactor, Docs, Config). Nur die phasen-zugehörigen
+  Dateien (`git add` einzeln, nicht `-A`), Message kurz im Repo-Stil.
+  **Nicht** pushen/amenden, keine leeren Commits, keine Secrets.
+  Qualitäts-Gate (`pnpm check`) vorzugsweise grün, aber ein laufendes
+  Feature muss nicht erst auf perfekte Tests warten, um committet zu
+  werden (der User entscheidet über weitere Tests).
 - **Stetige Ableitung (C¹)** für ALLE automatisierten Bewegungen →
   `smoothing.js`. Exakt/ohne Verzögerung: `buildMonotoneSpline()`. Mehrere
   ordnungs-invariante Werte: `computeSegmentBlend()`. Träge Folge (Kamera/Zoom):
