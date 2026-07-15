@@ -214,7 +214,39 @@ Traefik ist damit **optional** (nur bei eigenem Domain-Stack); der
 
 ---
 
-## 8. Sicherheit
+## 8. Status-Page & Admin-UI (Svelte)
+
+### Status-Page (http/https)
+Bei Browser-Zugriff auf `/` (GET, nicht-API) liefert der Dienst eine
+**einfache HTML-Statusseite** — sowohl über `http://` als auch `https://`
+(der Relay unterstützt beide Transporte). Inhalt (Kurzform, auto-refresh
+optional):
+- Dienstname, Version, Uptime, Transport-Modus (`http/ws` bzw. `https/wss`).
+- Aktive Räume, belegte/verfügbare Seats gesamt, Verbindungszahl.
+- Link zur Admin-UI (nur mit Admin-Berechtigung erreichbar).
+Die maschinenlesbare Variante bleibt `/health` (JSON, siehe §5).
+
+### Admin-Web-UI (Svelte)
+Eine schlanke Admin-Oberfläche, **mit Svelte gebaut** (Stack-Konsistenz zu
+sqrt2, kein weiteres Framework), erreichbar unter `/admin`. Absicherung wie
+in §7 (Traefik BasicAuth bzw. `ADMIN_KEY`). Der **Funktionsumfang ist noch
+offen** — zur Diskussion stehen:
+- **Seat-Freigabe:** Max-Seats eines Tokens über die standarmäßig
+  konfigurierten Limits (`MAX_SEATS_DEFAULT`) hinaus freigeben/erhöhen,
+  falls ein Exponat kurzfristig mehr Besucher aufnehmen soll.
+- **Stats:** aktive Räume, belegte Seats, Verbindungszahlen, Nachrichten-
+  Durchsatz, Uptime-Verlauf.
+- **Debug-View:** Live-Presence pro Raum, Token-Liste (Pin/Expiry/Belegung),
+  optional Roh-Nachrichten-Inspektion einzelner Räume.
+
+Die UI nutzt ausschließlich die bestehende REST-API (§5) — kein neuer
+Backend-Code nötig, solange die Admin-Endpunkte die benötigten Daten
+liefern (aktuell: `GET /admin/tokens`). Fehlende Stats/Debug-Daten sind
+als Erweiterung der Admin-API zu spezifizieren (Stufe: eigenes Ticket).
+
+---
+
+## 9. Sicherheit
 
 - `ws://` nur auf localhost **oder innerhalb des Tailnets**; für echte
   öffentliche Domains **zwingend `wss://`**. Grund: Browser erlauben keine
@@ -230,7 +262,7 @@ Traefik ist damit **optional** (nur bei eigenem Domain-Stack); der
 
 ---
 
-## 9. Wiederverwendbarkeit
+## 10. Wiederverwendbarkeit
 
 Der Dienst kennt **keine** Exponat-Logik. Wiederverwendung durch:
 - generische `app`-Nachrichten (jedes Exponat definiert sein eigenes
@@ -245,7 +277,7 @@ sqrt2 bindet ihn via Compose/URL ein. Hier vorerst unter
 
 ---
 
-## 10. Vergleich mit existierenden Lösungen (Recherche)
+## 11. Vergleich mit existierenden Lösungen (Recherche)
 
 | Lösung | Typ | Passend? | Anmerkung |
 |--------|-----|----------|-----------|
@@ -264,7 +296,7 @@ aber exponat-agnostisch und mit der geforderten Zwei-Stufen-Auth
 
 ---
 
-## 11. Nächste Schritte
+## 12. Nächste Schritte
 
 1. Server-Logik vervollständigen (Persistenz optional, Rate-Limit, CORS).
 2. **Entwicklungs-Sandbox bekommt eine eigene Tailscale-IP** (eigenes
@@ -277,6 +309,9 @@ aber exponat-agnostisch und mit der geforderten Zwei-Stufen-Auth
    mit `tailscale cert`→TLS); Traefik-Stack nur bei eigener Domain via
    `--profile edge`. `ADMIN_KEY` beim ersten Start aus der Console erfassen.
 6. (Optional) Redis-Adapter für Horizontal-Skalierung.
+7. **Status-Page** (`/` als HTML über http/https) + **Admin-UI (Svelte)** unter
+   `/admin` — Funktionsumfang (Seat-Freigabe, Stats, Debug-View) gem. §8
+   noch zu klären; UI nutzt bestehende Admin-REST-API (§5).
 
 > **Tests:** Jede Stufe (Token-Minting, Seat-Limit, PIN/Rotation, Host/Guest,
 > TLS) ist durch `infra/connection-service/smoke-test.mjs` abgedeckt
