@@ -23,11 +23,15 @@ pnpm build            # produktiver Build -> dist/sqrt2.html (+ assets)
 pnpm test             # node --test *.test.js (reine Logik) UND vitest run (Svelte-Komponenten)
 ```
 
-- **Haupttool:** `dist/sqrt2.html` bzw. im Dev-Server. Canvas-Rendering
+- **Haupttool:** im Dev-Server (`pnpm dev`) bzw. Produktions-Build
+  (`pnpm build` → `dist/sqrt2.html`). Canvas-Rendering
   (Zielquadrat + Bank/Rest) liegt in `<TargetBankCanvas>`, die Rest-Anzeige
   ist ein austauschbares Widget (Balken/Grid, Umschalter "Rest-Anzeige" im
   `ControlPanel`), Steuerung in `ControlPanel`/`PlaybackBar`. Alle drei an
   Stores (`configStore`/`playbackStore`) gebunden.
+- **Fernsteuerung / QR-Handy:** siehe **`docs/DEPLOYMENT.md`** (zentrale
+  Betriebsanleitung) und `docs/CONNECTION_SERVICE_SPEC.md` (Protokoll). Ein
+  Server pro Exponat, embedded Relay (kein CORS), QR + PIN für Besucher-Handy.
 - **URL-Parameter** (für Demo-/Test-Links, Button "Als URL kopieren"):
   `basis`, `depth` (Tiefe), `modeab` (Modus-B), `play=1` (Animation
   automatisch starten), `time`/`tick` (Wiedergabe-Position, `time` hat
@@ -55,9 +59,12 @@ pnpm test             # node --test *.test.js (reine Logik) UND vitest run (Svel
 | `src/components/TargetBankCanvas.svelte` | Canvas-Rendering + rAF-Loop + Auto-Zoom/Kompaktierung (Port von `renderFrame()`). | Fertig (Phase 4a) |
 | `src/components/RestCounterBars.svelte` / `RestCounterGrid.svelte` | Austauschbare Rest-Widgets (Balken / 4×4-Grid), nur lesend auf Stores. | Fertig (Phase 4b/c) |
 | `src/components/ControlPanel.svelte` / `PlaybackBar.svelte` | UI, an Stores gebunden (Basis, Tiefe, Modus, Rest-Widget-Wahl, Play/Pause, Zeitstrahl). | Fertig (Phase 3) |
-| `TOOLING_SPEC.md` | **Lebendige Migrations-Spezifikation** (Phasen 0-5, Stand je Step). Bei jeder Änderung aktualisieren. | gepflegt |
+| `TOOLING_SPEC.md` | **Lebendige Migrations-Spezifikation** (Phasen 0-5 + 8, Stand je Step). Bei jeder Änderung aktualisieren. | gepflegt |
+| `docs/DEPLOYMENT.md` | **Zentrale Betriebsanleitung**: ein Server pro Exponat, embedded Relay, QR-Fernsteuerung, Tailscale. | gepflegt |
+| `docs/CONNECTION_SERVICE_SPEC.md` | Relay-Protokoll (Token/PIN/WS, embedded Betriebsmodell). | gepflegt |
 | `CLAUDE.md` | Agentenregeln (stetige Ableitung, Layout-Masse, SETTINGS-EIN-Objekt, Tooling-Updates, Svelte-Tests). | gepflegt |
-| `AGENTS.md` | Kurzübersicht + Gotchas für Agents (Build/Test, toter Code, Store-Pitfalls). | gepflegt |
+| `AGENTS.md` | Kurzübersicht + Gotchas für Agents (Build/Test, toter Code, Store-Pitfalls, npm-blockiert). | gepflegt |
+| `TODO.md` | Offene Punkte / Checkliste (nächste Stufen + Politur). | lebendig |
 
 **Tests:** `pnpm test` = `node --test *.test.js` (reine Logik:
 `smoothing.test.js`, `auto-zoom-visibility.test.js`, `bank-core-compaction.test.js`,
@@ -212,11 +219,13 @@ hartkodiertes `0.03`).
 - **Svelte-Architektur + austauschbare Rest-Widgets:** **umgesetzt** (Phasen
   0-4). `TargetBankCanvas`, `RestCounterBars`, `RestCounterGrid`,
   `ControlPanel`, `PlaybackBar`; Rest-Widget-Umschaltung über `displayStore`.
-- **Mehrbildschirm-/Fernsteuerung (`BroadcastChannel`, später Realtime-Dienst):**
-  **offen** (Phase 5) - braucht einen zweiten Vite-Entry (`RemoteControl`)
-  + Sync-Adapter; zwei Tabs sollen synchron bleiben.
-- **QR-Code-Verbindung (Besucher-Handy):** offen, braucht Backend
-  (WebSocket-Relay/Realtime-Dienst), nicht mit reiner HTML-Datei machbar.
+- **Mehrbildschirm-/Fernsteuerung (`BroadcastChannel` + WebSocket-Relay):**
+  **umgesetzt** (Phase 5 + embedded Relay). Zweiter Vite-Entry
+  `RemoteControl.svelte`, Sync über `src/lib/syncedStore.js` (BroadcastChannel
+  Fast-Path + WS-Relay). Siehe `docs/DEPLOYMENT.md`.
+- **QR-Code-Verbindung (Besucher-Handy):** **umgesetzt** — Token/PIN-Minting
+  im `ControlPanel`, Gast joint per QR-Link über embedded Relay
+  (`src/lib/connection.js`). Details in `docs/DEPLOYMENT.md` §4.
 - **Admin-konfigurierbare Steuerungs-Komplexität:** offen (Konfigurations-
   objekt, welche Regler sichtbar sind) - baut auf der Store-Architektur auf.
 - **Z/R-Modi vollständig neu (C¹):** eigenständiges Thema (§7).
@@ -232,5 +241,7 @@ hartkodiertes `0.03`).
    nicht mehr reproduziert (Demo-Modus, §7). 7. **Z/R-Modi neu (C¹)** - eigenes
    Thema. 8. ~~Auto-Zoom~~ erledigt (§8). 9. ~~Gemeinsame Glättungs-Bibliothek~~
    erledigt (§6.1). 10. ~~Svelte-Migration + austauschbare Widgets~~ erledigt
-   (Phasen 0-4, `TOOLING_SPEC.md`). 11. **Fernsteuerung/Mehrbildschirm**
-   (Phase 5, `BroadcastChannel`) - nächster Migrations-Schritt.
+   (Phasen 0-4, `TOOLING_SPEC.md`). 11. ~~Fernsteuerung/Mehrbildschirm~~
+    erledigt (Phase 5 + embedded Relay, `docs/DEPLOYMENT.md`). 12. **Phase 6
+    „Politur"** (Widget-Auswahl-UI, `bank-core.js`/`smoothing.js` → `src/lib/`)
+    + **Tailscale/TLS** für echtes Handy — siehe `TODO.md`.
