@@ -53,8 +53,18 @@ echo "==> [5/6] Projekt-Abhaengigkeiten via pnpm"
 # onlyBuiltDependencies) und wird gezielt per 'pnpm rebuild esbuild' nachgeholt.
 # Daher Install nicht hart abbrechen lassen (set -e).
 pnpm install || echo "pnpm install: ignorierte Build-Skripte (bekannt) - werden via rebuild nachgebaut"
-pnpm rebuild esbuild   # erzwingt esbuild-Postinstall trotz 'Already up to date'
-                      # (vom Vite-Build benoetigt)
+# esbuild braucht ein Build-Skript (Postinstall = plattspezifisches Binary).
+# Frischer Clone: via onlyBuiltDependencies in pnpm-workspace.yaml erlaubt.
+# Bestehender node_modules ohne Approval: 'pnpm rebuild esbuild' reicht ggf.
+# nicht -> Fallback: projektweit Build-Skripte kurz erlauben, bauen, dann
+# .npmrc-Eintrag wieder entfernen (Repo bleibt sauber).
+pnpm rebuild esbuild || true
+if ! pnpm exec esbuild --version >/dev/null 2>&1; then
+  echo "esbuild nicht gebaut -> Fallback: Build-Skripte projektweit kurz erlauben"
+  pnpm config set --location project dangerously-allow-all-builds true
+  pnpm rebuild esbuild
+  pnpm config delete --location project dangerously-allow-all-builds
+fi
 pnpm add -D @playwright/test
 
 echo "==> [6/6] Playwright-Browser (chromium) + Build"
