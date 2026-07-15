@@ -325,5 +325,6 @@ aber exponat-agnostisch und mit der geforderten Zwei-Stufen-Auth
     über die Admin-API erweiterbar.
 
 > **Tests:** Jede Stufe (Token-Minting, Seat-Limit, PIN/Rotation, Host/Guest,
-> TLS) ist durch `infra/connection-service/smoke-test.mjs` abgedeckt
-> (Plain + TLS, je 13 Checks). Neue Stufen erfordern neue Checks.
+> CORS, Rate-Limit) ist durch `infra/connection-service/test-api.mjs`
+> (REST) und `test-connection.mjs` (WebSocket) abgedeckt. Neue Stufen
+> erfordern neue Checks.

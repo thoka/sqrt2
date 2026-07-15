@@ -99,16 +99,99 @@ Beispiel:
 
 ---
 
-## Tests
+## Exponat-Server — Nutzung als Exponat
 
-```bash
-npm run smoke        # node smoke-test.mjs  (27 Checks: Minting, Seats,
-                     #   PIN, PIN-Backoff, Rate-Limit, WS-Relay, CORS,
-                     #   Status-Page, Admin-UI, Ops-Skripte)
+Der Relay ist exponat-agnostisch: ein **Exponat** (z.B. sqrt2 auf einem
+Ausstellungsterminal) agiert als **Host** und nutzt den Dienst, um Besucher
+per QR-Code in einen geteilten Raum zu holen. Das Schema:
+
+1. **Token minten** (Exponat → Service, mit `API_KEY`):
+
+   ```http
+   POST /api/token
+   Authorization: Bearer <API_KEY>
+   Content-Type: application/json
+
+   { "seats": 4, "pin": "1234", "label": "sqrt2-Exponat-1" }
+   ```
+
+   Antwort: `{ "token": "<opak>", "wsUrl": "wss://…/ws", "seats": 4, "pin": "1234" }`.
+   Der `token` wird als QR-Code auf dem Exponat-Bildschirm angezeigt, die
+   `wsUrl` ist die WebSocket-URL für Besucher.
+
+2. **Host verbinden** (Exponat öffnet die Relay-Verbindung als `role=host`;
+   der Host zählt **nicht** gegen `seats` und muss keine PIN liefern):
+
+   ```
+   wss://<host>/ws?token=<token>&role=host
+   ```
+
+3. **Besucher joint** (Handy scannt QR → `wsUrl` + `token` + angezeigter PIN):
+
+   ```
+   wss://<host>/ws?token=<token>&role=guest&pin=1234
+   ```
+
+4. **App-Nachrichten relayen.** Beide Seiten senden generische JSON-Payloads:
+   Exponat → Besucher = `configStore`/`playbackStore`-Deltas (bei sqrt2),
+   Besucher → Exponat = Steuerbefehle. Der Relay broadcastet `app`-Nachrichten
+   an alle Raum-Mitglieder — kein Server-Wissen über die Semantik.
+
+   ```json
+   { "type": "app", "payload": { "configStore": { "depth": 12 } } }
+   ```
+
+5. **PIN rotieren** (optional, gegen "Mitfahren" mit abgelaufenen Codes):
+   `PATCH /api/token/<token>/pin` mit neuem `pin`, alter QR wird wertlos.
+
+Minimales Host-Beispiel (Node, `ws`):
+
+```js
+import { WebSocket } from 'ws';
+const API_KEY = process.env.API_KEY;
+const base = process.env.RELAY_BASE ?? 'http://localhost:8080';
+
+// 1) Token minten
+const { token, wsUrl } = await fetch(`${base}/api/token`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', authorization: `Bearer ${API_KEY}` },
+  body: JSON.stringify({ seats: 4, pin: '1234', label: 'sqrt2' }),
+}).then((r) => r.json());
+
+// 2) Als Host verbinden + App-Payloads relayen
+const ws = new WebSocket(`${wsUrl}?token=${token}&role=host`);
+ws.on('message', (m) => {
+  const msg = JSON.parse(m.toString());
+  if (msg.type === 'app') applyToExhibit(msg.payload); // z.B. Store-Update
+});
+function broadcast(payload) {
+  ws.send(JSON.stringify({ type: 'app', payload }));
+}
 ```
 
-Für TLS-Tests den Relay extern mit `TLS_CERT`/`TLS_KEY` starten und
-`TLS=1 npm run smoke` ausführen.
+> Siehe `docs/CONNECTION_SERVICE_SPEC.md` §2/§3/§6 für das vollständige
+> Protokoll (Nachrichtentypen `joined` / `presence` / `app` / `error`,
+> Heartbeat, Host-Wegfall).
+
+---
+
+## Tests
+
+Zwei fokussierte Testscripts, jeweils mit eigenem, gestartetem Relay-Server
+(Plain http/ws, deterministische Secrets):
+
+```bash
+npm test                 # test-api.mjs  +  test-connection.mjs
+npm run test:api         # REST-API-Zugang (Minting, Verify, PIN-Rotation,
+                         #   Revoke, Admin, Health, Status-Page, CORS, Rate-Limit)
+npm run test:connection  # WebSocket-Verbindung (Host/Guest-Join, Relay A→B,
+                         #   Presence, Seat-Limit, PIN, PIN-Backoff)
+npm run smoke            # Kombiniert beide (= npm test)
+```
+
+Für TLS-Tests den Relay extern mit `TLS_CERT`/`TLS_KEY` starten; die
+focused Scripts testen den Plain-Pfad. `test-helpers.mjs` stellt den
+gemeinsamen Server-Start, `req()` und `openWs()` bereit.
 
 ---
 
@@ -117,7 +200,9 @@ Für TLS-Tests den Relay extern mit `TLS_CERT`/`TLS_KEY` starten und
 ```
 server.js             Relay-Server (REST + WebSocket), RAM-only
 ratelimit.js          Brute-Force-Härtung (Rate-Limit + PIN-Backoff)
-smoke-test.mjs        27-Check Smoke-Test
+test-helpers.mjs      Gemeinsame Helfer (Server-Start, req, openWs, checker)
+test-api.mjs          REST-API-Zugangstests (25 Checks)
+test-connection.mjs   WebSocket-Relay-Tests (19 Checks)
 relay.sh              start/stop/restart/status/logs (lokal, node)
 setup-tailscale.sh    config / check / reachable / https
 docker-compose.yml    Relay (+ optionales Traefik via --profile edge)

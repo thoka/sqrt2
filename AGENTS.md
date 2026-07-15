@@ -46,7 +46,8 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
 - **Tests für alle Stufen:** Jede Stufe eines Features braucht eigene Tests
   (Unit und/oder e2e). Stufe ohne Tests = nicht abgeschlossen.
   Logik: `tests/unit/*.test.js` + `tests/e2e/*.test.js`. Connection-Service:
-  `infra/connection-service/smoke-test.mjs` (20 Checks; neue Stufen → neue).
+  `infra/connection-service/test-api.mjs` + `test-connection.mjs`
+  (REST- + WebSocket-Tests; neue Stufen → neue).
 - **Thread-Ökonomie:** Nach Abschluss einer Arbeit einen kurzen Hinweis
   geben, ob gleicher oder neuer Thread ökonomischer ist (andere Domäne +
   langer Verlauf → neuer; direktes Aufbauen → gleicher). Details in CLAUDE.md.

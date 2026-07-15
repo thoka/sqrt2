@@ -7,7 +7,10 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "smoke": "node smoke-test.mjs"
+    "test": "node test-api.mjs && node test-connection.mjs",
+    "test:api": "node test-api.mjs",
+    "test:connection": "node test-connection.mjs",
+    "smoke": "node test-api.mjs && node test-connection.mjs"
   },
   "dependencies": {
     "ws": "^8.18.0"
