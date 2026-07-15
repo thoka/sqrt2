@@ -22,9 +22,11 @@ $SUDO pacman -Syu --noconfirm
 echo "==> [2/6] Basis-Dev-Tools + Node.js + npm"
 $SUDO pacman -S --noconfirm --needed base-devel git nodejs npm
 
-echo "==> [3/6] pnpm via corepack aktivieren"
-$SUDO corepack enable
-$SUDO corepack prepare pnpm@latest --activate
+echo "==> [3/6] pnpm installieren (Arch: eigenes Paket, nicht via corepack)"
+# Auf Arch ist corepack ein eigenes Paket und wird nicht mehr mit nodejs
+# ausgeliefert - pnpm daher direkt per pacman installieren (robuster, kein
+# zusaetzlicher Shim/Network-Schritt).
+$SUDO pacman -S --noconfirm --needed pnpm
 
 echo "==> [4/6] System-Bibliotheken fuer Playwright/Chromium"
 # Playwright laedt ein eigenes chromium, braucht aber die Runtime-Libs.
