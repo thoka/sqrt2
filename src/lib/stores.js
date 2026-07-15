@@ -23,7 +23,7 @@ export const configStore = writable({
     zoomSpeedCoef: 0.012,
     compactionEnabled: false,
     compactionTransitionTicks: 3,
-    lineWidth: 1,
+    lineWidth: 0.3,
     pauseDuration: 1.5,
     playSpeed: 2.0,
     modeAB: 0.0,
