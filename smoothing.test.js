@@ -1,4 +1,4 @@
-// Persistente Tests für smoothing.js - laufen via `npm test` (node:test,
+// Persistente Tests für smoothing.js - laufen via `pnpm test` (node:test,
 // keine zusätzliche Abhängigkeit nötig, siehe package.json).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

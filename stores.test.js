@@ -1,5 +1,5 @@
 // Persistente Tests für src/lib/stores.js (TOOLING_SPEC.md Phase 2) -
-// laufen via `npm test` (node:test). svelte/store ist reines JS ohne
+// laufen via `pnpm test` (node:test). svelte/store ist reines JS ohne
 // Kompilierschritt, daher hier direkt testbar wie jedes andere Modul -
 // kein vitest/jsdom nötig (das ist nur für *.svelte-Komponenten reserviert,
 // siehe CLAUDE.md "Svelte-Komponenten-Tests").

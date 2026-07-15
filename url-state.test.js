@@ -1,5 +1,5 @@
 // Persistente Tests für src/lib/urlState.js (TOOLING_SPEC.md Phase 3) -
-// laufen via `npm test` (node:test). Reines Modul (kein DOM-Zugriff), daher
+// laufen via `pnpm test` (node:test). Reines Modul (kein DOM-Zugriff), daher
 // wie compiler.js hier auf Root-Ebene getestet statt via vitest/jsdom (siehe
 // CLAUDE.md "Svelte-Komponenten-Tests").
 import { test } from 'node:test';

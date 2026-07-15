@@ -1,5 +1,5 @@
 // Persistente Tests für src/lib/compiler.js (TOOLING_SPEC.md Phase 1) -
-// laufen via `npm test` (node:test, keine zusätzliche Abhängigkeit nötig).
+// laufen via `pnpm test` (node:test, keine zusätzliche Abhängigkeit nötig).
 // Zweck: absichern, dass die Extraktion aus sqrt2.html verhaltensgleich
 // blieb, UND dass compileSystem() tatsächlich rein/deterministisch ist -
 // das trägt später die Phase-2-Architektur (compiledStore als derived aus
