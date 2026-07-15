@@ -64,8 +64,14 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
   sinnvoll). Eine Funktionsstufe ohne Tests gilt als **nicht abgeschlossen**.
   Bestehende Logik: `tests/unit/*.test.js` + `tests/e2e/*.test.js`.
   Der Connection-Service deckt seine Stufen via
-  `infra/connection-service/smoke-test.mjs` ab (Plain + TLS, je 13 Checks);
+  `infra/connection-service/smoke-test.mjs` ab (Plain + TLS, je 20 Checks:
+  Token/Seats/PIN/Relay/Host + Status-Page/CORS/Admin-UI);
   neue Stufen erfordern neue Checks.
+- **Thread-Ökonomie:** Nach Abschluss einer Arbeit (committet, Tests grün)
+  einen kurzen Hinweis geben, ob es ökonomischer ist, im selben Thread
+  weiterzumachen oder einen NEUEN zu beginnen (Faustregel: andere
+  Dateien/Domäne + langer Verlauf → neuer Thread; direktes Aufbauen auf dem
+  eben Erarbeiteten → gleicher Thread). Details in `docs/CLAUDE.md`.
 - **Stetige Ableitung (C¹)** für ALLE automatisierten Bewegungen →
   `smoothing.js`. Exakt/ohne Verzögerung: `buildMonotoneSpline()`. Mehrere
   ordnungs-invariante Werte: `computeSegmentBlend()`. Träge Folge (Kamera/Zoom):

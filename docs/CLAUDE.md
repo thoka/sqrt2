@@ -237,3 +237,30 @@ separat über `vitest run` (ebenfalls Teil von `pnpm test`), Dateien unter
 `src/**/*.test.js` (siehe `vite.config.js` `test.include`). Beide Runner
 bewusst nebeneinander, nicht vereinheitlicht - unterschiedliche Aufgabe
 (reine Funktionen vs. Komponenten mit DOM-Mounting).
+
+## Thread-Ökonomie: nach Abschluss einen Hinweis zum Weiterarbeiten geben
+
+Nach dem **Abschluss einer Arbeit** (Task committet, Tests grün) gehört ein
+kurzer Hinweis in die Abschlussantwort, **ob es ökonomischer ist, im selben
+Thread weiterzuarbeiten oder einen neuen zu beginnen** - inkl. knapper
+Begründung, damit der User bewusst entscheiden kann.
+
+**Warum:** Ein langer Thread schleppt seinen gesamten Kontext (frühere
+Dateien, Regeln, Tool-Ausgaben) in jede weitere Anfrage mit - das kostet
+Tokens/Latenz und lenkt das Modell auf nun irrelevante Details. Ein neuer
+Thread startet schlank und fokussiert. Umgekehrt ist der bestehende Kontext
+bares Gold, wenn die Folgeaufgabe direkt darauf aufbaut (gleiche Dateien,
+frische Erkenntnisse aus diesem Verlauf).
+
+**Wie anwenden - Faustregel:**
+- **Neuer Thread**, wenn die Folgeaufgabe *andere* Dateien/Domänen betrifft,
+  der bisherige Verlauf lang ist und dessen Detailwissen für den nächsten
+  Schritt kaum relevant ist (Beispiel: Connection-Service fertig →
+  sqrt2-WS-Anbindung in `src/lib/stores.js`/`ControlPanel.svelte` ist ein
+  eigener Kontext).
+- **Gleicher Thread**, wenn die Folgeaufgabe *unmittelbar* auf dem gerade
+  Erarbeiteten aufsetzt (dieselben Dateien, offene Detailfragen, ein
+  Bugfix/Review zur eben committeten Änderung) - der geladene Kontext spart
+  dann Wiederaufbau.
+- Im Zweifel den Hinweis geben und die Entscheidung dem User überlassen; nie
+  ungefragt den Thread „wechseln" oder Kontext verwerfen.
