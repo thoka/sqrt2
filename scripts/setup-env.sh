@@ -37,10 +37,11 @@ $SUDO pacman -S --noconfirm --needed \
   noto-fonts ttf-dejavu
 
 echo "==> [5/6] Projekt-Abhaengigkeiten via pnpm"
-if [ -f package-lock.json ] && [ ! -f pnpm-lock.yaml ]; then
-  echo "    (konvertiere npm-lock -> pnpm-lock)"
-  pnpm import
-fi
+#KEIN 'pnpm import' aus package-lock.json: der Konvertierungsschritt
+#stoest auf pnpms 'resolution-policy'-Pruefung (minimumReleaseAge) und
+#bricht ab. pnpm install erzeugt stattdessen direkt eine frische
+#pnpm-lock.yaml aus package.json (reproduzierbar, sofern die Lock eingecheckt
+#wird). npm package-lock.json wird dabei ignoriert.
 pnpm install
 pnpm add -D @playwright/test
 
