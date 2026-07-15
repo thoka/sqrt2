@@ -2,200 +2,235 @@
 
 ## 1. Projektziel
 
-Interaktive Visualisierung von √2 als Beispiel einer irrationalen Zahl, für Science-Center/Schul-Kontext. Kernidee: √2 wird ziffernweise (digit-by-digit) über ein geometrisches Flächenmodell konstruiert (Montessori-Stil: "Papier schneiden und neu zusammenlegen"). Perspektivisch als Exponat mit QR-Code-Fernsteuerung und Mehrbildschirm-Betrieb gedacht (Ziel/Rest/Steuerung auf getrennten Displays) - das ist Zukunftsmusik, noch nicht begonnen.
+Interaktive Visualisierung von √2 als Beispiel einer irrationalen Zahl, für
+Science-Center/Schul-Kontext. Kernidee: √2 wird ziffernweise (digit-by-digit)
+über ein geometrisches Flächenmodell konstruiert (Montessori-Stil: "Papier
+schneiden und neu zusammenlegen"). Perspektivisch als Exponat mit
+QR-Code-Fernsteuerung und Mehrbildschirm-Betrieb gedacht (Ziel/Rest/Steuerung
+auf getrennten Displays) - die **Svelte-Migration** (austauschbare Rest-Widgets
++ Store-Architektur) ist umgesetzt (Phasen 0-4, siehe `TOOLING_SPEC.md`),
+die **Fernsteuerung** (Phase 5, `BroadcastChannel` + zweiter Vite-Entry) ist
+noch offen.
 
-## 2. Dateien und ihr Zweck
+## 2. Schnellstart: aktuellen Stand ausprobieren
+
+```bash
+npm install            # Abhängigkeiten (svelte, vite, vitest, jsdom)
+npm run dev           # Vite-Dev-Server; die gedruckte URL (meist localhost:5173)
+                      # im Browser öffnen -> live-Reload beim Editieren
+npm run build         # produktiver Build -> dist/sqrt2.html (+ assets)
+                      # dist/sqrt2.html direkt im Browser öffnen (kein Server nötig)
+npm test              # node --test *.test.js (reine Logik) UND vitest run (Svelte-Komponenten)
+```
+
+- **Haupttool:** `dist/sqrt2.html` bzw. im Dev-Server. Canvas-Rendering
+  (Zielquadrat + Bank/Rest) liegt in `<TargetBankCanvas>`, die Rest-Anzeige
+  ist ein austauschbares Widget (Balken/Grid, Umschalter "Rest-Anzeige" im
+  `ControlPanel`), Steuerung in `ControlPanel`/`PlaybackBar`. Alle drei an
+  Stores (`configStore`/`playbackStore`) gebunden.
+- **URL-Parameter** (für Demo-/Test-Links, Button "Als URL kopieren"):
+  `basis`, `depth` (Tiefe), `modeab` (Modus-B), `play=1` (Animation
+  automatisch starten), `time`/`tick` (Wiedergabe-Position, `time` hat
+  Vorrang), `restwidget=grid|bars` (Rest-Widget wählen),
+  `compaction=1` (Kompaktierung statt Bank-Zoom), `transition` (Kompaktierungs-
+  Dauer in Ticks), `zoomspeed` (Bank-Zoom-Trägheit).
+- **Test-Tool** (Bank-Algorithmus isoliert, Stücke an echten Positionen):
+  `selection_strategy_prototype.html` (über Dev-Server oder als statische Datei).
+- **Kein Browser/Visuelle Verifikation in dieser Sandbox möglich** (headless
+  chromium hängt an DBus/Netzwerk) - siehe `AGENTS.md`. Hier nur
+  `npm run build` + `npm test` als Korrektheits-Gate.
+
+## 3. Dateien und ihr Zweck
 
 | Datei | Zweck | Zustand |
 |---|---|---|
-| `sqrt2.html` | **Haupttool.** Volle Visualisierung: Zielquadrat (wächst ziffernweise Richtung √2) + Bank/Rest (Restflächen-Reservoir) + Steuerung (Basis, Tiefe, Modus B/C, Zoom-Schwellwert, Kompaktierung). | Funktionsfähig, nutzt jetzt `bank-core.js` (siehe Abschnitt 5) inkl. Kompaktierung (Checkbox "Kompaktierung statt Bank-Zoom", siehe Abschnitt 6.2) |
-| `selection_strategy_prototype.html` | **Algorithmus-Spiel-Tool.** Isolierter Prototyp nur für die Bank - zeigt Stücke an ihren echten, unveränderten Positionen, Tick-Zeitachse (1 Tick = 1 Entnahme), zum Testen von Auswahl-/Schneide-Strategien. | Funktionsfähig, im Browser getestet |
-| `bank-core.js` | **Gemeinsame Bibliothek**, von beiden Tools per ES-Modul-Import eingebunden (siehe `vite.config.js`). Enthält den Bank-Algorithmus + Kompaktierung + bijektive Tick↔Zeit-Abbildung. | Fertig, in Node getestet (siehe Abschnitt 6) und ins Haupttool integriert |
-| `smoothing.js` | **Gemeinsame Glättungs-Bibliothek** (monotone kubische Hermite-Interpolation durch Stützpunkte, siehe Abschnitt 6.1) - von `bank-core.js` und beiden HTML-Tools genutzt, ersetzt mehrere unabhängig entwickelte Ad-hoc-Lösungen. Siehe CLAUDE.md, "Automatisierte Parameteränderungen". | Fertig, persistente Tests in `smoothing.test.js`/`auto-zoom-visibility.test.js` (`npm test`) |
+| `sqrt2.html` | **Haupttool-Shell.** Mountet die Svelte-Komponenten und hält nur noch die Zahlentafel (`updateHUD`, l/l²/R), das `SETTINGS`-Array (URL-Sync) und die Playback-Brücke für die Zahlentafel. Das Canvas-Rendering selbst liegt seit Phase 4a in `TargetBankCanvas.svelte`. Enthält den *ausgelagerten* alten SYSTEM-C-Renderblock noch als toten Code (siehe `AGENTS.md`). | Funktionsfähig |
+| `selection_strategy_prototype.html` | **Algorithmus-Spiel-Tool.** Bank isoliert an echten Positionen, Tick-Zeitachse (1 Tick = 1 Entnahme), zum Testen von Auswahl-/Schneide-Strategien. | Funktionsfähig, im Browser getestet |
+| `p.html` | Referenz-Prototyp (Slot-basiertes Repacking, **verworfen**, nur als Vergleich). | historisch |
+| `bank-core.js` | **Gemeinsame Bibliothek** (ES-Modul), von beiden HTML-Tools importiert: Bank-Algorithmus + Kompaktierung + bijektive Tick↔Zeit-Abbildung. | Fertig, in Node getestet |
+| `smoothing.js` | **Gemeinsame Glättungs-Bibliothek** (3 Bausteine, siehe §6.1). | Fertig, persistent getestet |
+| `src/lib/compiler.js` | `compileSystem()` als reine Funktion (Config rein, kompilierter Zustand raus). | Fertig, `compiler.test.js` |
+| `src/lib/stores.js` | `configStore`/`playbackStore` (writable) + `compiledStore` (derived) + `displayStore` (lokaler UI-State, **nicht** synchronisiert). | Fertig |
+| `src/lib/urlState.js` | `parseConfigFromUrl`/`parsePlaybackFromUrl`/`buildStateParams`. | Fertig, `url-state.test.js` |
+| `src/components/TargetBankCanvas.svelte` | Canvas-Rendering + rAF-Loop + Auto-Zoom/Kompaktierung (Port von `renderFrame()`). | Fertig (Phase 4a) |
+| `src/components/RestCounterBars.svelte` / `RestCounterGrid.svelte` | Austauschbare Rest-Widgets (Balken / 4×4-Grid), nur lesend auf Stores. | Fertig (Phase 4b/c) |
+| `src/components/ControlPanel.svelte` / `PlaybackBar.svelte` | UI, an Stores gebunden (Basis, Tiefe, Modus, Rest-Widget-Wahl, Play/Pause, Zeitstrahl). | Fertig (Phase 3) |
+| `TOOLING_SPEC.md` | **Lebendige Migrations-Spezifikation** (Phasen 0-5, Stand je Step). Bei jeder Änderung aktualisieren. | gepflegt |
+| `CLAUDE.md` | Agentenregeln (stetige Ableitung, Layout-Masse, SETTINGS-EIN-Objekt, Tooling-Updates, Svelte-Tests). | gepflegt |
+| `AGENTS.md` | Kurzübersicht + Gotchas für Agents (Build/Test, toter Code, Store-Pitfalls). | gepflegt |
 
-**Tests:** `npm test` (Node-eingebauter Test-Runner, `node --test`, keine zusätzliche Abhängigkeit) läuft `smoothing.test.js`, `auto-zoom-visibility.test.js` und `bank-core-compaction.test.js` - deckt `smoothing.js`, die davon abhängige Auto-Zoom-Sichtbarkeits-Garantie und die Kompaktierung (TEIL 2 in `bank-core.js`) ab, nicht die restliche Bank-/Render-Logik (kein bestehendes Test-Setup dafür, siehe Abschnitt 12).
+**Tests:** `npm test` = `node --test *.test.js` (reine Logik:
+`smoothing.test.js`, `auto-zoom-visibility.test.js`, `bank-core-compaction.test.js`,
+`compiler.test.js`, `url-state.test.js`, `stores.test.js`) **+** `vitest run`
+(Svelte-Komponenten in `src/**/*.test.js`, jsdom). Beide Runner bewusst
+nebeneinander (siehe `CLAUDE.md` "Svelte-Komponenten-Tests").
 
-## 3. Grundkonzept der Konstruktion (falls das in VS Code neu aufgesetzt wird)
+## 4. Grundkonzept der Konstruktion
 
-- √2 wird über den klassischen "digit-by-digit"-Algorithmus berechnet (P, R = 2-P² Iteration), aber **exakt mit BigInt-Integer-Arithmetik** (nicht Float!) - sonst Präzisionsverlust ab Tiefe ~8-9 durch Auslöschung (`catastrophic cancellation`, da P² sehr nah an 2 liegt).
-- Geometrisch: ein Einheitsquadrat wird rekursiv in `BASE` Streifen geschnitten (optional abwechselnd vertikal/horizontal, je nach Parität von `k`), die Ziffern bestimmen, wie viele Streifen einer Größe für die aktuelle Ziffer gebraucht werden.
-- Zwei Bereiche: **Ziel** (das wachsende √2-Quadrat, baut sich aus den Schalen/Gnomonen auf) und **Bank/Rest** (übrig gebliebene, noch nicht verbrauchte Flächenstücke).
-- **Modus B**: Regler für "hypothetische Basis b→1" - verzerrt nur das Ziel (nicht die Bank), macht die Stellenwert-Struktur sichtbar, indem alle Ziffern-Ebenen visuell gleich groß werden.
-- Der Rand um das Ziel-Quadrat entspricht IMMER exakt der Größe der "nächsten Ziffer-Stelle" (Tiefe+1), berechnet mit derselben `b_eff`-Formel wie jede andere Stelle - dadurch automatisch "quasi-logarithmisch" sichtbar bei Modus B, aber verschwindend klein bei realer Basis (mathematisch korrekt).
+- √2 über den klassischen digit-by-digit-Algorithmus (P, R = 2-P² Iteration),
+  **exakt mit BigInt-Integer-Arithmetik** (nicht Float!) - sonst
+  Präzisionsverlust ab Tiefe ~8-9 durch `catastrophic cancellation`
+  (P² liegt sehr nah an 2).
+- Ein Einheitsquadrat wird rekursiv in `BASE` Streifen geschnitten (optional
+  abwechselnd vertikal/horizontal je nach Parität von `k`); die Ziffern
+  bestimmen, wie viele Streifen einer Größe verbraucht werden.
+- Zwei Bereiche: **Ziel** (wachsende √2-Quadrat aus Schalen/Gnomonen) und
+  **Bank/Rest** (übrig gebliebene Stücke).
+- **Modus B:** Regler für "hypothetische Basis b→1" - verzerrt NUR das Ziel
+  (nicht die Bank), macht Stellenwert-Struktur sichtbar.
 
-## 4. Der validierte Bank-Algorithmus (das Ergebnis langen Testens)
+## 5. Der validierte Bank-Algorithmus (Ergebnis langen Testens)
 
-Nach vielen Experimenten (siehe Abschnitt 7 für die verworfenen) hat sich diese Kombination als beste erwiesen (~75-86% Füllgrad, keine Kreuzungen):
+Beste Kombination (~75-86% Füllgrad, keine Kreuzungen):
 
-1. **Auswahl-Strategie "isolation"**: Bei der Entnahme wird das Stück mit den **wenigsten direkt berührenden Nachbarn** zuerst verbraucht (aktiv Einzelgänger abbauen).
-2. **Schneide-Strategie "centroid_far" (Schwerpunkt entfernt)**: Beim Zerschneiden wird der Kandidat gewählt, dessen **nächster Rand** (nicht Mittelpunkt!) am **weitesten** vom Schwerpunkt aller sichtbaren Stücke entfernt ist. (Gegenteil - "Schwerpunkt-nah" - ist nachweislich schlechter, da die Konstruktion eine natürliche Aktivität an der Peripherie hat.)
-3. **Streifen-Enden-Filter**: Nie aus der **Mitte** eines zusammenhängenden Streifens wählen (weder zum Schneiden noch zum Entnehmen) - nur von den beiden Enden. Verhindert unnötige Löcher in sonst zusammenhängenden Blöcken.
-4. **Quadrat-Schnittrichtung**: Bei exakten Quadraten (gerades `k`) ist die Schnittrichtung mathematisch frei wählbar (keine Auswirkung auf die Stellenwert-Größen). Zwei Optionen getestet: "immer gleich" (senkrecht) und "alternierend" (wechselt je Quadrat-Ebene, gekoppelt an `k`, NICHT an die zeitliche Reihenfolge). **Kein Effektivitätsunterschied**, nur ästhetisch verschieden.
+1. **Auswahl "isolation":** bei Entnahme zuerst das Stück mit den **wenigsten
+   direkt berührenden Nachbarn** (Einzelgänger aktiv abbauen).
+2. **Schneiden "centroid_far":** Kandidat = der, dessen **nächster Rand**
+   (nicht Mittelpunkt!) am **weitesten** vom Schwerpunkt aller sichtbaren
+   Stücke entfernt ist (Gegenteil "centroid-nah" ist nachweislich schlechter).
+3. **Streifen-Enden-Filter:** nie aus der **Mitte** eines zusammenhängenden
+   Streifens wählen (weder Schneiden noch Entnehmen), nur von den Enden.
+4. **Quadrat-Schnittrichtung:** bei geradem `k` frei wählbar, **kein
+   Effektivitätsunterschied** (nur ästhetisch).
 
-## 5. Haupttool und Test-Tool: gemeinsame Code-Basis (größtenteils gelöst)
+## 6. Gemeinsame Code-Basis & wichtige mathematische Erkenntnisse
 
-Ursprünglich lief das Verhalten des Rests im Haupttool "komplett anders" als im Test-Tool. Ursachen (alle bestätigt):
+### 6.1 Glättung (`smoothing.js`) - drei Bausteine, klar getrennt
 
-1. ~~**Der Algorithmus-Code war separat kopiert**~~ in beiden Dateien und ist auseinandergedriftet (z.B. ein `born_time <= action_time`-Filter, der im Haupttool nötig war, im Test-Tool aber fehlte - empirisch aber ohne Auswirkung). **Gelöst:** beide Tools importieren jetzt denselben `bank-core.js`-Code (`createBankSimulation`/`buildSystem` per ES-Modul, siehe `vite.config.js`). Dabei kam auch eine reale Divergenz ans Licht: das Haupttool schnitt Quadrate bisher nach `k`-Parität statt nach der (validierten) Form-/`squareSplit`-Regel aus `bank-core.js` - mit der Umstellung stimmt das jetzt überein.
-2. ~~**Kompaktierung existiert weiterhin nur im Test-Tool**, nicht im Haupttool~~ - erledigt, siehe Abschnitt 6.2 (Checkbox "Kompaktierung statt Bank-Zoom" im Haupttool).
-3. **Tiefe-Standardwert war unterschiedlich**: Haupttool hatte `Tiefe=3`, Test-Tool `Tiefe=10` - weiterhin nicht synchronisiert (offene Entscheidung, siehe Abschnitt 12).
-4. Haupttool hat **keine Auswahlmöglichkeit** für den Algorithmus (bewusst - Best-Kombination `squareSplit='fixed'` fest einprogrammiert, um die Haupt-UI schlank zu halten).
+Alle automatisierten Bewegungen (Zoom, Position, Blend, Kamera) sind C¹-stetig
+(kein Sprung in Wert ODER Steigung) - siehe `CLAUDE.md` "Automatisierte
+Parameteränderungen". Drei bewusst unterschiedliche Bausteine:
 
-### Wie die Anbindung funktioniert
+- **`buildMonotoneSpline()`/`buildMonotoneSplineBundle()`** - ein Wert (oder
+  mehrere UNABHÄNGIGE), der an jedem Stützpunkt **exakt/getreu** getroffen
+  werden MUSS (Sicherheitsgarantie, z.B. Auto-Zoom-Exponent). C¹, trifft
+  jeden Stützpunkt exakt und ohne Verzögerung - reagiert aber SOFORT auf
+  jeden Stützpunkt (bei Dutzenden dichten Wegpunkten "zappelig").
+- **`computeSegmentBlend()`** - MEHRERE voneinander abhängige Werte, deren
+  relative Lage eine Invariante einhält (z.B. "Stück A überlappt B nie").
+  Liefert EIN geteiltes Blend-Gewicht `s(t)` für alle Werte. **Zusätzlich**
+  bei zeitlicher Verzögerungs-Garantie: ein zweiter, "pinnender" Wegpunkt mit
+  IDENTISCHEM Zustand (Segment zwischen zwei gleichen Werten bleibt exakt
+  flach). Beweis über Konvexkombinations-Argument.
+- **`buildDampedFilter()`/`buildDampedFilterBundle()`** - Werte, die nur
+  träge/asymptotisch folgen müssen, OHNE exakte Treffer (z.B. Bank-Zoom-
+  Kamera). Kritisch gedämpfte Sprungantwort 2. Ordnung, C¹, bewusst TRÄGE
+  mit Zeitkonstante `TAU`. Sicherheit (Nichtüberlappung) gilt für JEDE TAU.
 
-`bank-core.js` wird per ES-Modul-Import in beide HTML-Dateien eingebunden (kein Kopier-Build-Schritt mehr nötig, siehe `vite.config.js`). Beide Tools nutzen jetzt dieselbe Schalen-Orchestrierung `buildSystem(BASE, N_MAX, squareSplit, cellMode)` aus `bank-core.js` - keine eigene Kopie der Schalen-Schleife mehr in einem der beiden Tools. `cellMode` steuert, WIE VIELE Stücke pro Rand-Zelle (`is_top`) geholt werden:
+Zoom: pro **Checkpoint** (jede Zeit, an der sich die sichtbare Menge ändert)
+Zustand `{z, cx, cy}` mit festem Sicherheitsrand berechnen; Überblendung der
+**fertig transformierten Positionen** (`offset = 0.5 - cx*z`), NICHT der
+Parameter - garantiert Sicherheit durch Konvexität. `ZOOM_MARGIN = 0`,
+minimaler Zoom exakt 1.0.
 
-- `'morph'` (Default im Haupttool, Flug-Modus **S: Strecken**): ein einzelnes, passendes Stück der Ebene `k` direkt aus der Bank, das in die Zielzelle gemorpht/gestreckt wird.
-- `'subdivide'` (Default beim Aufruf ohne 4. Parameter, damit abwärtskompatibel zum Test-Tool; Haupttool-Flug-Modus **Z: Zerschneiden**): `BASE` Stücke der nächsten, feineren Ebene `k+1` - der Rand einer Schale entspricht der nächsten Ziffern-Stelle (siehe Abschnitt 6).
-
-`buildSystem()` liefert dafür zusätzlich zu `sim`/`local_max_time` ein `events`-Array (ein Eintrag pro `getPieceFromBank()`-Aufruf, mit Gitterposition `u`/`v`, `is_top`, `k`, `piece`, `tick`, sowie `i`/`count` für Zerschneiden-Gruppen) - genug Information, damit ein Aufrufer daraus seine eigene Render-Pipeline bauen kann, ohne die Schalen-Konstruktion selbst zu duplizieren. Das Haupttool durchläuft `events` linear, vergibt dabei seine eigene kontinuierliche Animationszeit (`global_time`/`t_fly`, `SHELL_GAP` zwischen Schalen) und sammelt `(tick, t_fly)`-Paare; `buildTickTimeMapping()` übersetzt daraus am Ende alle `born_time`/`cut_time`/`taken_time`-Felder der Bank-Stücke (die `bank-core.js` nur als Integer-Tick führt) zurück in diese Zeitachse. Das Test-Tool braucht das nicht (seine Zeitachse ist der Tick selbst) und ignoriert `events`.
-
-### Zerschneiden-Modus im Haupttool (Z) - bewusst nur Demo-Modus
-
-Der Flug-Modus **Z: Zerschneiden** ist im Haupttool jetzt wählbar (Dropdown "Transformation") und nutzt denselben `subdivide`-Pfad wie das Test-Tool. Die Rück-Verschmelzung beim Zurückspulen (`BASE` Stücke der Ebene `n+1` fusionieren visuell zurück zu einem Stück der Ebene `n`, `Z_ghost`) wird nicht mehr als Bug reproduziert. Z bleibt trotzdem bewusst nur ein Demo-Modus für kleine Tiefen (nicht für die vollständig korrekte Konstruktion) - Details siehe Abschnitt 8.
-
-**Beobachtung am Rande:** die `BASE`-Stücke-Zerlegung (Zerschneiden) hält den Rest sichtbar kompakter (weniger verstreute Einzelstücke) als die Ein-Stück-Variante (Morphing) - vermutlich ein echter Vorteil, aber getrennt von der Demo-Modus-Einordnung zu bewerten.
-
-### Tick-Vergleich mit dem Test-Tool (Zeitstrahl-Regler "Tick")
-
-Unterhalb des normalen Zeitstrahl-Reglers zeigt das Haupttool zusätzlich den zum aktuellen Zeitpunkt passenden **Tick** an (und lässt ihn direkt eintippen). Im Zerschneiden-Modus (`cellMode: 'subdivide'`, identisch zum Test-Tool) zeigt derselbe Tick in beiden Tools denselben Bank-Zustand. Im Morphing-Modus (Haupttool-Default) ist die Tick-Zählung dagegen bewusst anders als im Test-Tool (weniger, dafür größere Entnahmen) - der Regler bleibt trotzdem nützlich zum exakten Ansteuern von Entnahme-Zeitpunkten innerhalb des Haupttools selbst.
-
-Ein subtiler, unabhängig davon behobener Fehler bei der Tick→Zeit-Umrechnung: der visuelle Vorlauf von `cut_time`/`born_time` konnte die Tick-Reihenfolge verfälschen. Der alte Versatz war `-0.4` Zeiteinheiten; da Ticks nur `0.15` Zeiteinheiten auseinanderliegen, konnte ein Schnitt-Ereignis aus einem *späteren* Tick durch den `-0.4`-Versatz vor die Entnahme eines *nahen, aber früheren* Ticks rutschen. Fix: Versatz auf `0.1` verkleinert (nachweislich kleiner als der minimal mögliche Tick-Abstand von `0.15`, siehe Kommentar `CUT_BORN_LEAD` in `compileSystem()`) - eine solche Umsortierung ist damit mathematisch ausgeschlossen.
-
-## 6. Wichtige mathematische Erkenntnisse (nicht neu herleiten müssen!)
-
-### 6.1 Sicherer, monotoner Zoom per gemeinsamer Glättungs-Bibliothek (`smoothing.js`)
-Problem: Naive Bounding-Box-Zoom-Berechnung "springt" oder bleibt stecken. Lösung (bewiesen, nicht nur getestet):
-- Zoom-Zustand `{z, cx, cy}` wird pro **Checkpoint** (jeder Zeitpunkt, an dem sich die sichtbare Stückmenge ändert) berechnet, mit **festem Sicherheitsrand** (aktuell 0%, war mal 20%, siehe unten).
-- Überblendung zwischen Checkpoints NICHT durch Interpolation der Parameter (z, cx, cy direkt), sondern der fertig transformierten Positionen (`offset = 0.5 - cx*z` vorberechnet, dann direkt interpoliert) - das garantiert Sicherheit durch Konvexität von [0,1], unabhängig davon, wie stark sich das Zentrum zwischen Checkpoints verschiebt.
-- Kritischer Fehler, der einmal gemacht und behoben wurde: Bei der Herleitung der affinen Form `T(x) = x*z + offset` muss `offset = 0.5 - cx*z` sein (NICHT `cx*(1-z)` - das war ein Vorzeichenfehler, der zu realen Überlappungen führte, erst bei Basis 2 entdeckt).
-- Minimaler Zoom ist exakt 1.0 (kein Sicherheitsrand mehr, `ZOOM_MARGIN = 0`).
-- **Glättungs-Mechanismus (mehrfach überarbeitet - alle drei Varianten inzwischen in `smoothing.js` vereinheitlicht, mit klarer Regel WANN welche):**
-  1. Ursprünglich ein selbstgebauter, KAUSALER Exponentialkern (`F(t) = exp(-k*(time-t))`), später um eine kritisch gedämpfte Sprungantwort 2. Ordnung ergänzt (nur für den Auto-Zoom-Exponenten, siehe Abschnitt 9) - beide Varianten wurden unabhängig voneinander erfunden und waren nur C⁰-stetig (der einfache Kernel) bzw. **hinkten einem neuen Checkpoint eine Zeitkonstante lang hinterher** - das führte beim Auto-Zoom-Exponenten zu einem echten Sichtbarkeits-Bug (siehe Abschnitt 9).
-  2. Für den Auto-Zoom-Exponenten (braucht exakte Treffer, siehe Abschnitt 9) ersetzt durch `buildMonotoneSpline()` aus `smoothing.js`: monotone kubische Hermite-Interpolation (Fritsch-Carlson), C¹-stetig überall, trifft jeden Checkpoint exakt und ohne Verzögerung.
-  3. Für den Bank-Zoom hier zunächst EBENFALLS auf `buildMonotoneSpline()`/`buildMonotoneSplineBundle()` umgestellt - das war ein Fehlgriff: der Bank-Zoom hat oft hunderte, dicht getaktete Checkpoints (ein Wegpunkt pro Entnahme, oft nur einen Tick auseinander) - eine EXAKTE Spline reagiert auf JEDEN einzelnen davon sofort, was sich als unruhige/zappelige Bewegung zeigt ("Wir brauchen wesentlich langsamere und kontinuierlichere Bewegungen beim Zoom in der Bank", Gesprächsverlauf). Der Bank-Zoom BRAUCHT diese Exaktheit gar nicht - sein Sicherheitsbeweis (Konvexkombination bereits sicherer Positionen) gilt nachweislich für JEDE Zeitkonstante TAU, siehe oben. Fix: `buildDampedFilter()`/`buildDampedFilterBundle()` - im Kern die ursprüngliche kritisch gedämpfte Sprungantwort 2. Ordnung (`h(τ) = 1-exp(-k·τ)·(1+k·τ)`), jetzt aber als geteilte, getestete Bibliotheksfunktion statt Ad-hoc-Code, mit derselben `TAU = max(MAX_TIME*0.03, 0.5)`-Formel wie früher.
-  Siehe CLAUDE.md ("Automatisierte Parameteränderungen") und `smoothing.test.js` für die Beweis-Tests aller drei Bausteine (Stützpunkt-Treffer, C¹-Stetigkeit, Monotonie-Erhalt/Konvexitäts-Erhalt, TAU-Trägheit).
-- `getBankTransform()` (Haupttool UND Algorithmus-Spiel-Tool, beide vereinheitlicht) sowie das Zoom-Faktor-TEXT-Readout bei aktiver Kompaktierung nutzen `buildDampedFilter(Bundle)`. **Ausnahme: NICHT für die tatsächlichen Kompaktierungs-Positionen** - siehe Abschnitt 6.2 für den Grund (geteiltes vs. unabhängiges Blend-Gewicht, `computeSegmentBlend()` statt beidem).
+**Verworfene/fehlerhafte Zwischenstände (nicht wiederholen):** kausaler
+Exponentialkern (C⁰, hinkt hinterher → Sichtbarkeits-Bug beim Auto-Zoom);
+`buildMonotoneSpline()` fälschlich für Bank-Zoom (zappelig bei hunderten
+Wegpunkten) und fälschlich für Kompaktierung (bricht Ordnungstreue zwischen
+Stücken); Bewegungs-Schwellwert für Kompaktierungs-Wegpunkte (Einfrier-Bug).
 
 ### 6.2 Kompaktierung ("Zeilen/Spalten ausblenden")
-Idee des Nutzers: wie in einer Tabellenkalkulation leere Zeilen/Spalten ausblenden. Für jede Achse (x, y) unabhängig: finde die **belegten Intervalle** (Vereinigung aller Stück-Ausdehnungen), komprimiere die **Lücken** dazwischen auf 0. Stückgrößen bleiben exakt erhalten (jedes Stück liegt per Definition in einem belegten Intervall).
 
-**Bewiesene Eigenschaften:**
-- Monotone Abbildung pro Achse → Ordnungstreue und Nichtüberlappung bleiben automatisch erhalten.
-- Füllgrad-Verbesserung: von ~75% (beste Auswahl-Heuristik) auf ~84-86%.
+Pro Achse (x,y): belegte Intervalle finden, Lücken auf 0 komprimieren;
+Stückgrößen bleiben exakt. Füllgrad ~75% → ~84-86%.
 
-**Kritischer Fehler, der gemacht und behoben wurde:** Bei der Überblendung MUSS jedes Stück über **alle** globalen Wegpunkte bewertet werden (auch außerhalb seiner eigenen Sichtbarkeit, mit seiner echten fixen Position durch die jeweilige Kompaktierungs-Abbildung geschickt) - NICHT nur über die Wegpunkte, an denen es selbst sichtbar ist. Sonst nutzen verschiedene Stücke unterschiedliche Gewichte, und die Ordnungstreue bricht zusammen (führte zu tausenden Überlappungen in einem fehlerhaften Zwischenstand).
-
-**Zweiter, subtilerer Ordnungstreue-Fehler (in dieser Session gemacht UND behoben - wichtige Lektion, siehe CLAUDE.md):** Bei der Migration auf `smoothing.js` (Abschnitt 6.1) wurde `getSmoothedCompactedLogicalRect()` versehentlich auf `buildMonotoneSplineBundle()` umgestellt - dieselbe Glättung, die für `getBankTransform()`/`getSmoothedAutoZoomExp()` genau richtig ist. Für Kompaktierung ist das aber FALSCH: `buildMonotoneSplineBundle()` optimiert die Tangente jedes Feldes/Stücks UNABHÄNGIG, wodurch zwei verschiedene Stücke zum selben Zeitpunkt unterschiedlich weit "fortgeschritten" sein können - ein Nachbarstück konnte dadurch schon in Richtung seiner neuen (kompaktierten) Position rutschen, WÄHREND das Stück, das den Platz gerade erst freimacht, noch sichtbar war. Sichtbar als reale Überlappungen beim Testen im Algorithmus-Spiel-Tool ("wird hier zu früh losgeschoben, wenn das entsprechende Teil noch angezeigt wird").
-
-Der URSPRÜNGLICHE kausale Exponentialkernel (siehe oben) hatte dieses Problem NICHT: seine Gewichte `F(t)=exp(-k·(time-t))` hängen nur von der Zeit ab, nicht vom Stück - alle Stücke nutzten dadurch **automatisch dieselben Gewichte** ("wie bei Excel eine globale, für alle Zeilen/Spalten gemeinsame Ausblend-Transformation" - der Kern-Gedanke, der schon in der allerersten Kompaktierungs-Umsetzung, `p.html`, so gebaut war). Fix: `computeSegmentBlend()` (neu in `smoothing.js`) stellt dieses **geteilte Blend-Gewicht** wieder her, ist dabei aber - anders als der alte Kernel - C¹-stetig und trifft jeden Waypoint exakt (kein TAU/Abkling-Verhalten). Beweis (Konvexkombinations-Argument wie beim Bank-Zoom, Abschnitt 6.1): gilt für zwei Werte `a_rechts(w) ≤ b_links(w)` an ZWEI Wegpunkten `w_lo`/`w_hi`, dann gilt dieselbe Ungleichung für JEDE mit demselben `s∈[0,1]` gewichtete Zwischenposition - Ordnungstreue bleibt also über die gesamte Überblendung erhalten, nicht nur an den Wegpunkten selbst. Regressionstest (reproduziert den Bug gegen den alten Code, verifiziert den Fix): `bank-core-compaction.test.js`.
-
-**Dritte Voraussetzung für den Fix:** `computeCompactionWaypoints()` filterte früher Zeitpunkte heraus, an denen die GESAMTE Bounding-Box-Fläche nicht schrumpfte ("nur echte Verbesserungen werden Wegpunkte") - eine reine Effizienzmaßnahme, die aber übersieht, dass sich die Kompaktierungs-Abbildung für EINZELNE (nur lokal betroffene) Stücke bereits ändern kann, ohne dass die Gesamtfläche sich ändert (z.B. wenn ein entferntes Stück auf einer Achse ohnehin schon von einem anderen sichtbaren Stück "verdeckt" war). Ein übersprungener Tick lässt dann ein Segment entstehen, das einen echten Sichtbarkeits-Wechsel eines Nachbarstücks gar nicht als eigenen Wegpunkt kennt - selbst mit geteiltem Blend-Gewicht bleibt das Nachbarstück dann noch an seiner alten Position "eingefroren", während das breite Segment längst in Richtung der neuen Anordnung unterwegs ist. Fix: JEDER relevante Tick wird jetzt zum Wegpunkt (kein Filter mehr) - dank `computeSegmentBlend()`s O(log Wegpunkte)-Auswertung (statt einer vollen Spline-Neuberechnung pro Aufruf) performant genug, siehe Performance-Absatz unten. Der früher probierte, dann verworfene "Bewegungs-Schwellwert-Regler" (nur bei Verbesserung über einer Schwelle einen Wegpunkt anlegen) ist damit ebenfalls hinfällig - er hätte denselben Fehler nur in abgeschwächter Form reproduziert.
-
-**Performance (gemessen, kein Fall von "premature optimization" - UND umgekehrt, siehe CLAUDE.md/Memory "Measure before optimizing"):** `getSmoothedCompactedLogicalRect()` leitet `times` (die Wegpunkt-Zeitpunkte für `computeSegmentBlend()`s binäre Suche) bei jedem Aufruf neu aus `waypoints` ab - bei tausenden Wegpunkten (jetzt der Normalfall, siehe oben) gemessen 16.4ms/Frame statt 0.075ms/Frame bei 64 sichtbaren Stücken und ~17000 Wegpunkten (Tiefe 16, Zerschneiden-Modus) - der eigentliche Blend selbst ist mit O(log Wegpunkte) vernachlässigbar, das wiederholte `Array.map()` pro Aufruf war der Flaschenhals. `makeCompactedLogicalRectLookup(waypoints)` berechnet `times` nur EINMAL (nicht mehr, wie in einer früheren Version dieser Funktion, eine volle Spline pro Stück - das ist mit `computeSegmentBlend()` nicht mehr nötig) und wertet danach nur noch aus.
-
-**Vierte Voraussetzung - Lücken-Schließ-Verzögerung (`GAP_CLOSE_DELAY_TICKS`):** Auch mit geteiltem Blend-Gewicht und vollständigem Wegpunkt-Satz blieb ein Rest-Problem: ein Nachbarstück begann bereits Richtung einer frisch entstandenen Lücke zu rutschen, WÄHREND das entnommene Stück selbst noch angezeigt wurde ("Teile verschwinden immer noch zu früh"). Grund: `computeSegmentBlend()` überblendet STETIG zwischen zwei benachbarten Wegpunkten - ein einzelner Wegpunkt einen Tick nach der Entnahme reicht NICHT, um jede Bewegung bis dahin zu verhindern (die Steigung ist nur GENAU am Start exakt null, für jeden späteren Zeitpunkt im selben Segment schon spürbar von null verschieden). Fix: ein entnommenes Stück bleibt für Kompaktierungs-Zwecke bis `taken_time + GAP_CLOSE_DELAY_TICKS` als Platzhalter reserviert - UND es gibt dafür einen eigenen Wegpunkt mit IDENTISCHEM Zustand wie unmittelbar nach der Entnahme, der das gesamte Hold-Fenster auf exakt null Bewegung "pinnt" (ein Segment zwischen zwei GLEICHEN Werten bleibt immer flach, unabhängig von seiner Breite). Die eigentliche, weiterhin sanfte Überblendung findet erst DANACH statt, in einem eigenen, genau einen Tick breiten Anschluss-Segment. Wichtige Lektion beim Verifizieren: ein naiver Test ("bewegt sich IRGENDEIN Nachbar im Fenster [T,T+1] von Stück Q") erzeugte zunächst falsche Alarme, weil bei dichten Entnahme-Kaskaden (`cellMode: 'subdivide'`) das Prüffenster fast immer mit dem LEGITIMEN Schließen einer GANZ ANDEREN, benachbarten Lücke überlappt - der korrekte Test prüft stattdessen direkt und isoliert (synthetisches Beispiel ohne Nachbar-Interferenz, siehe `bank-core-compaction.test.js`).
-
-**Im Haupttool integriert** (`sqrt2.html`, Checkbox "Kompaktierung statt Bank-Zoom" in den Einstellungen): ersetzt bei Aktivierung den bankT-basierten Auto-Zoom (Abschnitt 6.1) vollständig für die Bank-Darstellung, für sowohl ruhende Bank-Stücke als auch die Start-Position fliegender Stücke - beide Modi sind bewusst gegenseitig exklusiv (wie im Algorithmus-Spiel-Tool). Der äußere `[0,1]×[0,1]`-Bank-Rahmen wird bei aktiver Kompaktierung bewusst nicht gezeichnet (hätte keine feste, gemeinsame Entsprechung mehr).
-
-**Fünfte Voraussetzung - Content/Kamera-Split (`compactedLogicalRectAt()` vs. `computeCompactionFitStates()`):** Selbst mit allen obigen Fixes blieb die Bank-Bewegung bei aktiver Kompaktierung "viel zu schnell/unruhig" (Gesprächsverlauf) - weil `compactedRectAt()` (frühere, kombinierte Version) den Fit-Zoom (Skalierung+Zentrierung aufs `[0,1]`-Fenster) direkt in dieselben, dicht getakteten Wegpunkte einbackte, die für die Nichtüberlappungs-Garantie exakt/schnell sein MÜSSEN (siehe oben). Fix: klassischer Content/Kamera-Split (wie ein "Smooth Camera Follow" in einer Game-Engine) - `compactedLogicalRectAt()`/`getSmoothedCompactedLogicalRect()`/`makeCompactedLogicalRectLookup()` liefern nur noch die Position im kompaktierten, NICHT gezoomten Raum (bleiben exakt/schnell), `computeCompactionFitStates()` liefert getrennt die Fit-Zoom-Zustände (`z`/`offsetX`/`offsetY`) pro Wegpunkt, die Aufrufer selbst (z.B. mit `buildDampedFilterBundle()`) beliebig dämpfen können - `applyCompactionFit()` kombiniert beides erst beim Rendern. Sicherheit bleibt erhalten: JEDE gemeinsame (für alle Stücke gleiche) affine Skalierung+Verschiebung bewahrt Nichtüberlappung unter sich (zwei disjunkte Rechtecke bleiben unter derselben linearen Abbildung disjunkt) - das gilt UNABHÄNGIG davon, wie träge/exakt dieser Fit-Zoom ist. Empirisch verifiziert (siehe `bank-core-compaction.test.js`): selbst mit einem absichtlich extrem trägen Fit (`TAU = 2×local_max_time`) bleibt die Nichtüberlappung erhalten, und der reale Overflow über `[0,1]` hinaus lag in einer Stichprobe bei exakt 0.
-
-**Sechste Voraussetzung - massegewichtete Ankerung statt "Förderband" (`buildCompactionMap()`):** Auch nach dem Content/Kamera-Split bewegten sich große Flächen weiterhin viel zu schnell (Gesprächsverlauf: "die letzten Änderungen haben dazu geführt, dass die großen Elemente sehr schnell bewegt werden"). Ursache lag tiefer, im Kompaktierungs-Algorithmus selbst: das ursprüngliche Prefix-Sum-Verfahren verankerte IMMER die erste (per Sortierung) Gruppe bei Koordinate 0 - schloss sich irgendwo eine Lücke, rutschte ALLES danach nach, unabhängig von dessen Größe. Ein winziges Stück, das weit VOR einer riesigen Fläche verschwand, konnte diese riesige Fläche dadurch quer über den Bildschirm schieben.
-
-Fix - physikalisches Modell (siehe auch CLAUDE.md, "Layout-Umordnungen mehrerer Objekte"): `buildCompactionMap()` bestimmt jetzt die zusammenhängende Gruppe mit der GRÖSSTEN Gesamtfläche ("Masse") als ANKER - sie bleibt an ihrer rohen, unveränderten Koordinate; alle anderen Gruppen werden lückenlos an sie herangerückt (links vom Anker rückwärts, rechts vorwärts aufgereiht). Große Flächen bekommen dadurch "am wenigsten Beschleunigung": sie SIND meist selbst der Anker (bewegen sich gar nicht) oder liegen nah an ihm. Bewusst zustandslos gelöst (wie der Rest von `bank-core.js`) - der Anker wird bei jedem Wegpunkt frisch aus den rohen `p.x`/`p.y`-Koordinaten der sichtbaren Stücke bestimmt, KEINE über die Zeit mitgeführte Position pro Stück nötig: solange dieselben Stücke die Ankergruppe bilden (Regelfall - eine einzelne Entnahme betrifft meist nur eine kleine Nachbargruppe), ist deren aus rohen Koordinaten berechnete Position zwischen zwei Wegpunkten automatisch identisch, die Ankerposition bleibt also "for free" stabil.
-
-Nebenwirkung: der kompaktierte Bereich beginnt dadurch NICHT mehr zwingend bei Koordinate 0 (der Anker kann irgendwo liegen) - `computeCompactionAt()` liefert daher zusätzlich `minX`/`minY`, und `computeCompactionFitStates()` zentriert auf `minX+totalW/2`/`minY+totalH/2` statt (wie vorher implizit angenommen) auf `totalW/2`/`totalH/2`. Empirisch verifiziert (siehe Gesprächsverlauf): das größte gerade sichtbare Stück zeigt danach ~0.000000 mittlere Bewegung pro Tick, das kleinste sichtbare Stück messbare Bewegung bis 0.01/Tick - der gewünschte "Trägheits"-Effekt tritt tatsächlich ein, nicht nur in der Theorie.
-
-**Siebte Voraussetzung - einstellbare Übergangsdauer (`transitionTicks`):** `GAP_CLOSE_DELAY_TICKS` (siehe oben, weiterhin fest bei 1 - der Bewegungs-Start verzögert sich immer um genau einen Tick) und die Dauer der anschließenden Überblendung selbst waren ursprünglich beide auf 1 Tick hartkodiert. Auf Wunsch ("sie soll wie gehabt einen Tick später starten und dann einstellbar viele Ticks später realisiert sein") ist die Übergangsdauer jetzt ein Parameter (`computeCompactionWaypoints(bank_pieces, maxTick, transitionTicks)`, Default `8`) - größere Werte verteilen die Bewegung über mehr Ticks (ruhiger, hinkt aber länger hinter der tatsächlichen Entnahme her), bleiben für JEDEN Wert sicher (Nichtüberlappung hängt nicht von der Segmentbreite ab, siehe `computeSegmentBlend()`).
+- **Masse/Anker statt Förderband:** `buildCompactionMap()` wählt die
+  zusammenhängende Gruppe mit der **größten Gesamtfläche** als Anker (bleibt
+  an roher Koordinate), alle anderen Gruppen rücken lückenlos heran. Große
+  Flächen bewegen sich kaum (sie sind meist der Anker) - "Trägheits"-Effekt
+  gewollt. Zustandslos gelöst (Anker frisch aus rohen Koordinaten je Wegpunkt).
+- **Ordnungstreue:** `computeSegmentBlend()` (geteiltes Gewicht) statt
+  unabhängiger Splines - sonst rutscht ein Stück in den Platz eines Nachbarn,
+  bevor dieser verschwunden ist. JEDER relevante Tick ist Wegpunkt (kein
+  Filter), `GAP_CLOSE_DELAY_TICKS` + Pinning-Wegpunkt verhindern zu frühes
+  Schließen. `transitionTicks` (Default im Haupttool `3`) steuert die
+  Überblendungs-Dauer.
+- **Content/Kamera-Split:** `compactedLogicalRectAt()` liefert nur Position im
+  kompaktierten Raum (exakt/schnell), `computeCompactionFitStates()` getrennt
+  den Fit-Zoom (eigenständig dämpfbar, z.B. `buildDampedFilterBundle()`).
+  `applyCompactionFit()` kombiniert beim Rendern. Beliebig träge/schnell,
+  Nichtüberlappung bleibt erhalten.
+- **Performance:** `makeCompactedLogicalRectLookup(waypoints)` leitet
+  `times` EINMAL vorab ab (nicht pro Frame) - bei ~17000 Wegpunkten
+  16.4ms → 0.075ms/Frame.
 
 ### 6.3 Bijektive Tick↔Zeit-Abbildung
-Für das Haupttool: `buildTickTimeMapping(tickTimePairs)` nimmt eine Liste `{tick, time}`-Paare (in der Reihenfolge, in der der Algorithmus sie liefert) und baut ein Array `tickToTimeArr`, das per linearer Interpolation in beide Richtungen abgefragt werden kann (`tickToTime`, `timeToTick`). Getestet: 0 Rundtrip-Fehler bei 510 Prüfungen, auch für gebrochene Werte konsistent.
+
+`buildTickTimeMapping(tickTimePairs)` baut `tickToTimeArr` (linear interpoliert,
+beide Richtungen). 0 Rundtrip-Fehler bei 510 Prüfungen. `CUT_BORN_LEAD = 0.1`
+(war `-0.4`): kleiner als minimaler Tick-Abstand `0.15`, schließt
+Umsortierung von Schnitt- vor Entnahme-Ereignissen mathematisch aus.
 
 ### 6.4 Bekannte, aber harmlose Alt-Bugs
-- **Timing-Anomalie bei sehr kleiner Basis** (z.B. Basis 2): Innerhalb einer Schale ist `action_time` nicht streng monoton (mischt `t_fly` und `t_cut` für verschiedene Positionen). Führt in seltenen Fällen dazu, dass ein Vorfahre und einer seiner eigenen Nachkommen kurzzeitig gleichzeitig "sichtbar" sind. Empirisch bestätigt: **bereits in den rohen Original-Positionen vorhanden**, nicht durch spätere Fixes verursacht. Nicht blockierend, aber bekannt.
-- **Gleitkomma-Präzisionsgrenze bei sehr tiefer Rekursion** (Basis 10, Tiefe 9+, Stücke ab k≈16-17 mit Kantenlänge ~10⁻⁸): vereinzelte "Ordnungsverletzungen" durch Gleitkomma-Rauschen, keine echten Logikfehler. Bei normalen Ausstellungs-Tiefen (3-8) nicht relevant.
 
-## 7. Verworfene Ansätze (NICHT erneut versuchen, alle empirisch widerlegt)
+- **Timing-Anomalie bei sehr kleiner Basis** (Basis 2): `action_time` nicht
+  strikt monoton innerhalb einer Schale - Vorfahre + Nachkomme kurz gleichzeitig
+  sichtbar. Schon in rohen Original-Positionen vorhanden, nicht blockierend.
+- **Gleitkomma-Präzision bei sehr tiefer Rekursion** (Basis 10, Tiefe 9+,
+  Kantenlängen ~10⁻⁸): vereinzelt Ordnungsverletzungen durch Float-Rauschen.
+  Bei Normal-Tiefen (3-8) irrelevant.
 
-Auswahl-/Schneide-Heuristiken, die getestet, aber **keine** Verbesserung brachten (bzw. schlechter waren als die validierte Kombination):
-- Boustrophedon (Richtung alternierend je nach k-Parität)
-- Nächste-Nähe-Heuristik (klar schlechter)
-- Konsistente Richtung (Schneiden UND Entnehmen an derselben Ecke)
-- LIFO/FIFO Batch-Konsum
-- Gestufter Faktor-Schnitt (z.B. Basis 10 erst durch 2, dann durch 5 statt direkt durch 10) - erzeugt MEHR Fragmentierung, nicht weniger
-- "Schwerpunkt-nah" Schneiden (Gegenteil von centroid_far) - klar schlechter
-- Slot-basiertes Repacking (Left-Edge-Algorithmus) - technisch sauber (0 Kollisionen), aber der Nutzer wollte KEINE Neuanordnung, sondern nur Auswahl unter Beibehaltung der echten Positionen (siehe `stable_slots_prototype.html` als Referenz, verworfen)
-- Rollout/Lookahead mit fixierter Fortsetzungs-Politik - als "Kaninchenbau" identifiziert und bewusst NICHT umgesetzt (zu rechenintensiv für den Nutzen)
-- Bewegungs-Schwellwert für Kompaktierungs-Wegpunkte (siehe 6.2) - verursacht Einfrier-Bug bei extremen Werten, wieder entfernt
+## 7. Z/R-Transformationsmodi (Z wählbar, Demo; R deaktiviert)
 
-## 8. Z/R-Transformationsmodi (Z wählbar, aber bewusst nur Demo-Modus; R weiterhin deaktiviert)
+Drei Flug-Modi für die Ziel-Seite: **Z** (Zerschneiden/Montessori,
+`cellMode:'subdivide'`), **R** (Rotieren, **deaktiviert** - separater Bug),
+**S** (Strecken/Morphing, Default, `cellMode:'morph'`). Z ist **bewusst nur
+Demo-Modus für kleine Tiefen** (Rand-Zelle nimmt immer exakt `BASE` Stücke der
+nächsten Ebene - bei tieferer Rekursion mathematisch unehrlich). Anforderung:
+alle Übergänge C¹ - Alpha-Rampen (Z_source/Z_micro/Z_ghost) sollten auf
+Smoothstep statt linear umgestellt werden (noch nicht umgesetzt).
 
-Im Haupttool gibt es historisch drei Flug-Animationsmodi für die Ziel-Seite: **Z** (Zerschneiden/Montessori-Stil), **R** (Rotieren/Festkörper), **S** (Strecken/Morphing). Z und R hatten Bugs (teilweise gefixt: Doppel-Zeichnung bei Z_source, falsche Zielgröße bei R_macro) und wurden zwischenzeitlich komplett deaktiviert (nur S in der UI wählbar). **Z ist jetzt wieder wählbar** (nutzt die gemeinsame `buildSystem(..., 'subdivide')` aus `bank-core.js`, siehe Abschnitt 5) - **R bleibt deaktiviert**, das ist ein separater, unabhängiger Bug.
+## 8. Auto-Zoom-Modus (Mindestbreite in Pixeln)
 
-~~Bekannter Bug: Rück-Verschmelzung beim Zurückspulen nicht animiert~~ - **wird nicht mehr reproduziert** (Stand nach der gemeinsamen `buildSystem()`-Orchestrierung, Playwright-Scrub vorwärts/rückwärts über den vollen Tick-Bereich sowie Abspielen inkl. Zeitumkehr ohne Fehler/Auffälligkeiten).
+Regler "Auto-Zoom: Mindestbreite feinste Stelle (Pixel, 0 = aus)".
+`getSmoothedAutoZoomExp(time)` via `buildMonotoneSpline()` durch die
+Schalen-Checkpoints (exakt, keine Verzögerung - behob ein echtes
+Sichtbarkeits-Problem). `computeAutoZoomTAB(thresholdPx, scale, targetExp)`:
+linearer Suchlauf über 200 Stützstellen (KEINE Bisektion - `widthAt(t_AB)`
+bildet bei kleinem `targetExp` einen Höcker, nicht nur eine Rampe).
+`effective_t_AB = Math.max(u_mode_AB, autoZoomTAB)` - "größerer Wert gewinnt",
+Modus-B-Regler selbst bleibt unter Nutzerkontrolle. Bekannte Rest-Einschränkung:
+ein winziger Ableitungsknick am exakten Einschalt-Moment (`t_AB=0` ist harte
+Domänen-Grenze).
 
-**Z ist bewusst weiterhin nur ein Demo-Modus für kleine Tiefen, nicht "ehrlich" für die vollständige Konstruktion:** eine Rand-Zelle nimmt immer genau `BASE` Stücke der nächsten Ebene, unabhängig davon, wie weit die betroffene Seitenlänge von den bereits vorhandenen Stellen entfernt ist. Für eine wirklich korrekte Darstellung der Transformation weiter entfernter Seitenlängen müsste deutlich öfter geschnitten werden (mehrstufig, nicht nur einen Schritt tief). Für kleine Iterationstiefen fällt das nicht auf, wird aber bei tieferer Rekursion zunehmend unehrlich. Kein aktueller Handlungsbedarf, nur zur Einordnung.
+## 9. Einstellungen & URL-Zustand (`SETTINGS`)
 
-**Anforderung für die Neuimplementierung (vom Nutzer explizit genannt):** Alle Übergänge müssen **C¹-stetig** sein (Ableitung stetig, kein "Stop-and-Go"). Erkenntnis dazu: Die Positions-Interpolation nutzte bereits Smoothstep (gut), aber die Alpha-Ein-/Ausblendungen bei Z (Z_source ausblenden, Z_micro ein-/ausblenden, Z_ghost einblenden) nutzten **lineare** Rampen (`Math.min`/`Math.max`) - das erzeugt Geschwindigkeitssprünge an den Rändern. Lösung (angedacht, noch nicht umgesetzt): alle Alpha-Übergänge auf Smoothstep umstellen, mit überlappenden Crossfade-Fenstern (z.B. 0.3 Zeiteinheiten) zwischen Z_source→Z_micro und Z_micro→Z_ghost, statt harter Cutoffs.
+**EIN `SETTINGS`-Array** (`sqrt2.html`): jede Einstellung = ein Eintrag
+`{ key, phase, get(), set(v) }`. `applyPhase(phase)` liest URL-Parameter,
+`buildStateParams()` exportiert sie ("Als URL kopieren"). Neue Einstellung →
+EIN neuer Eintrag (keine vier parallelen Listen mehr). `bindEl()` für
+`<input>`/`<select>`/Checkbox. `phase:'pre'` (Compiler-Eingaben, vor
+`compileSystem()`) vs `phase:'post'` (Wiedergabe-Position, `modeab`, **`play`** -
+neu, schließt die Lücke "geteilter Link startet Animation nicht automatisch").
+Sonderfälle als `resolveFromUrl()`-Hook auf dem Eintrag, nicht als
+Extra-`if`-Zweig. Zwei neue Regler: `transition` (Kompaktierungs-Dauer,
+Default `3`) und `zoomspeed` (Bank-Zoom-Trägheit, Default `0.012`, ersetzt
+hartkodiertes `0.03`).
 
-**Idee für später (noch nicht umgesetzt):** ein eigener, dedizierter Demo-Modus für die Konstanz der Fläche bei Variation von `b^-n * b^-m` für `n+m = const` - zeigt anschaulich, dass alle Zerlegungen derselben Gesamt-Exponentensumme dieselbe Fläche ergeben, unabhängig davon, wie sie auf die beiden Achsen verteilt ist. Getrennt vom Z-Modus zu behandeln (andere Fragestellung: Flächenkonstanz statt Bank-Konstruktion).
+## 10. Zukünftige Vision & Status
 
-## 9. Auto-Zoom-Modus (Mindestbreite in Pixeln, umgesetzt)
+- **Svelte-Architektur + austauschbare Rest-Widgets:** **umgesetzt** (Phasen
+  0-4). `TargetBankCanvas`, `RestCounterBars`, `RestCounterGrid`,
+  `ControlPanel`, `PlaybackBar`; Rest-Widget-Umschaltung über `displayStore`.
+- **Mehrbildschirm-/Fernsteuerung (`BroadcastChannel`, später Realtime-Dienst):**
+  **offen** (Phase 5) - braucht einen zweiten Vite-Entry (`RemoteControl`)
+  + Sync-Adapter; zwei Tabs sollen synchron bleiben.
+- **QR-Code-Verbindung (Besucher-Handy):** offen, braucht Backend
+  (WebSocket-Relay/Realtime-Dienst), nicht mit reiner HTML-Datei machbar.
+- **Admin-konfigurierbare Steuerungs-Komplexität:** offen (Konfigurations-
+  objekt, welche Regler sichtbar sind) - baut auf der Store-Architektur auf.
+- **Z/R-Modi vollständig neu (C¹):** eigenständiges Thema (§7).
+- **Tiefe-Standardwert** im Haupttool (`3`) vs Test-Tool (`10`): weiterhin
+  nicht synchronisiert (offene Entscheidung).
 
-Zusätzlicher Regler "Auto-Zoom: Mindestbreite feinste Stelle (Pixel, 0 = aus)" im Haupttool. Idee: die tiefste gerade **sichtbare** Ziffern-Stelle soll nie kleiner als `AUTO_ZOOM_MIN_PX` Canvas-Pixel dargestellt werden, auch wenn der Modus-B-Regler das nicht hergibt.
+## 11. Empfohlene nächste Schritte (Priorität)
 
-**Auto-Zoom macht nur dynamisch Sinn:** welche Ziffern-Stelle gerade "die tiefste sichtbare" ist, wächst mit der Animation - am Anfang ist nur das Basisquadrat (Exponent 0) sichtbar, am Ende bis zu Exponent `N_MAX`. Ein fix auf `N_MAX` eingestelltes Ziel würde von der ersten Sekunde an maximale Verzerrung erzwingen, obwohl die tiefen Stellen noch gar nicht gebaut sind. Deshalb:
-
-- `getSmoothedAutoZoomExp(time)` liefert den Ziel-Exponenten für den aktuellen Zeitpunkt, ausgewertet über eine `buildMonotoneSpline()`-Instanz durch die Schalen-Checkpoints (siehe Abschnitt 6.1) - C¹-stetig überall, auch an den Checkpoints selbst.
-  - **Vorherige Versionen** (ein einfacher Exponentialkern, dann eine kritisch gedämpfte Sprungantwort 2. Ordnung, beide kausale Filter) hatten dieselbe strukturelle Schwäche: sie "hinken" einem neuen Checkpoint eine Zeitkonstante lang hinterher (bei der Sprungantwort sogar bewusst mit Wert UND Steigung exakt Null am Checkpoint selbst). Das war nicht nur ein Ruckel-Problem, sondern ein **echter Sichtbarkeits-Bug**: `computeAutoZoomTAB()` (siehe unten) garantiert die Mindestbreite nur für den GERADE aktuellen (geglätteten) Zielexponenten - solange dieser dem tatsächlich schon sichtbaren, tieferen Exponenten hinterherhinkt, konnte eine frisch erschienene Ziffernstelle kurzzeitig schmaler als die konfigurierte Mindestbreite bleiben (konkret reproduziert: Basis 10, Tiefe 16, Mindestbreite 6px → die 3. Nachkommastelle fiel auf ~0.5px, praktisch unsichtbar). Ein Zwischen-Fix (künstlicher Zeitvorlauf auf den Checkpoints + eine zusätzliche "harte", ungeglättete Sicherheits-Kopie in `renderFrame()`) hat das kaschiert, aber nicht behoben.
-  - **Fix:** `buildMonotoneSpline()` trifft den Exponenten jeder Schale exakt an deren Startzeit, ohne jede Verzögerung - der Zwischen-Fix (Zeitvorlauf + harte Sicherheits-Kopie) ist dadurch überflüssig geworden und wurde entfernt. Die Sichtbarkeits-Garantie ist mathematisch bewiesen (bei festem `t_AB` fällt die Breite streng monoton mit dem Exponenten, da `b_eff ≥ 1` - trifft die Spline also den tiefsten gerade sichtbaren Exponenten exakt, sind automatisch auch alle flacheren, bereits sichtbaren Stellen breiter) UND persistent getestet: `auto-zoom-visibility.test.js` baut mit dem echten `bank-core.js`-Algorithmus mehrere reale Systeme (u.a. den Original-Bugreport Basis 10/Tiefe 16/6px) und prüft für jeden Schalen-Start, dass keine Ziffernstelle unter die Mindestbreite fällt.
-  - Anders als beim Bank-Zoom ist hier **keine** globale Monotonie in der Zeit gewünscht/erzwungen (der Exponent selbst ist zwar monoton, aber die Spline darf beim Zurückspulen genauso glatt wieder kleiner werden) - `buildMonotoneSpline()` erzwingt Monotonie ohnehin nur INNERHALB eines Segments zwischen zwei Checkpoints mit gleichgerichteter Wertänderung, nicht global, und funktioniert für jeden Zeitpunkt exakt (auch beim Scrubben/Zurückspulen, da nicht-kausal über die gesamte vorab kompilierte Zeitachse ausgewertet).
-- `computeAutoZoomTAB(thresholdPx, scale, targetExp)` sucht den kleinsten `t_AB` (Modus-B-Wert, [0,1]), bei dem eine Stelle vom Exponenten `targetExp` mindestens `thresholdPx` breit ist - reine Funktion, keine Seiteneffekte auf den Layout-Cache von `updateDynamicLayout()`. **Kein Bisektions-Suchlauf**: `widthAt(t_AB)` ist nur für `targetExp` nahe `N_MAX` monoton wachsend - für kleine `targetExp` (frühe Schalen) schrumpft die Stelle anfangs sogar (das Basisquadrat wird optisch "verdrängt", wenn feinere Stellen aufgeblasen werden), die Kurve bildet dann einen Höcker statt einer Rampe. Stattdessen ein linearer Suchlauf über 200 Stützstellen mit anschließender linearer Interpolation im Treffer-Intervall (der reine Rasterpunkt-Treffer erzeugte selbst bei stetigem `targetExp` eine sichtbare Treppenstufen-Bewegung) - robust unabhängig von der Kurvenform, Performance unkritisch (deutlich unter 1ms selbst bei `TOTAL_STEPS~500`).
-- Effektiv gerendert wird `effective_t_AB = Math.max(u_mode_AB, autoZoomTAB)` - **"größerer Wert gewinnt"**: der Regler kann die Verzerrung erhöhen, Auto-Zoom kann sie ebenfalls erhöhen, aber keiner von beiden kann sie verringern. Der Modus-B-Regler selbst (`u_mode_AB`, seine sichtbare Position) bleibt dabei **unverändert** unter Nutzerkontrolle - nur der tatsächlich fürs Rendering benutzte Wert wird ggf. übersteuert.
-- Ist die Mindestbreite im gesamten `[0,1]`-Bereich nicht erreichbar (z.B. sehr hohe Tiefe mit sehr vielen Ziffern-Stellen), wird der beste gefundene Kompromiss zurückgegeben statt hart auf `1` zu klammern (relevant, weil `widthAt(1)` bei kleinem `targetExp` nicht zwingend das Maximum ist - siehe Höcker-Hinweis oben).
-
-**Bekannte, bewusst nicht behobene Einschränkung:** am exakten Moment, an dem Auto-Zoom "einschaltet" (`widthAt(0, targetExp)` kreuzt `thresholdPx`), bleibt ein winziger, auf ein sehr schmales Zeitfenster begrenzter Ableitungsknick - `t_AB=0` ist eine harte Domänen-Grenze (Modus B kann nicht negativ werden). Ein Fix wurde versucht (Sprungantwort weich statt hart mit `t_AB=0` verrunden, per "smooth maximum"), lieferte aber ein falsches Vorzeichen bei fallendem `widthAt(t_AB)` (Ergebnis bis zu 145% statt `[0,1]` - der Fix wurde deshalb wieder verworfen). Ein sauberer, vorzeichenrobuster Fix bräuchte eine Ableitung nach `targetExp` statt nach `t_AB`, angesichts des Höckers nicht trivial. Alle HÄUFIGEN Ruckel-Quellen (eine pro Schale, siehe oben) sind behoben - dieser Rest ist ein einzelner, sehr kurzer Moment pro Animationsdurchlauf.
-
-**Visualisierung "welcher Wert gilt gerade":** eine Markierung (`#autoZoomMarker`, oranger Strich) wird bei `AUTO_ZOOM_MIN_PX > 0` über dem Modus-B-Regler an der Position `autoZoomTAB` eingeblendet (rein positionale Näherung, `left: X%` - nicht pixelgenau an die native Slider-Thumb-Breite angepasst, aber ausreichend als visueller Hinweis) und wandert während der Animation mit. Zusätzlich erscheint ein Text-Hinweis ("Auto-Zoom aktiv - übersteuert den Regler nach oben") NUR, wenn Auto-Zoom den Regler tatsächlich gerade übersteuert (`autoZoomTAB > u_mode_AB`) - bewegt der Nutzer den Regler manuell über die Marke hinaus, verschwindet der Hinweis wieder, obwohl die Marke sichtbar bleibt.
-
-## 10. Einstellungen & URL-Zustand (`SETTINGS`, Haupttool)
-
-**Ausgangslage:** jede Einstellung (Basis, Tiefe, Zoom-Schwellwert, ...) ließ sich einzeln per URL-Parameter setzen (für Test-/Demo-Links, Button "Als URL kopieren"), aber über VIER unabhängige, von Hand synchron gehaltene Stellen: `URL_FIELD_MAP` (normale `<input>`/`<select>`), eine separate `URL_CHECKBOX_FIELD_MAP` (Checkboxen brauchen `.checked` statt `.value`), `buildStateParams()` (das Gegenstück beim Export) und - für alles, was erst nach dem Kompilieren der Simulation gültig ist (Wiedergabe-Position, Modus-B-Regler) - ein eigener, separat gepflegter Init-Block am Skript-Ende. Eine neue Einstellung driftete dadurch leicht auseinander (in einer Liste ergänzt, in einer anderen vergessen). **Explizit bemängelt** ("wir sollten die Einstellungen in einem Objekt haben und generell alles aus der URL initialisieren können"): dieser Mechanismus fehlte komplett für den Wiedergabe-Zustand ("läuft die Animation gerade oder steht sie") - ein geteilter Link fror den Zeitpunkt zwar ein, startete aber nie automatisch.
-
-**Fix - EIN `SETTINGS`-Array** (`sqrt2.html`, ganz am Skriptanfang): jede Einstellung ist genau ein Eintrag `{ key, phase, get(), set(v) }` - `key` ist der URL-Parameter-Name, `get()`/`set()` kapseln, WIE der Wert gelesen/geschrieben wird (per `bindEl(elId, kind)`-Hilfsfunktion für gewöhnliche `<input>`/`<select>`-Elemente und Checkboxen, direkt als Closure über eine JS-Variable für reinen Laufzeit-Zustand). Zwei generische Funktionen laufen über dieselbe Liste:
-- `applyPhase(phase)` - liest für jede passende Einstellung den URL-Parameter (falls gesetzt) und ruft `set()`.
-- `buildStateParams()` - baut den URL-Parameter-Satz aus `get()` aller Einstellungen (Gegenstück, für "Als URL kopieren").
-
-Neue Einstellungen brauchen dadurch nur noch EINEN neuen Eintrag in `SETTINGS`, statt vier Stellen von Hand synchron zu halten.
-
-**Zwei Phasen, aus demselben Grund wie vorher schon getrennt behandelt** (Simulation muss erst kompiliert sein, bevor z.B. `MAX_TIME` existiert):
-- `phase: 'pre'` - reine Compiler-Eingaben (Basis, Tiefe, Modus, Zoom-Schwellwert, Auto-Zoom, Zoom-Trägheit, Linienbreite, Wartezeit, Kompaktierung an/aus, Kompaktierungs-Übergangsdauer) - werden GANZ AM ANFANG angewendet, vor `compileSystem()`.
-- `phase: 'post'` - `modeab`, `time`/`tick` (Wiedergabe-Position) und **neu: `play`** (Wiedergabe-Zustand) - werden NACH `compileSystem()` angewendet. `time` hat weiterhin Vorrang vor `tick`, jetzt über einen `resolveFromUrl()`-Hook auf dem `time`-Eintrag gelöst (statt eines eigenen `if/else if`-Blocks außerhalb der Liste) - dieselbe Stelle, an der jede Einstellung ihre Sonderfälle kapseln kann, ohne die generische `applyPhase()`-Schleife selbst zu verkomplizieren.
-
-**Neu: `play`-Einstellung (URL-Parameter `play=1`/`play=0`)** schließt die eingangs erwähnte Lücke - ein geteilter Link kann jetzt die Animation automatisch starten. Umgesetzt über eine neue `setPlaying(playing)`-Funktion (vorher: reiner Inline-Code im Klick-Handler des Play-Buttons), die von BEIDEM genutzt wird - Button-Klick und URL-Init -, damit auch der URL-Auto-Start den bestehenden `lastTime`-Reset-Bugfix bekommt (siehe Kommentar dort: ohne Reset hätte der erste Frame nach dem Start ein riesiges `dt` gesehen und wäre sofort ans Zeit-Ende gesprungen).
-
-**Zwei neue, ebenfalls per `SETTINGS`/URL erreichbare Regler** (direkte Reaktion auf "wir brauchen nicht mehr lange warten, bis kompaktiert wird und wir können ruhig etwas schneller zoomen"):
-- **Kompaktierungs-Übergangsdauer** (`transition`, `compactionTransitionInput`): reicht direkt an `computeCompactionWaypoints(..., transitionTicks)` durch (siehe Abschnitt 6.2, "Siebte Voraussetzung"). Default im Haupttool jetzt `3` statt `8` - spürbar weniger Wartezeit, bis eine Lücke sichtbar schließt.
-- **Zoom-Trägheit** (`zoomspeed`, `zoomSpeedInput`): ersetzt den vorher fest verdrahteten Koeffizienten `0.03` in `BANK_ZOOM_TAU = local_max_time * 0.03` (siehe Abschnitt 6.1) - jetzt einstellbar, Default `0.012` (gut 2,5× schneller). Dieselbe (jetzt gemeinsame) Zeitkonstante `BANK_ZOOM_TAU` treibt sowohl den regulären Bank-Zoom als auch die Kompaktierungs-Kamera (`GLOBAL_COMPACTION_FIT_SPLINE`, siehe Abschnitt 6.2 "Fünfte Voraussetzung") - beide fühlten sich vorher "viel zu langsam" an. Kleinere Werte bedeuten eine kürzere Zeitkonstante `TAU` und damit eine schnellere Kamera; Sicherheit (Nichtüberlappung bleibt erhalten) gilt weiterhin für JEDEN Wert von `TAU`, siehe die dortigen Konvexkombinations-Beweise - dieser Regler kann also nicht "zu schnell" im Sinne von unsicher eingestellt werden, nur im Sinne von unruhig wirkender Bewegung.
-
-## 11. Zukünftige Vision (teils noch nicht begonnen)
-
-- QR-Code-Verbindung: Besucher scannt Code am Exponat, öffnet Steuerung auf eigenem Gerät (Handy). Braucht echte Backend-Infrastruktur (WebSocket-Relay oder Realtime-Dienst wie Firebase/Supabase/Ably) - nicht mit einer reinen HTML-Datei machbar.
-- Mehrbildschirm-Betrieb: Ziel/Rest/Steuerung auf getrennten physischen Displays. Innerhalb eines Rechners mit mehreren Fenstern schon heute simulierbar über die `BroadcastChannel`-API (kein Server nötig) - noch nicht umgesetzt. Würde ein gemeinsames Layout-Konfigurationsobjekt brauchen (z.B. `{ziel: {x,y,breite}, rest: {x,y,breite}, ...}`), damit jedes Fenster seine Position im gemeinsamen Koordinatenraum kennt.
-- Admin-konfigurierbare Steuerungs-Komplexität: sobald die Grundarchitektur (siehe oben) steht, "nur" ein Konfigurationsobjekt, welche Regler für Besucher sichtbar sind.
-- **Rest-Anzeige als austauschbare Widgets** (neuer Wunsch): die Bank/Rest-Visualisierung als Zähler soll unabhängig von den übrigen Einstellungen (Basis, Tiefe, Flug-Modus, ...) verfügbar sein, mit mehreren austauschbaren Darstellungs-Modi zum Ausprobieren - u.a. vertikale Anzeige aller Ziffern-Stellen als Balken (ähnlich der heutigen HUD-Inventory-Liste, aber als eigenständiges, austauschbares Widget) und horizontale Anzeige als bis zu 4×4-Grid (abhängig von der Basis). Noch nicht spezifiziert, welche weiteren Modi geplant sind - siehe Diskussion unten zu Svelte/Architektur.
-- **Fernsteuerung über ein zweites Fenster/einen separat verbundenen Browser** - baut auf denselben Baustein wie Mehrbildschirm-Betrieb (`BroadcastChannel` lokal, später ein echter Realtime-Dienst für getrennte Geräte) und sollte dieselbe Architektur nutzen wie die austauschbaren Rest-Widgets (siehe Diskussion unten).
-
-## 12. Empfohlene nächste Schritte (Priorität)
-
-1. ~~Test-Tool im Browser verifizieren~~ - erledigt.
-2. ~~Haupttool auf `bank-core.js` umstellen~~ - erledigt (Kompaktierung dabei bewusst ausgeklammert, siehe Punkt 3 unten).
-3. ~~Haupttool: Kompaktierung ergänzen~~ - erledigt, siehe Abschnitt 6.2. Dabei zusätzlich `makeCompactedLogicalRectLookup()` (Caching) ergänzt und persistente Tests für ganz TEIL 2 aus `bank-core.js` nachgezogen (`bank-core-compaction.test.js`, vorher ungetestet).
-4. Tiefe-Standardwert im Haupttool klären/synchronisieren.
-5. ~~Gemeinsame Schalen-Orchestrierung in `bank-core.js`~~ - erledigt: `buildSystem()` hat jetzt einen `cellMode`-Parameter (`'morph'`/`'subdivide'`), beide Tools nutzen dieselbe Funktion (siehe Abschnitt 5).
-6. ~~Rück-Verschmelzung im Zerschneiden-Modus debuggen~~ - wird nicht mehr reproduziert (siehe Abschnitt 8). Z bleibt bewusst nur Demo-Modus für kleine Tiefen (siehe Abschnitt 8), kein Ausbau zur vollständig korrekten Konstruktion geplant.
-7. Z/R-Transformationsmodi vollständig neu aufbauen (C¹-stetig, siehe Abschnitt 8) - eigenständiges Thema.
-8. ~~Auto-Zoom-Modus~~ - erledigt, siehe Abschnitt 9.
-9. ~~Gemeinsame Glättungs-Bibliothek statt mehrerer unabhängiger Ad-hoc-Kernel~~ - erledigt: `smoothing.js` (monotone kubische Hermite-Interpolation, siehe Abschnitt 6.1), ersetzt Kernel in `getBankTransform()` (beide Tools), `getSmoothedAutoZoomExp()` und `getSmoothedCompactedLogicalRect()`. Behebt dabei einen echten Sichtbarkeits-Bug im Auto-Zoom (siehe Abschnitt 9). Persistente Tests: `smoothing.test.js`, `auto-zoom-visibility.test.js`.
-11. Architektur-Entscheidung klären: Svelte (oder ähnliches Komponenten-Framework) für austauschbare Rest-Widgets + Fernsteuerungs-Architektur? Noch offen, siehe Konversationsverlauf - nichts umgesetzt, bis Grundsatzentscheidung steht.
-12. Danach: Rest-Anzeige als austauschbare Widgets (Abschnitt 11) und Mehrbildschirm-/Fernsteuerungs-Architektur (Abschnitt 11) - beide auf derselben Architektur-Entscheidung (Punkt 11) aufbauend, nicht unabhängig voneinander umsetzen.
+1. ~~Test-Tool verifizieren~~ erledigt. 2. ~~Haupttool auf `bank-core.js`~~
+   erledigt. 3. ~~Kompaktierung ergänzen~~ erledigt (§6.2). 4. **Tiefe-
+   Standardwert klären** (offen). 5. ~~Gemeinsame Schalen-Orchestrierung
+   (`buildSystem(..., cellMode)`)~~ erledigt. 6. ~~Rück-Verschmelzung Z-Modus~~
+   nicht mehr reproduziert (Demo-Modus, §7). 7. **Z/R-Modi neu (C¹)** - eigenes
+   Thema. 8. ~~Auto-Zoom~~ erledigt (§8). 9. ~~Gemeinsame Glättungs-Bibliothek~~
+   erledigt (§6.1). 10. ~~Svelte-Migration + austauschbare Widgets~~ erledigt
+   (Phasen 0-4, `TOOLING_SPEC.md`). 11. **Fernsteuerung/Mehrbildschirm**
+   (Phase 5, `BroadcastChannel`) - nächster Migrations-Schritt.
