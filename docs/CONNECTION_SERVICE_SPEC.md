@@ -305,24 +305,29 @@ aber exponat-agnostisch und mit der geforderten Zwei-Stufen-Auth
 
 ## 12. Nächste Schritte
 
-1. Server-Logik vervollständigen (Persistenz optional, Rate-Limit, CORS).
+1. Server-Logik vervollständigen (Persistenz optional, Rate-Limit, CORS) — **erledigt**.
 2. **Entwicklungs-Sandbox bekommt eine eigene Tailscale-IP** (eigenes
    Tailnet-Device / eigener Hostname), damit Prototyp-Tests vom Handy aus
    ohne lokale Netzwerk-Sonderkonfiguration laufen.
 3. sqrt2 anbinden: `configStore`/`playbackStore` über WS relayen
-   (BroadcastChannel als Same-Browser-Fast-Path beibehalten).
-4. QR-Code auf dem Exponat + PIN-Anzeige im ControlPanel.
+   (BroadcastChannel als Same-Browser-Fast-Path beibehalten) — **erledigt**
+   (`src/lib/connection.js` + `initNetworkSync()` in `src/lib/syncedStore.js`,
+   beide Transporte über dieselbe Store-Schnittstelle, TOOLING_SPEC Phase 8).
+4. QR-Code auf dem Exponat + PIN-Anzeige im ControlPanel — **erledigt**
+   (`ControlPanel.svelte`: Sitzung starten → Token minten → QR (`qrcode`) +
+   PIN; `RemoteControl.svelte` joint per WS, wenn der QR-Link `ws`/`token`/
+   `pin` trägt).
 5. Testen über Tailnet (`<host>.<tailnet>.ts.net:8080` bzw. Vite-Port,
    mit `tailscale cert`→TLS); Traefik-Stack nur bei eigener Domain via
    `--profile edge`. `ADMIN_KEY` beim ersten Start aus der Console erfassen.
 6. (Optional) Redis-Adapter für Horizontal-Skalierung.
 7. **Status-Page** (`/` als HTML über http/https) + **Admin-UI** unter
-    `/admin` — **erledigt** (§8): Status-Page liefert Dienstname, Version,
-    Uptime, Transport-Modus, Räume/Seats/Verbindungen; Admin-UI (dependency-
-    freies HTML, nutzt ausschließlich die Admin-REST-API §5) mit Token-Liste,
-    Belegung, PIN-Kennzeichnung und Revoke-Aktion. Svelte-Variante optional
-    möglich; Funktionsumfang Seat-Freigabe/Stats/Debug-View (§8) bei Bedarf
-    über die Admin-API erweiterbar.
+   `/admin` — **erledigt** (§8): Status-Page liefert Dienstname, Version,
+   Uptime, Transport-Modus, Räume/Seats/Verbindungen; Admin-UI (dependency-
+   freies HTML, nutzt ausschließlich die Admin-REST-API §5) mit Token-Liste,
+   Belegung, PIN-Kennzeichnung und Revoke-Aktion. Svelte-Variante optional
+   möglich; Funktionsumfang Seat-Freigabe/Stats/Debug-View (§8) bei Bedarf
+   über die Admin-API erweiterbar.
 
 > **Tests:** Jede Stufe (Token-Minting, Seat-Limit, PIN/Rotation, Host/Guest,
 > CORS, Rate-Limit) ist durch `infra/connection-service/test-api.mjs`

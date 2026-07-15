@@ -14,6 +14,16 @@
 	import { configStore, playbackStore, compiledStore } from '../lib/stores.js';
 	import { displayStore } from '../lib/displayStore.js';
 	import { buildStateParams } from '../lib/urlState.js';
+	import { initNetworkSync } from '../lib/syncedStore.js';
+	import {
+		buildWsUrl,
+		buildGuestLink,
+		mintHostToken,
+		rotatePin,
+		revokeToken,
+		randomPin,
+		createWsRoom,
+	} from '../lib/connection.js';
 
 	function onChangeInt(field, fallback) {
 		return (e) => {
@@ -81,6 +91,119 @@
 					paramsCopied = false;
 				}, 1200);
 			});
+	}
+
+	// === Fernsteuerung / Cross-Device (Connection-Service, Spec §12 3/4) ===
+	// Das Exponat (Haupttool) startet eine Sitzung: mintet ein Join-Token
+	// beim Relay, verbindet sich als Host via WebSocket und zeigt Gästen
+	// einen QR-Code (Link zur Svelte-Fernsteuerung) sowie die PIN.
+	const LS_RELAY = 'sqrt2.relayUrl';
+	const LS_APIKEY = 'sqrt2.apiKey';
+
+	let relayUrl = $state(localStorage.getItem(LS_RELAY) ?? 'http://localhost:8080');
+	let apiKey = $state(localStorage.getItem(LS_APIKEY) ?? '');
+	let seats = $state(4);
+	let pinInput = $state('');
+	let session = $state(null); // { token, wsUrl, pin, seats, expiresAt, guestLink, room }
+	let connStatus = $state('idle');
+	let guestCount = $state(0);
+	let sessionError = $state('');
+	let qrCanvas = $state(null);
+	let linkCopied = $state(false);
+
+	function persistSettings() {
+		localStorage.setItem(LS_RELAY, relayUrl);
+		localStorage.setItem(LS_APIKEY, apiKey);
+	}
+
+	// Relativer Pfad zur Fernsteuerung (berücksichtigt base: '/sqrt2/').
+	function remoteControlPath() {
+		return new URL('remote-control.html', location.href).pathname;
+	}
+
+	async function renderQr(text) {
+		if (!qrCanvas) return;
+		const QRCode = (await import('qrcode')).default;
+		await QRCode.toCanvas(qrCanvas, text, { width: 200, margin: 1 });
+	}
+
+	async function startSession() {
+		sessionError = '';
+		persistSettings();
+		const pin = pinInput.trim() === '' ? null : pinInput.trim();
+		try {
+			const minted = await mintHostToken({ baseUrl: relayUrl, apiKey, seats, pin, label: 'sqrt2' });
+			const hostWs = buildWsUrl(minted.wsUrl, {
+				token: minted.token,
+				role: 'host',
+				pin: minted.pin,
+			});
+			const room = createWsRoom({
+				url: hostWs,
+				onStatus: (s, detail) => {
+					connStatus = s;
+					if ((s === 'presence' || s === 'joined') && detail?.occupied != null) {
+						guestCount = detail.occupied;
+					}
+					if (s === 'closed') connStatus = 'closed';
+				},
+			});
+			initNetworkSync(room);
+			const guestLink = buildGuestLink({
+				pageOrigin: location.origin,
+				pagePath: remoteControlPath(),
+				wsUrl: minted.wsUrl,
+				token: minted.token,
+				pin: minted.pin,
+			});
+			session = { ...minted, guestLink, room };
+			await renderQr(guestLink);
+		} catch (e) {
+			sessionError = String(e?.message ?? e);
+		}
+	}
+
+	async function rotateSessionPin() {
+		if (!session) return;
+		const pin = randomPin(4);
+		try {
+			await rotatePin({ baseUrl: relayUrl, apiKey, token: session.token, pin });
+			const guestLink = buildGuestLink({
+				pageOrigin: location.origin,
+				pagePath: remoteControlPath(),
+				wsUrl: session.wsUrl,
+				token: session.token,
+				pin,
+			});
+			session = { ...session, pin, guestLink };
+			await renderQr(guestLink);
+		} catch (e) {
+			sessionError = String(e?.message ?? e);
+		}
+	}
+
+	async function endSession() {
+		if (session?.room) session.room.close();
+		if (session?.token) {
+			try {
+				await revokeToken({ baseUrl: relayUrl, apiKey, token: session.token });
+			} catch {
+				/* ignore revoke failure */
+			}
+		}
+		session = null;
+		guestCount = 0;
+		connStatus = 'idle';
+	}
+
+	function copyGuestLink() {
+		if (!session) return;
+		navigator.clipboard.writeText(session.guestLink).then(() => {
+			linkCopied = true;
+			setTimeout(() => {
+				linkCopied = false;
+			}, 1200);
+		});
 	}
 </script>
 
@@ -294,5 +417,66 @@
 		<button type="button" class="settings-btn" class:copied={paramsCopied} onclick={copyParams}
 			>{paramsCopied ? 'Kopiert ✓' : 'Nur Parameter kopieren'}</button
 		>
+	</div>
+
+	<hr style="border: 1px solid #334155; margin: 10px 0;" />
+
+	<div class="control-group">
+		<div style="font-weight: bold; color: #3b82f6;">Fernsteuerung (Handy via QR)</div>
+		{#if !session}
+			<label class="control-group" style="margin-top:5px;"
+				>Relay-URL (des Connection-Service)
+				<input type="text" bind:value={relayUrl} placeholder="http://host:8080" />
+			</label>
+			<label class="control-group" style="margin-top:5px;"
+				>API-Key (Exponat)
+				<input type="text" bind:value={apiKey} placeholder="Relay-API_KEY" />
+			</label>
+			<div class="control-row" style="margin-top:5px;">
+				<label class="control-group"
+					>Plätze (Seats)
+					<input type="number" min="1" max="999" bind:value={seats} />
+				</label>
+				<label class="control-group"
+					>PIN (optional)
+					<input type="text" bind:value={pinInput} placeholder="leer = keine PIN" />
+				</label>
+			</div>
+			<button type="button" class="settings-btn" onclick={startSession}>Sitzung starten</button>
+			{#if sessionError}
+				<div class="error-msg">{sessionError}</div>
+			{/if}
+		{:else}
+			<div class="control-row" style="align-items:center; gap:14px; margin-top:5px;">
+				<canvas bind:this={qrCanvas} width="200" height="200"></canvas>
+				<div class="control-group" style="gap:6px;">
+					<div>
+						Status:
+						<span class="zoom-readout">{connStatus}</span>
+					</div>
+					<div>
+						Gäste verbunden: <span class="zoom-readout">{guestCount}</span>
+					</div>
+					{#if session.pin}
+						<div>
+							PIN: <span class="zoom-readout" style="font-size:1.3rem; letter-spacing:2px;"
+								>{session.pin}</span
+							>
+						</div>
+					{:else}
+						<div class="muted-note">Keine PIN - Gäste joinen ohne Code.</div>
+					{/if}
+					<button type="button" class="settings-btn" onclick={copyGuestLink}
+						>{linkCopied ? 'Kopiert ✓' : 'Link kopieren'}</button
+					>
+					<button type="button" class="settings-btn" onclick={rotateSessionPin}>PIN rotieren</button
+					>
+					<button type="button" class="settings-btn" onclick={endSession}>Beenden</button>
+				</div>
+			</div>
+			<div class="muted-note" style="margin-top:6px; word-break:break-all;">
+				Gast-Link: {session.guestLink}
+			</div>
+		{/if}
 	</div>
 </div>

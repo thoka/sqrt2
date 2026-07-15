@@ -1,15 +1,43 @@
 <script>
-	// RemoteControl (TOOLING_SPEC.md Phase 5) - zweiter Vite-Entry für ein
+	// RemoteControl (TOOLING_SPEC.md Phase 5, erweitert um Cross-Device
+	// via Connection-Service, Spec §12) - zweiter Vite-Entry für ein
 	// separates Fenster/Gerät: nur Steuerung (ControlPanel + PlaybackBar),
 	// KEIN Canvas und KEIN Rest-Widget. Liest/schreibt ausschließlich
-	// configStore/playbackStore, die über initSync() mit dem Haupttool
-	// (sqrt2.html) via BroadcastChannel synchronisiert sind - die Komponente
-	// selbst merkt davon nichts (der Transport ist gekapselt in syncedStore).
+	// configStore/playbackStore.
+	//
+	// Zwei Transportwege, beide gekapselt in syncedStore (die Komponente
+	// merkt vom Transport nichts):
+	//  - BroadcastChannel (Same-Browser, z.B. zweiter Tab) via initSync().
+	//  - WebSocket-Relay (Cross-Device, z.B. Handy via QR-Code) via
+	//    initNetworkSync(), wenn die URL die Parameter ws+token (optional
+	//    pin) trägt (vom Exponat generierter Gast-Link).
 	import ControlPanel from './ControlPanel.svelte';
 	import PlaybackBar from './PlaybackBar.svelte';
-	import { initSync } from '../lib/syncedStore.js';
+	import { initSync, initNetworkSync } from '../lib/syncedStore.js';
+	import { createWsRoom } from '../lib/connection.js';
 
 	initSync();
+
+	// Gast-Verbindung zum Relay, falls der QR-Gast-Link mit ws/token/pin
+	// aufgerufen wurde. Ansonsten bleibt es reiner BroadcastChannel-Sync.
+	const params = new URLSearchParams(location.search);
+	const wsParam = params.get('ws');
+	const tokenParam = params.get('token');
+	if (wsParam && tokenParam) {
+		const guestWs = new URL(wsParam);
+		guestWs.searchParams.set('token', tokenParam);
+		guestWs.searchParams.set('role', 'guest');
+		const pin = params.get('pin');
+		if (pin != null) guestWs.searchParams.set('pin', pin);
+		const room = createWsRoom({
+			url: guestWs.toString(),
+			onStatus: (s) => {
+				const el = document.getElementById('relayStatus');
+				if (el) el.textContent = s;
+			},
+		});
+		initNetworkSync(room);
+	}
 </script>
 
 <main class="remote">
@@ -17,6 +45,9 @@
 	<p class="hint">
 		Steuert das Haupttool (&sqrt;2-Flächenmodell) auf einem anderen Bildschirm. Änderungen hier
 		werden live übernommen.
+	</p>
+	<p class="hint">
+		Relay-Status: <span id="relayStatus">idle</span>
 	</p>
 	<div id="controlPanelMount"><ControlPanel /></div>
 	<div id="playbackBarMount"><PlaybackBar /></div>

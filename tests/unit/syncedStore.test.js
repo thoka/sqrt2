@@ -51,6 +51,37 @@ test('syncedStore: Änderung am Peer wird zurückgespielt (beide Richtungen)', a
 	assert.equal(snapshot(a).base, 2);
 });
 
+test('syncedStore: benutzerdefinierter Transport (WS-Relay-Ersatz) sync beide Richtungen', async () => {
+	// Loopback-Transport: post() liefert an alle registrierten Receiver
+	// (inkl. des eigenen) - simuliert einen Relay, der an alle Raum-
+	// Mitglieder broadcastet. Beweist, dass syncedStore beliebige
+	// Transport-Objekte {post,onMessage,close} annimmt (Connection-Service,
+	// Spec §12 Schritt 3), nicht nur BroadcastChannel.
+	function loopback() {
+		const cbs = new Set();
+		return {
+			post: (m) => {
+				for (const cb of cbs) cb(m);
+			},
+			onMessage: (cb) => cbs.add(cb),
+			close: () => {},
+		};
+	}
+	const t = loopback();
+	const a = writable({ base: 10 });
+	const b = writable({ base: 10 });
+	syncedStore(a, 'cfg', [t]);
+	syncedStore(b, 'cfg', [t]);
+
+	a.set({ base: 7 });
+	await new Promise((r) => setTimeout(r, 40));
+	assert.equal(snapshot(b).base, 7);
+
+	b.set({ base: 3 });
+	await new Promise((r) => setTimeout(r, 40));
+	assert.equal(snapshot(a).base, 3);
+});
+
 test('syncedStore: ohne BroadcastChannel bleibt der Store lokal nutzbar', () => {
 	// simuliert die SSR/Node-Ohne-Channel-Situation, indem wir den Konstruktor
 	// kurzzeitig ausblenden - der Store darf dann nicht brechen.
