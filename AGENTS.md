@@ -54,19 +54,16 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
 
 ## GOTCHAS
 
-1. **Toter SYSTEM-C-Block** in `sqrt2.html` (`renderFrame()`/`resizeCanvas()`/
-   `applyPlayback()`/`loop()`) ist uncalled - beim Editieren NICHT reaktivieren,
-   beim Aufräumen entfernen. Lebendig: `TargetBankCanvas.svelte`.
-2. **`compiledStore` hat KEIN `depth`** - Array-Längen über `configStore.depth`
+1. **`compiledStore` hat KEIN `depth`** - Array-Längen über `configStore.depth`
    (Alias N_MAX) holen.
-3. **derived-Caching:** `compiledStore` cached NUR bei aktivem Subscriber. In
+2. **derived-Caching:** `compiledStore` cached NUR bei aktivem Subscriber. In
    Komponenten **`$compiledStore`** nutzen, nicht wiederholtes `get()` in der
    Render-Schleife (sonst kompiliert jeder Frame neu).
-4. **`displayStore` ist lokal** - neue geteilte Zustände über
+3. **`displayStore` ist lokal** - neue geteilte Zustände über
    `configStore`/`playbackStore`, nicht `displayStore`.
-5. **`SETTINGS`-Array:** neue Größe = EIN Eintrag `{ key, phase, get(), set(v) }`
+4. **`SETTINGS`-Array:** neue Größe = EIN Eintrag `{ key, phase, get(), set(v) }`
    in `sqrt2.html`; nie wieder vier parallele Listen.
-6. **Vite 8:** bewusst auf `vite@7` geblieben (Rolldown-Architekturwechsel).
+5. **Vite 8:** bewusst auf `vite@7` geblieben (Rolldown-Architekturwechsel).
    Wechsel = eigener Branch + frische Evaluierung (`@sveltejs/vite-plugin-
    svelte` 6→7 nötig), nicht hier mischen.
 
@@ -77,8 +74,8 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
   Ein aus einem früheren Run noch laufender `vite preview` serviert ALTEN Build
   → neue Entries (z.B. `remote-control.html`) als 404. Vor `pnpm test:e2e`
   nach Rebuild: `pkill -f "vite preview"` (oder `reuseExistingServer: false`).
-- Offene Reste: toter SYSTEM-C-Block (GOTCHA 1); ungenutzte `GLOBAL_*`-Ports in
-  `TargetBankCanvas.svelte` (nur ESLint-Warnungen); Phase 6 (Politur) offen.
+- Offene Reste: ungenutzte `GLOBAL_*`-Ports in `TargetBankCanvas.svelte`
+  (nur ESLint-Warnungen); Phase 6 (Politur) offen.
 
 ## Migration
 
