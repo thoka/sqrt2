@@ -31,10 +31,10 @@ stop_old() {
 case "$MODE" in
   dev)
     PORT=5200
-    ARGS=(--port "$PORT" --strictPort)
+    ARGS=(--port "$PORT")
     ;;
   preview)
-    ARGS=(preview --port "$PORT" --strictPort)
+    ARGS=(preview --port "$PORT")
     ;;
   stop)
     stop_old
