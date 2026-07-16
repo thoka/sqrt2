@@ -90,6 +90,11 @@ export function parseConfigFromUrl(params) {
 // (braucht MAX_TIME/GLOBAL_TTM zum Clampen bzw. Tick->Zeit-Umrechnen).
 export function parsePlaybackFromUrl(params, compiled) {
 	let overrides = {};
+	// `compiled` kann beim asynchronen Compile (compileOrchestrator) beim
+	// initialen Mount noch null sein - dann time/tick nicht aus der URL
+	// übernehmen (Playback-Defaults bleiben). Sobald compiled da ist, läuft
+	// das normale Rendering ohnehin weiter.
+	if (!compiled) return overrides;
 	if (params.has('time')) {
 		overrides.time = Math.max(0, Math.min(compiled.MAX_TIME, parseFloat(params.get('time')) || 0));
 	} else if (params.has('tick') && compiled.GLOBAL_TTM) {

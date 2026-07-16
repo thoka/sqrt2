@@ -11,7 +11,13 @@ import {
 } from './bank-core.js';
 import { buildMonotoneSpline, buildDampedFilterBundle } from './smoothing.js';
 
-export function compileSystem(config) {
+// compileSystemData(): der TEURE, rein numerische Teil (worker-tauglich).
+// Liefert NUR Arrays/Zahlen/Plain-Objects - KEINE Funktionen/Closures, damit
+// der Rückgabewert per postMessage (structuredClone) in einen Web Worker
+// passiert. buildTickTimeMapping()/buildMonotoneSpline()/buildDampedFilterBundle()
+// liefern Closures und werden bewusst NICHT hier, sondern in finalizeCompiled()
+// (Main-Thread, billig) gebaut.
+export function compileSystemData(config) {
 	const {
 		base: BASE,
 		depth: N_MAX,
@@ -128,6 +134,98 @@ export function compileSystem(config) {
 		}
 	}
 
+	// CUT_BORN_LEAD-Versatz wird in finalizeCompiled() angewandt (benötigt
+	// die Closure von buildTickTimeMapping). Hier nur die Tick-Paare + die
+	// rohen taken_time/cut_time/born_time (noch in Tick-Einheiten) mitführen.
+	let raw_bank_pieces = bank_pieces.map((p) => ({
+		...p,
+		taken_time: p.taken_time,
+		cut_time: p.cut_time,
+		born_time: p.born_time,
+	}));
+
+	// Auto-Zoom-Checkpoints (rein numerisch): pro Schale S der Exponent.
+	let auto_zoom_checkpoints = [];
+	for (let S = 0; S < TOTAL_STEPS; S++) {
+		auto_zoom_checkpoints.push({ t: shell_start_time[S], exp: axes[S].exp });
+	}
+
+	// PATCH V32/V39: Bank-Zoom-Checkpoints aus echten Entnahme-Zeitpunkten,
+	// auf MAX_CHECKPOINTS heruntergesampelt. t-Werte hier noch in Tick-Raum
+	// (roh), werden in finalizeCompiled() nach Zeit umgerechnet.
+	const MAX_CHECKPOINTS = 400;
+
+	let eventTimesSet = new Set([0]);
+	for (let p of bank_pieces) {
+		if (isFinite(p.taken_time)) eventTimesSet.add(p.taken_time);
+	}
+	eventTimesSet.add(local_max_time);
+	let eventTimesTicks = Array.from(eventTimesSet).sort((a, b) => a - b);
+	if (eventTimesTicks.length > MAX_CHECKPOINTS) {
+		let sampled = [];
+		for (let i = 0; i < MAX_CHECKPOINTS; i++) {
+			sampled.push(
+				eventTimesTicks[Math.floor((i * (eventTimesTicks.length - 1)) / (MAX_CHECKPOINTS - 1))],
+			);
+		}
+		eventTimesTicks = Array.from(new Set(sampled));
+	}
+
+	// Kompaktierung (nur numerisch; Closure-Bau in finalizeCompiled()).
+	let compaction_waypoints = null;
+	if (compactionEnabled) {
+		let transitionTicks = compactionTransitionTicks;
+		if (!(transitionTicks >= 0)) transitionTicks = 3;
+		compaction_waypoints = computeCompactionWaypoints(bank_pieces, local_max_time, transitionTicks);
+	}
+
+	return {
+		axes,
+		TOTAL_STEPS,
+		bank_pieces: raw_bank_pieces,
+		render_pipeline,
+		GLOBAL_N_ARR: n_arr,
+		P_FINAL,
+		GLOBAL_SHELL_START: shell_start_time,
+		tickTimePairs,
+		auto_zoom_checkpoints,
+		eventTimesTicks,
+		compaction_waypoints,
+		compactionEnabled,
+		MAX_TIME: local_max_time,
+		// Felder, die finalizeCompiled() für die Splines/Filter braucht:
+		BASE,
+		zoomSpeedCoef,
+		local_max_time,
+		BANK_ZOOM_THRESHOLD_POWERS,
+	};
+}
+
+// finalizeCompiled(): der BILLIGE Rest, läuft auf dem Main-Thread. Baut aus
+// den rein-numerischen Daten von compileSystemData() die Closures
+// (buildTickTimeMapping/buildMonotoneSpline/buildDampedFilterBundle) auf
+// bereits vorverdichteten Checkpoint-Arrays - schnell genug, darf auf dem
+// Main-Thread passieren. Liefert exakt dieselbe Form wie das alte
+// compileSystem().
+export function finalizeCompiled(data) {
+	const {
+		axes,
+		TOTAL_STEPS,
+		bank_pieces,
+		render_pipeline,
+		GLOBAL_N_ARR,
+		P_FINAL,
+		GLOBAL_SHELL_START,
+		tickTimePairs,
+		auto_zoom_checkpoints,
+		eventTimesTicks,
+		compaction_waypoints,
+		compactionEnabled,
+		zoomSpeedCoef,
+		local_max_time,
+		BANK_ZOOM_THRESHOLD_POWERS,
+	} = data;
+
 	// bank-core.js zählt Entnahmen nur als monotonen Integer-Tick (siehe
 	// Kommentar oben in bank-core.js, TEIL 3). Die bijektive Abbildung
 	// übersetzt jeden Tick zurück in die kontinuierliche Animationszeit
@@ -168,10 +266,7 @@ export function compileSystem(config) {
 	// isolierten Mini-Rampe zwischen "toten" Haltepunkten macht. Die
 	// Sichtbarkeits-Garantie bleibt dabei erhalten (siehe
 	// smoothing.test.js/auto-zoom-visibility.test.js).
-	let GLOBAL_AUTO_ZOOM_CHECKPOINTS = [];
-	for (let S = 0; S < TOTAL_STEPS; S++) {
-		GLOBAL_AUTO_ZOOM_CHECKPOINTS.push({ t: shell_start_time[S], exp: axes[S].exp });
-	}
+	let GLOBAL_AUTO_ZOOM_CHECKPOINTS = auto_zoom_checkpoints;
 	let GLOBAL_AUTO_ZOOM_SPLINE = buildMonotoneSpline(
 		GLOBAL_AUTO_ZOOM_CHECKPOINTS.map((c) => ({ t: c.t, v: c.exp })),
 		{ onlyChanges: true },
@@ -198,21 +293,9 @@ export function compileSystem(config) {
 	// Startzustand (volles [0,1]-Quadrat) ist damit exakt 1.0, nachweislich
 	// der garantierte MINIMALE Zoom über die gesamte Laufzeit.
 	const ZOOM_MARGIN = 0;
-	const MAX_CHECKPOINTS = 400;
 
-	let eventTimesSet = new Set([0]);
-	for (let p of bank_pieces) {
-		if (isFinite(p.taken_time)) eventTimesSet.add(p.taken_time);
-	}
-	eventTimesSet.add(local_max_time);
-	let eventTimes = Array.from(eventTimesSet).sort((a, b) => a - b);
-	if (eventTimes.length > MAX_CHECKPOINTS) {
-		let sampled = [];
-		for (let i = 0; i < MAX_CHECKPOINTS; i++) {
-			sampled.push(eventTimes[Math.floor((i * (eventTimes.length - 1)) / (MAX_CHECKPOINTS - 1))]);
-		}
-		eventTimes = Array.from(new Set(sampled));
-	}
+	// eventTimes sind jetzt echte Zeit-Werte (Tick -> Zeit via ttm).
+	let eventTimes = eventTimesTicks.map((tk) => ttm.tickToTime(tk));
 
 	// PATCH V35: Zoom-Schwellwert aus dem Algorithmus-Spiel-Tool
 	// übernommen. Stücke, die mehr als BANK_ZOOM_THRESHOLD_POWERS Potenzen
@@ -290,13 +373,7 @@ export function compileSystem(config) {
 		// Voraussetzung") - Default hier niedriger als der Bibliotheks-
 		// Default in bank-core.js (weniger Wartezeit bis eine Lücke
 		// sichtbar schließt).
-		let transitionTicks = compactionTransitionTicks;
-		if (!(transitionTicks >= 0)) transitionTicks = 3;
-		GLOBAL_COMPACTION_WAYPOINTS = computeCompactionWaypoints(
-			bank_pieces,
-			local_max_time,
-			transitionTicks,
-		);
+		GLOBAL_COMPACTION_WAYPOINTS = compaction_waypoints;
 		// Schnell/exakt: "wo steht jedes Stück im kompaktierten Layout"
 		// (computeSegmentBlend()-basiert, für die Nichtüberlappungs-
 		// Garantie - siehe bank-core.js).
@@ -319,9 +396,9 @@ export function compileSystem(config) {
 		TOTAL_STEPS,
 		bank_pieces,
 		render_pipeline,
-		GLOBAL_N_ARR: n_arr,
+		GLOBAL_N_ARR,
 		P_FINAL,
-		GLOBAL_SHELL_START: shell_start_time,
+		GLOBAL_SHELL_START,
 		GLOBAL_TTM: ttm,
 		GLOBAL_AUTO_ZOOM_CHECKPOINTS,
 		GLOBAL_AUTO_ZOOM_SPLINE,
@@ -334,6 +411,12 @@ export function compileSystem(config) {
 		GLOBAL_COMPACTION_FIT_SPLINE,
 		MAX_TIME: local_max_time,
 	};
+}
+
+// Kompatibilitäts-Wrapper: behält das alte Verhalten 1:1 bei (Node-Kontext
+// ohne Worker, Fallback, bestehende Tests).
+export function compileSystem(config) {
+	return finalizeCompiled(compileSystemData(config));
 }
 
 // Laufende Seitenlänge l zur Zeit `time`, DIREKT aus der Simulation

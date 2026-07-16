@@ -42,6 +42,7 @@
 		let time = $playbackStore.time;
 		let nmax = $configStore.depth;
 		let arr = new Array(Math.min(2 * nmax + 1, 50)).fill(0);
+		if (!c) return arr;
 		for (let p of c.bank_pieces) {
 			if (p.k < arr.length && time >= p.born_time && time < p.cut_time && time < p.taken_time)
 				arr[p.k]++;

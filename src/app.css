@@ -286,6 +286,37 @@ select {
 	font-size: 0.9em;
 	display: none;
 }
+.error-msg:not(:empty) {
+	display: block;
+}
+
+/* Compile-Progress (ASYNC-COMPILE-PLAN, Schritt 6): dünner indeterminierter
+   Balken, der nur erscheint wenn compileStatusStore.state === 'compiling'
+   UND die 300ms-Schwelle überschritten ist. */
+.compile-progress {
+	position: fixed;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 3px;
+	background: rgba(255, 255, 255, 0.06);
+	z-index: 50;
+	pointer-events: none;
+}
+.compile-progress-bar {
+	height: 100%;
+	width: 40%;
+	background: #3b82f6;
+	animation: compile-progress-slide 1.1s ease-in-out infinite;
+}
+@keyframes compile-progress-slide {
+	0% {
+		transform: translateX(-100%);
+	}
+	100% {
+		transform: translateX(350%);
+	}
+}
 .zoom-readout {
 	color: #3b82f6;
 	font-weight: bold;

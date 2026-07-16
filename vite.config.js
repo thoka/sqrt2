@@ -31,7 +31,7 @@ export default defineConfig({
 		rollupOptions: {
 			input: {
 				main: resolve(import.meta.dirname, 'index.html'),
-				remoteControl: resolve(import.meta.dirname, 'remote-control.html'),
+				remoteControl: resolve(import.meta.dirname, 'remote.html'),
 			},
 		},
 	},

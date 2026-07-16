@@ -8,7 +8,7 @@
 	import { get } from 'svelte/store';
 	import { mount } from 'svelte';
 
-	import { configStore, playbackStore, compiledStore } from './lib/stores.js';
+	import { configStore, playbackStore, compiledStore, compileStatusStore } from './lib/stores.js';
 	import { displayStore } from './lib/displayStore.js';
 	import { parseConfigFromUrl, parsePlaybackFromUrl } from './lib/urlState.js';
 	import { initSync } from './lib/syncedStore.js';
@@ -26,6 +26,27 @@
 
 	let u_time = 0.0;
 	let current_hud_hash = '';
+
+	// === Progress-Anzeige (ASYNC-COMPILE-PLAN, Schritt 6) ===
+	// Erscheint erst nach einer kurzen Schwelle (300 ms), damit schnelle
+	// Compiles (depth klein) keinen flüchtigen Balken zeigen. Treibt sich
+	// rein aus compileStatusStore - kein Rechenaufwand, kein Eingriff in
+	// bank-core.js.
+	const PROGRESS_THRESHOLD_MS = 300;
+	let showProgress = $state(false);
+	let compileError = $state(null);
+	let progressTimer = null;
+	compileStatusStore.subscribe((s) => {
+		clearTimeout(progressTimer);
+		if (s.state === 'compiling') {
+			progressTimer = setTimeout(() => {
+				showProgress = true;
+			}, PROGRESS_THRESHOLD_MS);
+		} else {
+			showProgress = false;
+		}
+		compileError = s.error || null;
+	});
 
 	// === Zahlentafel (l/l²/R) ===
 
@@ -135,10 +156,27 @@
 		// Komponenten mounten (ControlPanel/PlaybackBar lesen sie direkt).
 		const URL_PARAMS = new URLSearchParams(window.location.search);
 		configStore.update((c) => ({ ...c, ...parseConfigFromUrl(URL_PARAMS) }));
-		playbackStore.update((p) => ({
-			...p,
-			...parsePlaybackFromUrl(URL_PARAMS, get(compiledStore)),
-		}));
+		// playback `time`/`tick` hängen am kompilierten Zustand (MAX_TIME/
+		// GLOBAL_TTM). compiledStore ist asynchron (Compile-Worker) - beim
+		// Mount ggf. noch null. Sobald der erste Compile vorliegt, holen wir
+		// time/tick aus der URL nach (einmalig).
+		if (get(compiledStore)) {
+			playbackStore.update((p) => ({
+				...p,
+				...parsePlaybackFromUrl(URL_PARAMS, get(compiledStore)),
+			}));
+		} else {
+			let applied = false;
+			const unsub = compiledStore.subscribe((compiled) => {
+				if (applied || !compiled) return;
+				applied = true;
+				playbackStore.update((p) => ({
+					...p,
+					...parsePlaybackFromUrl(URL_PARAMS, compiled),
+				}));
+				unsub();
+			});
+		}
 
 		// Kind-Komponenten in die Skeleton-Divs mounten.
 		mount(ControlPanel, { target: document.getElementById('controlPanelMount') });
@@ -200,9 +238,15 @@
 <div class="overlay-panel" id="restGridPanel"><div id="restGridMount"></div></div>
 
 <div class="overlay-panel" id="settingsPanel">
-	<div class="error-msg" id="errorMsg"></div>
+	<div class="error-msg" id="errorMsg">{compileError ?? ''}</div>
 	<div id="controlPanelMount"></div>
 </div>
+
+{#if showProgress}
+	<div class="compile-progress" aria-hidden="true">
+		<div class="compile-progress-bar"></div>
+	</div>
+{/if}
 
 <div id="bottomBar">
 	<div id="playbackBarMount"></div>

@@ -111,6 +111,13 @@
 			ANIM_SPEED = c.playSpeed;
 
 			let compiled = get(compiledStore);
+			if (!compiled) {
+				// Asynchroner Compile (compileOrchestrator) noch nicht fertig:
+				// config-Felder sind gesetzt, aber die kompilierten Daten
+				// fehlen noch. Wir warten auf den nächsten applyConfig-Aufruf
+				// (der per compiledStore-Update erfolgt), kein Fehler.
+				return;
+			}
 			axes = compiled.axes;
 			TOTAL_STEPS = compiled.TOTAL_STEPS;
 			bank_pieces = compiled.bank_pieces;
@@ -503,9 +510,15 @@
 		resizeCanvas();
 		const unsubC = configStore.subscribe(applyConfig);
 		const unsubP = playbackStore.subscribe(applyPlayback);
+		// compiledStore (asynchroner Compile): sobald ein neuer, fertiger
+		// Compile vorliegt, muss applyConfig erneut laufen, um die
+		// gerenderten Felder (axes/bank_pieces/...) zu übernehmen - der
+		// Worker liefert sonst keinen Trigger über configStore.
+		const unsubCompiled = compiledStore.subscribe(() => applyConfig(get(configStore)));
 		return () => {
 			unsubC();
 			unsubP();
+			unsubCompiled();
 			window.removeEventListener('resize', resizeCanvas);
 		};
 	});

@@ -55,7 +55,7 @@
 	let tickEl = $state(undefined);
 	let tickFocused = $state(false);
 	$effect(() => {
-		let ttm = $compiledStore.GLOBAL_TTM;
+		let ttm = $compiledStore?.GLOBAL_TTM;
 		let t = $playbackStore.time;
 		if (ttm && tickEl && !tickFocused) tickEl.value = Math.round(ttm.timeToTick(t));
 	});
@@ -257,9 +257,9 @@
 <hr style="border: 1px solid #334155; margin: 10px 0;" />
 
 <label class="control-group"
-	>Tick (Vergleich mit Test-Tool) — {$compiledStore.GLOBAL_TTM
+	>Tick (Vergleich mit Test-Tool) — {$compiledStore?.GLOBAL_TTM
 		? $compiledStore.GLOBAL_TTM.timeToTick($playbackStore.time).toFixed(2)
-		: 0} / {$compiledStore.GLOBAL_TTM ? $compiledStore.GLOBAL_TTM.maxTick : 0}
+		: 0} / {$compiledStore?.GLOBAL_TTM ? $compiledStore.GLOBAL_TTM.maxTick : 0}
 	<input
 		bind:this={tickEl}
 		type="number"

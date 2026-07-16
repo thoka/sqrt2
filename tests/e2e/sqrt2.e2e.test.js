@@ -181,7 +181,7 @@ test('Zwei Tabs bleiben synchron (BroadcastChannel)', async ({ context }) => {
 	const pageA = await context.newPage();
 	const pageB = await context.newPage();
 	await pageA.goto('/');
-	await pageB.goto('/remote-control.html');
+	await pageB.goto('/remote.html');
 
 	// config: Basis im Haupttool ändern -> Fernsteuerung übernimmt.
 	const baseA = pageA.locator('#controlPanelMount input[type="number"]').first();
@@ -204,14 +204,16 @@ test('Zwei Tabs bleiben synchron (BroadcastChannel)', async ({ context }) => {
 // ausgeliefert, unbekannte/clean-URLs antworten mit 404 - KEIN
 // SPA-Fallback, der stumm index.html für alle Pfade serviert.
 // Prüft rohe HTTP-Status über das request-Fixture (kein Seiten-Navigation).
-test('Routing: / und /remote-control.html ok, unbekannte Pfade 404', async ({ request }) => {
+test('Routing: / und /remote.html ok, unbekannte Pfade 404', async ({ request, page }) => {
 	const main = await request.get('/');
 	expect(main.status()).toBe(200);
-	expect(await main.title()).toContain('Flächenmodell');
+	await page.goto('/');
+	expect(await page.title()).toContain('Flächenmodell');
 
-	const remote = await request.get('/remote-control.html');
+	const remote = await request.get('/remote.html');
 	expect(remote.status()).toBe(200);
-	expect(await remote.title()).toContain('Fernsteuerung');
+	await page.goto('/remote.html');
+	expect(await page.title()).toContain('Fernsteuerung');
 
 	// Unbekannter Pfad (clean URL ohne .html) darf NICHT auf index.html
 	// umgeleitet werden - das wäre der alte SPA-Fallback-Bug.

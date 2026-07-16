@@ -22,7 +22,7 @@
 	}
 
 	let pct = $derived(
-		$compiledStore.MAX_TIME > 0 ? ($playbackStore.time / $compiledStore.MAX_TIME) * 100 : 0,
+		$compiledStore?.MAX_TIME > 0 ? ($playbackStore.time / $compiledStore.MAX_TIME) * 100 : 0,
 	);
 </script>
 
@@ -33,14 +33,14 @@
 	type="range"
 	id="timeSlider"
 	min="0"
-	max={$compiledStore.MAX_TIME}
+	max={$compiledStore?.MAX_TIME ?? 0}
 	step="0.01"
 	value={$playbackStore.time}
 	oninput={onSliderInput}
 	style="background-image: linear-gradient(to right, #fff {pct}%, transparent {pct}%);"
 />
 <span id="timeReadout">
-	{#if $compiledStore.GLOBAL_TTM}
+	{#if $compiledStore?.GLOBAL_TTM}
 		{$playbackStore.time.toFixed(1)} · {Math.round(
 			$compiledStore.GLOBAL_TTM.timeToTick($playbackStore.time),
 		)}/{$compiledStore.GLOBAL_TTM.maxTick}
