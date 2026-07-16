@@ -62,33 +62,39 @@
 		if (!compiled || !compiled.axes) return;
 		const BASE = get(configStore).base;
 
-		// Laufende Seitenlänge l: direkt aus der Simulation abgeleitet
-		// (l = sqrt(2 - Rest der sichtbaren Bank-Flächen)), stetig wachsend.
-		// N = round(l * BASE^m) ist die laufende Zahl im Stellenraum.
-		let { N, m: current_m } = computeLiveL(compiled, time, BASE);
+		// Laufende Seitenlänge l und Rest R: EXAKT aus der Simulation
+		// abgelesen (keine Wurzel, keine eigene Umrechnung). l = N_l/GRID
+		// ist eine Treppenfunktion über abgeschlossene Schalen, R = N_R/
+		// AREA_SCALE die direkte Zählung des Rests. l² = N_l²/GRID².
+		let { N_l, N_R, GRID, AREA_SCALE } = computeLiveL(compiled, time, BASE);
 
-		// === EXAKTE BIGINT-MATHEMATIK (aus N, der gerundeten laufenden Zahl) ===
+		// Nachkommastellen: l hat N_MAX Stellen (GRID = BASE^N_MAX),
+		// l²/R haben K_MAX Stellen (AREA_SCALE = BASE^K_MAX).
+		let m = GRID.toString(BASE).length - 1; // = N_MAX
+		let kmax = AREA_SCALE.toString(BASE).length - 1; // = K_MAX
 
-		// Seitenlänge P
-		let P_str = N.toString(BASE).toUpperCase();
-		if (current_m > 0) P_str = P_str.slice(0, 1) + '.' + P_str.slice(1);
+		// === EXAKTE BIGINT-MATHEMATIK (aus N_l/N_R, direkt aus der Simulation) ===
 
-		// Fläche P^2
-		let P2 = N * N;
+		// Seitenlänge P = N_l / GRID
+		let P_str = N_l.toString(BASE).toUpperCase();
+		if (m > 0) P_str = '0'.repeat(Math.max(0, m + 1 - P_str.length)) + P_str;
+		if (m > 0) P_str = P_str.slice(0, P_str.length - m) + '.' + P_str.slice(P_str.length - m);
+
+		// Fläche P^2 = N_l^2 / GRID^2
+		let P2 = N_l * N_l;
 		let P2_str = P2.toString(BASE).toUpperCase();
-		if (current_m > 0) {
-			let intPart = P2_str.slice(0, P2_str.length - 2 * current_m);
-			if (!intPart) intPart = '0';
-			let fracPart = P2_str.slice(-2 * current_m).padStart(2 * current_m, '0');
-			P2_str = intPart + '.' + fracPart;
+		if (m > 0) {
+			let digits = 2 * m;
+			P2_str = '0'.repeat(Math.max(0, digits + 1 - P2_str.length)) + P2_str;
+			P2_str = P2_str.slice(0, P2_str.length - digits) + '.' + P2_str.slice(P2_str.length - digits);
 		}
 
-		// Rest 2 - P^2 (die mathematische '2' als BigInt, verschoben um 2*m Stellen)
-		let two_scaled = 2n * BigInt(BASE) ** BigInt(2 * current_m);
-		let rem = two_scaled - P2;
-		let rem_str = rem.toString(BASE).toUpperCase();
-		if (current_m > 0) {
-			rem_str = '0.' + rem_str.padStart(2 * current_m, '0');
+		// Rest R = N_R / AREA_SCALE (= 2 - l², aber hier direkt gezählt)
+		let rem_str = N_R.toString(BASE).toUpperCase();
+		if (kmax > 0) {
+			rem_str = '0'.repeat(Math.max(0, kmax + 1 - rem_str.length)) + rem_str;
+			rem_str =
+				rem_str.slice(0, rem_str.length - kmax) + '.' + rem_str.slice(rem_str.length - kmax);
 		}
 
 		// Hängende Nullen abschneiden: die letzte Ziffer soll nie eine 0 sein

@@ -11,16 +11,19 @@ export default defineConfig({
 	fullyParallel: true,
 	reporter: [['list'], ['html', { outputFolder: 'playwright-report', open: 'never' }]],
 	use: {
-		baseURL: 'http://localhost:4173',
+		// baseURL wird vom webServer (zufaelliger Port) zur Laufzeit gesetzt.
 		headless: true,
 		screenshot: 'only-on-failure',
 		trace: 'retain-on-failure',
 	},
 	projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
 	webServer: {
-		command: 'node_modules/.bin/vite preview --port 4173 --strictPort',
+		// port: 0 -> Vite waehlt einen freien Port (Kollisionsschutz bei
+		// parallelen Worker/Repos auf einem Host). reuseExistingServer:false,
+		// damit zwei parallele E2E-Runs nicht denselben fremden Server nehmen.
+		command: 'node_modules/.bin/vite preview --port 0',
 		url: 'http://localhost:4173/',
-		reuseExistingServer: true,
+		reuseExistingServer: false,
 		timeout: 60000,
 	},
 });

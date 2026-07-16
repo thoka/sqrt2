@@ -121,7 +121,7 @@ cmd_config() {
 
   cat >"$ENVFILE" <<EOF
 # Automatisch erzeugt durch setup-tailscale.sh config
-PORT=8080
+PORT=$PORT
 API_KEYS=$api
 MAX_SEATS_DEFAULT=$seats
 TOKEN_TTL_DEFAULT=$ttl

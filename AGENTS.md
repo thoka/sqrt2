@@ -85,21 +85,38 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
    `docker compose -f deploy/docker-compose.yml up`; Admin-Key beim 1. Start auf Console (persistent
    `/data`); TLS via `tailscale cert` → `TLS_CERT`/`TLS_KEY`. Spec:
    `docs/CONNECTION_SERVICE_SPEC.md`.
+7. **pnpm 11.13 esbuild-Bug:** `onlyBuiltDependencies` wird bei der
+   *Ausführung* ignoriert → `pnpm install` exitet 1 (`ERR_PNPM_IGNORED_BUILDS`).
+   Fix steht in `pnpm-workspace.yaml`: `allowBuilds: { esbuild: true }`.
+   Nicht zurück zu `onlyBuiltDependencies` ändern.
+8. **GitHub Pages = Branch-Deploy (`gh-pages`, legacy), KEIN CI.** pnpm-Bug
+   (s.o.) ließ den Actions-Workflow dauerhaft fehlschlagen. Neuer Stand via
+   `GITHUB_PAGES=true pnpm build` + `./scripts/deploy-pages.sh`. Live:
+   `https://thoka.github.io/sqrt2/`.
 
 ## Stolpersteine (nur diese Sandbox)
 
 - `mise trust mise.toml` einmalig (sonst wird `[env]`-PATH ignoriert).
 - **npm blockiert:** `scripts/bin/npm` gibt Fehler aus; `.envrc` blendet
   `scripts/bin` per `PATH_add` ein (Shell-Funktionen reichen nicht).
-- **E2E stale dist:** `playwright.config.js` nutzt `reuseExistingServer:true`;
-  laufender `vite preview` serviert alten Build → `remote-control.html` als
-  404. Vor `pnpm test:e2e` Rebuild + `scripts/serve.sh stop`.
+- **E2E stale dist:** `playwright.config.js` nutzt jetzt `port: 0`
+  (zufällig) + `reuseExistingServer:false`; trotzdem vor `pnpm test:e2e`
+  frisch bauen (`pnpm build`), sonst testet Playwright gegen alten Stand.
 - **direnv zsh `emulate sh`:** in `.envrc` `mise hook-env` nutzen (nur
   `export`-Zeilen), nicht `mise activate`.
+- **Lokale Ports:** pro Klon einmalig `./scripts/init-local-ports.sh`
+  ausführen → `.ports.local.env` (gitignored) mit `RELAY_PORT`/`PORT`/
+  `DEV_PORT`. mise/direnv setzt sie automatisch im PATH. Mehrere Klone auf
+  einem Host kollidieren sonst (Vite 4173/5200, Relay 8080).
 - Vite bindet via `server.host:true` an 0.0.0.0: Windows/WSL unter
   `localhost`; Cross-Device via Tailscale (`<host>.<tailnet>.ts.net`).
 - Offene Reste: ungenutzte `GLOBAL_*` in `TargetBankCanvas.svelte` (nur
   ESLint-Warnungen); Phase 6 (Politur) offen.
+- **`tests/unit/compiler-split.test.js` hängt (Timeout 124):** die
+  Config-Matrix nutzt base 16 / depth 15 → Stückzahl explodiert (16^15),
+  schon im Original-Code reproduzierbar, NICHT durch eigene Änderungen
+  verursacht. Bei `node --test tests/unit/*.test.js` diese Datei ausschließen
+  (oder die Matrix deckeln), sonst blockiert die ganze Suite.
 
 ## Migration
 

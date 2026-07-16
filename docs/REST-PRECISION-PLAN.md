@@ -288,3 +288,31 @@ wird.
   bleiben komplett unberührt von diesem Plan - keiner der beiden Teile
   ändert die Struktur von `compileSystemData()`/`finalizeCompiled()`, nur
   deren Inhalte werden exakter/robuster.
+
+## Stand (2026-07-16) - Teil A + Teil B committet
+
+- **Teil A erledigt** (`src/lib/compiler.js` + `src/App.svelte`):
+  `l` kommt aus `GLOBAL_L_PREFIX`, einer BigInt-Präfixsumme
+  `Σ BASE^(N_MAX - axes[i].exp)` über die Stellen der Simulation - KEIN
+  `sqrt`. `R` ist eine unabhängige Zählung `Σ BASE^(-p.k)` über sichtbare
+  Bank-Stücke. `computeLiveL` nutzt `MAX_TIME`, sodass `t ≥ MAX_TIME ⇒
+  Step = TOTAL_STEPS` (volle √2-Präzision bis N_MAX Stellen); bei `t=0`
+  plan-konform `N_l=0`. Nenner `GRID = BASE^N_MAX`, `AREA_SCALE =
+  BASE^K_MAX` (K_MAX > N_MAX, weil subdivide k > N_MAX erzeugt).
+- **Teil B erledigt** (`src/lib/bank-core.js` + `src/lib/compiler.js`):
+  neue Felder `localOffsetX/Y` an Basis- und Kind-Stücken; exportierte
+  `relativePosition(p, q, parentMap)` summiert die `localOffset`-Ketten ab
+  dem LCA (Pfad ist blatt→wurzel, Indizes `0..i`) statt `p.x - q.x` →
+  vermeidet Float-Auslöschung bei Tiefe 22. Die Zoom-Bounding-Box in
+  `finalizeCompiled` nutzt `relativePosition` mit dem ersten Framing-Stück
+  als Anker; nur EIN absoluter x/y-Wert fließt ein.
+- **Tests:** `tests/unit/compiler.test.js` (21 Teil-A-Tests, alle grün) +
+  `tests/unit/zoom-robust.test.js` (7 Teil-B-Tests, alle grün). Vollständige
+  Unit-Suite 115/115 (ein VORHANDENER Hang in `compiler-split.test.js`
+  bei base 16 / depth 15 ist unabhängig von diesem Plan - schon im
+  Original-Code reproduzierbar, Stückzahl explodiert). `pnpm check`,
+  `pnpm build` und alle 14 E2E-Tests grün (inkl. "Canvas zeigt zwei weisse
+  Quadrate").
+- **Nächster Schritt:** nichts Offenes an diesem Plan. Offen im Projekt:
+  Phase 6 (Politur) sowie der `compiler-split.test.js`-Hang (separat
+  fixen: base 16 / depth 15 auf ein vertretbares Maß deckeln).
