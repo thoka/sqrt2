@@ -336,70 +336,50 @@ export function compileSystem(config) {
 	};
 }
 
-// Laufende Seitenlänge l zur Zeit `time` als BigInt im Stellenraum
-// (Basis BASE, `m` Nachkommastellen). Liefert exakt die Zahlentafel-Werte
-// l/l²/R, die bei JEDES vollendeten Schritt der Animation um eine Ziffer
-// mitwachsen:
+// Laufende Seitenlänge l zur Zeit `time`, DIREKT aus der Simulation
+// abgeleitet (keine eigene Ziffern-Umrechnung):
 //
-//   Anfang          -> l = 1
-//   Schale 1 fertig -> l = 1.1
-//   Schale 2 fertig -> l = 1.2
-//   ...
-//   letzte Schale der Stelle m fertig -> l = volle Stelle m (Ziffer n_arr[m])
+//   Die Bank (Einheitsquadrat) wird Stück für Stück entnommen. Die Summe der
+//   Flächen der JETZT sichtbaren Bank-Stücke ist der Rest R(t). Da das
+//   Ziel-Quadrat die Fläche 2 hat, gilt l(t)² = 2 - R(t), also
+//   l(t) = sqrt(2 - R(t)). Anfang (nichts entnommen): R=1 -> l=1. Ende
+//   (alles entnommen): R=0 -> l=sqrt(2). Dazwischen wächst l stetig mit
+//   jeder Entnahme - exakt die laufende Annäherung an sqrt(2).
 //
-// Mehrere aufeinanderfolgende Schalen (axes-Einträge) können zur SELBEN
-// Zahlstelle m gehören (axes[S].exp === m); die Ziffer n_arr[m] ist dann auf
-// diese K_m Schalen verteilt. Innerhalb einer Schale wächst die laufende
-// Ziffer stetig (anteilig zum Fortschritt der Schale), sodass l monoton und
-// stetig wächst - nicht erst bei der nächsten komplett gefüllten Stelle.
+// Für die Zahlentafel (Basis BASE) wird l als BigInt N = l * BASE^m gerundet,
+// wobei m die Anzahl der aktuell sichtbaren Nachkommastellen ist (die tiefste
+// Stelle, an der die Simulation noch arbeitet - aus den Achsen abgeleitet).
 //
-// Rückgabe: { N, m } mit N = l * BASE^m (BigInt). Höhere Stellen (>m) sind 0,
-// tiefere Stellen sind voll besetzt (n_arr[i]).
+// Rückgabe: { N, m, l } mit N = round(l * BASE^m) (BigInt), m = Nachkommastellen,
+// l = der float-Seitenlänge (zur Info/Tests).
 export function computeLiveL(compiled, time, BASE) {
-	const { axes, GLOBAL_N_ARR, GLOBAL_SHELL_START, TOTAL_STEPS, MAX_TIME } = compiled;
+	const { axes, bank_pieces, GLOBAL_SHELL_START, TOTAL_STEPS, MAX_TIME } = compiled;
 
-	// Höchste Schale S, deren Startzeit bereits erreicht ist.
+	// Rest R(t) = Summe der Flächen der gerade sichtbaren Bank-Stücke.
+	// Sichtbar: born_time <= t < cut_time UND t < taken_time ( noch nicht
+	// ins Ziel entnommen). Das partitioniert das Einheitsquadrat ohne
+	// Überlapp - die Summe startet bei 1 (nur Basisquadrat) und endet bei 0.
+	let R = 0;
+	for (let p of bank_pieces) {
+		if (time >= p.born_time && time < p.cut_time && time < p.taken_time) {
+			R += p.w * p.h;
+		}
+	}
+	let l = Math.sqrt(2 - R);
+	if (!isFinite(l) || l < 0) l = 0;
+
+	// Anzahl der Nachkommastellen m: tiefste Stelle, an der die Simulation
+	// noch arbeitet. Über die höchste Schale, deren Startzeit erreicht ist.
 	let Step = 0;
 	for (let S = 1; S < GLOBAL_SHELL_START.length; S++) {
 		if (time >= GLOBAL_SHELL_START[S]) Step = S;
 		else break;
 	}
 	if (TOTAL_STEPS > 0) Step = Math.max(0, Math.min(TOTAL_STEPS - 1, Step));
-
 	let m = axes[Step].exp;
 
-	// Block der Stelle m innerhalb von axes (zusammenhängende exp===m).
-	let firstS = Step;
-	while (firstS > 0 && axes[firstS - 1].exp === m) firstS--;
-	let K_m = 0;
-	while (firstS + K_m < axes.length && axes[firstS + K_m].exp === m) K_m++;
-	let idxInBlock = Step - firstS; // 0-basierter Index der laufenden Schale
+	// l als BigInt mit m Nachkommastellen (gerundet).
+	let N = BigInt(Math.round(l * Math.pow(BASE, m)));
 
-	// Anteiliger Fortschritt der laufenden Schale [0,1].
-	let t0 = GLOBAL_SHELL_START[Step];
-	let t1 = Step + 1 < TOTAL_STEPS ? GLOBAL_SHELL_START[Step + 1] : MAX_TIME;
-	let frac = t1 > t0 ? (time - t0) / (t1 - t0) : 1;
-	frac = Math.max(0, Math.min(1, frac));
-
-	// Wie viele Schalen der Stelle m sind (anteilig) erfüllt?
-	let completed = idxInBlock + frac;
-	let fullDigit = GLOBAL_N_ARR[m];
-	let liveDigit;
-	if (Step === 0) {
-		// Vor der ersten Schale ist das Basisquadrat (exp=0) bereits voll
-		// sichtbar - l startet bei 1, nicht bei 0.
-		liveDigit = fullDigit;
-	} else {
-		liveDigit = Math.round((fullDigit * completed) / K_m);
-		liveDigit = Math.max(0, Math.min(fullDigit, liveDigit));
-	}
-
-	// BigInt der laufenden Zahl: Stellen < m voll, Stelle m = liveDigit.
-	let N = 0n;
-	let baseBig = BigInt(BASE);
-	for (let i = 0; i <= m; i++) {
-		let d = i === m ? BigInt(liveDigit) : BigInt(GLOBAL_N_ARR[i]);
-		N = N * baseBig + d;
-	}
-	return { N, m };
+	return { N, m, l };
 }

@@ -28,15 +28,6 @@
 	let current_hud_hash = '';
 
 	// === Zahlentafel (l/l²/R) ===
-	// Step = höchste Schale S, deren Startzeit bereits erreicht ist.
-	function getShellStepAt(time, GLOBAL_SHELL_START, TOTAL_STEPS) {
-		let Step = 0;
-		for (let S = 1; S < GLOBAL_SHELL_START.length; S++) {
-			if (time >= GLOBAL_SHELL_START[S]) Step = S;
-			else break;
-		}
-		return Math.max(0, Math.min(TOTAL_STEPS - 1, Step));
-	}
 
 	function updateNumberPanelScale(numberPanel, numberPanelInner) {
 		numberPanelInner.style.transform = 'none';
@@ -50,19 +41,12 @@
 		if (!compiled || !compiled.axes) return;
 		const BASE = get(configStore).base;
 
-		// Laufende Seitenlänge l: wächst bei JEDER vollendeten Schale um eine
-		// Ziffer (1 -> 1.1 -> 1.2 -> ... -> 1.41 -> 1.411 -> ...) und ist
-		// innerhalb einer Schale stetig (anteilig). Liefert N = l * BASE^m.
+		// Laufende Seitenlänge l: direkt aus der Simulation abgeleitet
+		// (l = sqrt(2 - Rest der sichtbaren Bank-Flächen)), stetig wachsend.
+		// N = round(l * BASE^m) ist die laufende Zahl im Stellenraum.
 		let { N, m: current_m } = computeLiveL(compiled, time, BASE);
 
-		let Step = getShellStepAt(time, compiled.GLOBAL_SHELL_START, compiled.TOTAL_STEPS);
-		// Hash enthält nur Step + BASE: die Bank-Balken leben in <RestCounterBars>,
-		// diese Funktion rendert NUR die Zahlentafel l/l²/R.
-		let hash = Step + '_' + BASE;
-		if (hash === current_hud_hash) return;
-		current_hud_hash = hash;
-
-		// === EXAKTE BIGINT-MATHEMATIK ===
+		// === EXAKTE BIGINT-MATHEMATIK (aus N, der gerundeten laufenden Zahl) ===
 
 		// Seitenlänge P
 		let P_str = N.toString(BASE).toUpperCase();
@@ -79,12 +63,27 @@
 		}
 
 		// Rest 2 - P^2 (die mathematische '2' als BigInt, verschoben um 2*m Stellen)
-		let two_scaled = 2n * baseBig ** BigInt(2 * current_m);
+		let two_scaled = 2n * BigInt(BASE) ** BigInt(2 * current_m);
 		let rem = two_scaled - P2;
 		let rem_str = rem.toString(BASE).toUpperCase();
 		if (current_m > 0) {
 			rem_str = '0.' + rem_str.padStart(2 * current_m, '0');
 		}
+
+		// Hängende Nullen abschneiden: die letzte Ziffer soll nie eine 0 sein
+		// (z.B. 1.410 -> 1.41, 1.40 -> 1.4). Betrifft l, l² und R gleichermaßen.
+		const trimTrailing = (s) => (s.includes('.') ? s.replace(/\.?0+$/, '') : s);
+		P_str = trimTrailing(P_str);
+		P2_str = trimTrailing(P2_str);
+		rem_str = trimTrailing(rem_str);
+
+		// Hash über die tatsächlich angezeigten Werte: so wird die Zahlentafel
+		// bei JEDER sichtbaren Änderung neu geschrieben - auch beim Endzustand
+		// (letzte Schale fertig), wo computeLiveL die Zahl noch zur vollen
+		// Annäherung an sqrt(2) aufüllt.
+		let hash = P_str + '|' + P2_str + '|' + rem_str + '|' + BASE;
+		if (hash === current_hud_hash) return;
+		current_hud_hash = hash;
 
 		let lengthLabel = NUMBER_PANEL_VERBOSE ? '\\text{Länge } l' : 'l';
 		let areaLabel = NUMBER_PANEL_VERBOSE ? '\\text{Fläche } l^2' : 'l^2';

@@ -114,38 +114,21 @@ test('Kompaktierung mit ungültigem compactionTransitionTicks (NaN) fällt auf D
 	);
 });
 
-test('computeLiveL: l wächst stetig und nimmt bei jeder vollendeten Schale den nächsten Meilenstein an', () => {
-	// Gewünschtes Verhalten der Zahlentafel (Basis 10, Tiefe 3):
-	//   Anfang                          -> l = 1
-	//   Schale 1 fertig (exp=1, Ziffer 4) -> l = 1.1
-	//   Schale 2 fertig                 -> l = 1.2
-	//   Schale 3 fertig                 -> l = 1.3
-	//   Schale 4 fertig (Stelle 1 voll) -> l = 1.4
-	//   Schale 5 fertig (exp=2, Ziffer 1) -> l = 1.41
+test('computeLiveL: l ist die direkt aus der Simulation abgeleitete laufende Annäherung an sqrt(2)', () => {
+	// l(t) = sqrt(2 - R(t)), R = Summe der sichtbaren Bank-Flächen.
+	// Anfang (nichts entnommen): l = 1. Ende (alles entnommen): l = sqrt(2).
 	const r = compileSystem(BASE_CONFIG);
-	const expectedAtShellEnd = ['1', '1.1', '1.2', '1.3', '1.4', '1.41'];
-	// l als String zur Basis BASE mit `m` Nachkommastellen formatieren.
-	function fmt(N, m) {
-		let s = N.toString(10);
-		if (m === 0) return s;
-		s = s.padStart(m + 1, '0');
-		return s.slice(0, s.length - m) + '.' + s.slice(s.length - m);
-	}
-	// Anfang (vor erster Schale): l = 1
-	let start = computeLiveL(r, 0, 10);
-	assert.strictEqual(fmt(start.N, start.m), '1', 'Anfang muss l = 1 sein');
 
-	for (let S = 1; S < expectedAtShellEnd.length; S++) {
-		// Zeit kurz VOR dem Start der nächsten Schale = Ende von Schale S.
-		let nextStart = r.GLOBAL_SHELL_START[S + 1] ?? r.MAX_TIME;
-		let t = nextStart - 1e-6;
-		let { N, m } = computeLiveL(r, t, 10);
-		assert.strictEqual(
-			fmt(N, m),
-			expectedAtShellEnd[S],
-			`Schale ${S} fertig: l soll ${expectedAtShellEnd[S]} sein, war ${fmt(N, m)}`,
-		);
-	}
+	let start = computeLiveL(r, 0, 10);
+	assert.ok(Math.abs(start.l - 1) < 1e-9, `Anfang muss l = 1 sein, war ${start.l}`);
+	assert.strictEqual(start.m, 0, 'Anfang hat 0 Nachkommastellen');
+
+	let end = computeLiveL(r, r.MAX_TIME, 10);
+	assert.ok(Math.abs(end.l - Math.SQRT2) < 1e-3, `Ende muss ~sqrt(2) sein, war ${end.l}`);
+	// Die Ziffern des Endwerts entsprechen den echten sqrt(2)-Ziffern in
+	// Basis 10 (1.4142...), nicht einer künstlichen Ziffer-Sequenz.
+	let endDigits = end.N.toString(10);
+	assert.ok(endDigits.startsWith('1414'), `Endwert soll mit 1.414 beginnen, war ${endDigits}`);
 });
 
 test('computeLiveL: l ist über die gesamte Animation monoton wachsend (stetig)', () => {
@@ -154,13 +137,26 @@ test('computeLiveL: l ist über die gesamte Animation monoton wachsend (stetig)'
 	let prev = -Infinity;
 	for (let i = 0; i <= steps; i++) {
 		let t = (r.MAX_TIME * i) / steps;
-		let { N } = computeLiveL(r, t, 10);
-		// N ist l * BASE^m, also vergleichbar über die Zeit hinweg (m wächst
-		// nur, wenn N ohnehin mitwächst - durch padStart-Form nie kleiner).
+		let { l } = computeLiveL(r, t, 10);
 		assert.ok(
-			N >= prev,
-			`l bei t=${t.toFixed(2)} (${N}) darf nicht kleiner sein als vorher (${prev})`,
+			l >= prev - 1e-12,
+			`l bei t=${t.toFixed(2)} (${l}) darf nicht kleiner sein als vorher (${prev})`,
 		);
-		prev = N;
+		prev = l;
 	}
+});
+
+test('computeLiveL: mitwachsen bei jeder Entnahme (direkt aus den sichtbaren Stücken)', () => {
+	// Bei jeder zusätzlich entnommenen Schale muss l merklich gewachsen sein
+	// (stetig, nicht erst am Ende der nächsten Ziffer-Stelle).
+	const r = compileSystem(BASE_CONFIG);
+	let prevL = -Infinity;
+	let grew = 0;
+	for (let S = 1; S < r.TOTAL_STEPS; S++) {
+		let t = r.GLOBAL_SHELL_START[S];
+		let { l } = computeLiveL(r, t, 10);
+		if (l > prevL + 1e-6) grew++;
+		prevL = l;
+	}
+	assert.ok(grew >= r.TOTAL_STEPS - 3, `l sollte bei fast jeder Schale wachsen, grew=${grew}`);
 });
