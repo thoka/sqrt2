@@ -96,8 +96,6 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
   404. Vor `pnpm test:e2e` Rebuild + `scripts/serve.sh stop`.
 - **direnv zsh `emulate sh`:** in `.envrc` `mise hook-env` nutzen (nur
   `export`-Zeilen), nicht `mise activate`.
-- **`pkill`/Server-Stop:** hier kein `pkill` im PATH → `scripts/serve.sh
-  stop` (PID-Datei) statt `pkill -f "vite preview"`.
 - Vite bindet via `server.host:true` an 0.0.0.0: Windows/WSL unter
   `localhost`; Cross-Device via Tailscale (`<host>.<tailnet>.ts.net`).
 - Offene Reste: ungenutzte `GLOBAL_*` in `TargetBankCanvas.svelte` (nur
