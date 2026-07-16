@@ -72,7 +72,7 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
 6. **Connection-Service:** Relay als Bibliothek `createRelay()` in
    `server/relay/server.js`, embedded im Exponat-Server `server/index.js`
    (Statics + `/api`/`/ws`, ein Origin, kein CORS). Start: `pnpm serve` bzw.
-   `docker compose up`; Admin-Key beim 1. Start auf Console (persistent
+   `docker compose -f deploy/docker-compose.yml up`; Admin-Key beim 1. Start auf Console (persistent
    `/data`); TLS via `tailscale cert` → `TLS_CERT`/`TLS_KEY`. Spec:
    `docs/CONNECTION_SERVICE_SPEC.md`.
 

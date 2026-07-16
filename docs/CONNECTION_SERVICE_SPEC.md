@@ -175,7 +175,7 @@ Client → Server:
 
 ## 7. Deployment
 
-Siehe `docker-compose.yml`. Zwei Wege:
+Siehe `deploy/docker-compose.yml`. Zwei Wege:
 
 ### Variante A — Tailscale (empfohlen für Test & Intern)
 
@@ -200,7 +200,7 @@ erreichbar:
 
 Traefik ist damit **optional** (nur bei eigenem Domain-Stack); der
 `traefik`-Service im Compose trägt `profiles: ["edge"]` und startet nur mit
-`docker compose --profile edge up`.
+`docker compose -f deploy/docker-compose.yml --profile edge up`.
 
 ### Variante B — Traefik / eigene Domain
 
