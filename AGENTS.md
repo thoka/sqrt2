@@ -100,6 +100,11 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
   `localhost`; Cross-Device via Tailscale (`<host>.<tailnet>.ts.net`).
 - Offene Reste: ungenutzte `GLOBAL_*` in `TargetBankCanvas.svelte` (nur
   ESLint-Warnungen); Phase 6 (Politur) offen.
+- **`tests/unit/compiler-split.test.js` hängt (Timeout 124):** die
+  Config-Matrix nutzt base 16 / depth 15 → Stückzahl explodiert (16^15),
+  schon im Original-Code reproduzierbar, NICHT durch eigene Änderungen
+  verursacht. Bei `node --test tests/unit/*.test.js` diese Datei ausschließen
+  (oder die Matrix deckeln), sonst blockiert die ganze Suite.
 
 ## Migration
 
