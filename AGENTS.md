@@ -99,9 +99,16 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
 - `mise trust mise.toml` einmalig (sonst wird `[env]`-PATH ignoriert).
 - **npm blockiert:** `scripts/bin/npm` gibt Fehler aus; `.envrc` blendet
   `scripts/bin` per `PATH_add` ein (Shell-Funktionen reichen nicht).
-- **E2E stale dist:** `playwright.config.js` nutzt jetzt `port: 0`
-  (zufällig) + `reuseExistingServer:false`; trotzdem vor `pnpm test:e2e`
-  frisch bauen (`pnpm build`), sonst testet Playwright gegen alten Stand.
+- **E2E Server:** `playwright.config.js` nutzt `vite preview --port 4173
+  --strictPort` + `use.baseURL: http://localhost:4173/`. Vor `pnpm test:e2e`
+  IMMER frisch bauen (`pnpm build`), sonst testet Playwright gegen alten
+  Stand. (Früher `--port 0` + fehlende baseURL → Timeout/invalid URL.)
+- **Zoom/Präzision bei hoher Tiefe:** `p.x`/`p.y` (absolut) sind ab Tiefe ~15
+  durch Float-Auslöschung unzuverlässig (z.B. anchor.x = 7.5 statt 0.6). Die
+  Bank-Zoom-Bounding-Box baut daher KOMPLETT relativ zum Anker über
+  `localOffsetX/Y` (ganzzahlige Rasterindizes) + `relativePosition()` -
+  KEINE absoluten `p.x` im Zoom-Pfad verwenden. Siehe
+  `docs/REST-PRECISION-PLAN.md`.
 - **direnv zsh `emulate sh`:** in `.envrc` `mise hook-env` nutzen (nur
   `export`-Zeilen), nicht `mise activate`.
 - **Lokale Ports:** pro Klon einmalig `./scripts/init-local-ports.sh`
