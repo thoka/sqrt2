@@ -4,6 +4,13 @@ Teilplan zu `INTERFACE-TODO.md` ("Stattdessen: Neuberechnung asynchron und
 cancelbar (bei Wertänderung)"). Der einzige wirklich komplexe Punkt im
 Interface-Umbau - eigenes Dokument, eigene Testkriterien.
 
+**Verhältnis zu `docs/COMPILER-LAYERING-PLAN.md`:** dieser Plan behandelt
+das Symptom (Neuberechnung blockiert den Main-Thread), der Layering-Plan
+senkt die eigentlichen Kosten (Caching, inkrementelle Tiefe, Dual-Path-Zoom)
+und sollte zuerst umgesetzt werden - danach greift dieser Plan nur noch für
+die verbleibenden echten Neuberechnungen (structural changes, Tiefen-Neuland
+jenseits des Caches).
+
 ## Ist-Zustand (warum es überhaupt blockiert)
 
 `compiledStore = derived(configStore, ($config) => compileSystem($config))`

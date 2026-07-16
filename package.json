@@ -20,6 +20,10 @@
 		"format": "prettier --write .",
 		"format:check": "prettier --check ."
 	},
+	"lint-staged": {
+		"*.{js,svelte}": "eslint",
+		"*.{js,svelte,json,css,html}": "prettier --check"
+	},
 	"dependencies": {
 		"qrcode": "^1.5.4",
 		"ws": "^8.18.0"
@@ -34,6 +38,7 @@
 		"globals": "^15.15.0",
 		"jsdom": "^29.1.1",
 		"knip": "^5.88.1",
+		"lint-staged": "^17.0.8",
 		"prettier": "^3.9.5",
 		"prettier-plugin-svelte": "^3.5.2",
 		"svelte": "^5.56.5",
