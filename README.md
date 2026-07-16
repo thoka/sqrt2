@@ -3,14 +3,10 @@
 ## 1. Projektziel
 
 Interaktive Visualisierung von √2 als Beispiel einer irrationalen Zahl, für
-Science-Center/Schul-Kontext. Kernidee: √2 wird ziffernweise (digit-by-digit)
-über ein geometrisches Flächenmodell konstruiert (Montessori-Stil: "Papier
-schneiden und neu zusammenlegen"). Perspektivisch als Exponat mit
-QR-Code-Fernsteuerung und Mehrbildschirm-Betrieb gedacht (Ziel/Rest/Steuerung
-auf getrennten Displays) - die **Svelte-Migration** (austauschbare Rest-Widgets
-+ Store-Architektur) ist umgesetzt (Phasen 0-5, siehe `TOOLING_SPEC.md`).
-Die **Fernsteuerung** (Phase 5, `BroadcastChannel` + zweiter Vite-Entry) ist
-umgesetzt; Phase 6 (Politur) ist offen.
+Science-Center/Schul-Kontext. 
+Kernidee: √2 wird ziffernweise (digit-by-digit) über ein geometrisches Flächenmodell konstruiert (Montessori-Stil: "Papier schneiden und neu zusammenlegen"). 
+
+Steuerung über ein Gerät des Betrachtenden wird möglich sein.
 
 ## 2. Schnellstart: aktuellen Stand ausprobieren
 
@@ -51,7 +47,7 @@ pnpm test             # node --test *.test.js (reine Logik) UND vitest run (Svel
 | `sqrt2.html` | **Haupttool-Shell.** Mountet die Svelte-Komponenten und hält nur noch die Zahlentafel (`updateHUD`, l/l²/R), das `SETTINGS`-Array (URL-Sync) und die Playback-Brücke für die Zahlentafel. Das Canvas-Rendering selbst liegt seit Phase 4a in `TargetBankCanvas.svelte`. Enthält den *ausgelagerten* alten SYSTEM-C-Renderblock noch als toten Code (siehe `AGENTS.md`). | Funktionsfähig |
 | `selection_strategy_prototype.html` | **Algorithmus-Spiel-Tool.** Bank isoliert an echten Positionen, Tick-Zeitachse (1 Tick = 1 Entnahme), zum Testen von Auswahl-/Schneide-Strategien. | Funktionsfähig, im Browser getestet |
 | `p.html` | Referenz-Prototyp (Slot-basiertes Repacking, **verworfen**, nur als Vergleich). | historisch |
-| `src/lib/bank-core.js` | **Gemeinsame Bibliothek** (ES-Modul), von beiden HTML-Tools importiert: Bank-Algorithmus + Kompaktierung + bijektive Tick↔Zeit-Abbildung. | Fertig, in Node getestet |
+| `bank-core.js` | **Gemeinsame Bibliothek** (ES-Modul), von beiden HTML-Tools importiert: Bank-Algorithmus + Kompaktierung + bijektive Tick↔Zeit-Abbildung. | Fertig, in Node getestet |
 | `src/lib/smoothing.js` | **Gemeinsame Glättungs-Bibliothek** (3 Bausteine, siehe §6.1). | Fertig, persistent getestet |
 | `src/lib/compiler.js` | `compileSystem()` als reine Funktion (Config rein, kompilierter Zustand raus). | Fertig, `compiler.test.js` |
 | `src/lib/stores.js` | `configStore`/`playbackStore` (writable) + `compiledStore` (derived) + `displayStore` (lokaler UI-State, **nicht** synchronisiert). | Fertig |
@@ -74,19 +70,16 @@ nebeneinander (siehe `CLAUDE.md` "Svelte-Komponenten-Tests").
 
 ## 4. Grundkonzept der Konstruktion
 
-- √2 über den klassischen digit-by-digit-Algorithmus (P, R = 2-P² Iteration),
-  **exakt mit BigInt-Integer-Arithmetik** (nicht Float!) - sonst
-  Präzisionsverlust ab Tiefe ~8-9 durch `catastrophic cancellation`
-  (P² liegt sehr nah an 2).
+- √2 über den klassischen digit-by-digit-Algorithmus (P, R = 2-P² Iteration) 
 - Ein Einheitsquadrat wird rekursiv in `BASE` Streifen geschnitten (optional
   abwechselnd vertikal/horizontal je nach Parität von `k`); die Ziffern
   bestimmen, wie viele Streifen einer Größe verbraucht werden.
 - Zwei Bereiche: **Ziel** (wachsende √2-Quadrat aus Schalen/Gnomonen) und
-  **Bank/Rest** (übrig gebliebene Stücke).
+  **Rest** (übrig gebliebene Stücke).
 - **Modus B:** Regler für "hypothetische Basis b→1" - verzerrt NUR das Ziel
   (nicht die Bank), macht Stellenwert-Struktur sichtbar.
 
-## 5. Der validierte Bank-Algorithmus (Ergebnis langen Testens)
+## 5. Der validierte Bank-Algorithmus
 
 Beste Kombination (~75-86% Füllgrad, keine Kreuzungen):
 
@@ -190,15 +183,6 @@ Smoothstep statt linear umgestellt werden (noch nicht umgesetzt).
 ## 8. Auto-Zoom-Modus (Mindestbreite in Pixeln)
 
 Regler "Auto-Zoom: Mindestbreite feinste Stelle (Pixel, 0 = aus)".
-`getSmoothedAutoZoomExp(time)` via `buildMonotoneSpline()` durch die
-Schalen-Checkpoints (exakt, keine Verzögerung - behob ein echtes
-Sichtbarkeits-Problem). `computeAutoZoomTAB(thresholdPx, scale, targetExp)`:
-linearer Suchlauf über 200 Stützstellen (KEINE Bisektion - `widthAt(t_AB)`
-bildet bei kleinem `targetExp` einen Höcker, nicht nur eine Rampe).
-`effective_t_AB = Math.max(u_mode_AB, autoZoomTAB)` - "größerer Wert gewinnt",
-Modus-B-Regler selbst bleibt unter Nutzerkontrolle. Bekannte Rest-Einschränkung:
-ein winziger Ableitungsknick am exakten Einschalt-Moment (`t_AB=0` ist harte
-Domänen-Grenze).
 
 ## 9. Einstellungen & URL-Zustand (`SETTINGS`)
 
@@ -232,16 +216,7 @@ hartkodiertes `0.03`).
 - **Tiefe-Standardwert** im Haupttool (`3`) vs Test-Tool (`10`): weiterhin
   nicht synchronisiert (offene Entscheidung).
 
-## 11. Empfohlene nächste Schritte (Priorität)
+## 11. nächste Schritte
 
-1. ~~Test-Tool verifizieren~~ erledigt. 2. ~~Haupttool auf `bank-core.js`~~
-   erledigt. 3. ~~Kompaktierung ergänzen~~ erledigt (§6.2). 4. **Tiefe-
-   Standardwert klären** (offen). 5. ~~Gemeinsame Schalen-Orchestrierung
-   (`buildSystem(..., cellMode)`)~~ erledigt. 6. ~~Rück-Verschmelzung Z-Modus~~
-   nicht mehr reproduziert (Demo-Modus, §7). 7. **Z/R-Modi neu (C¹)** - eigenes
-   Thema. 8. ~~Auto-Zoom~~ erledigt (§8). 9. ~~Gemeinsame Glättungs-Bibliothek~~
-   erledigt (§6.1). 10. ~~Svelte-Migration + austauschbare Widgets~~ erledigt
-   (Phasen 0-4, `TOOLING_SPEC.md`). 11. ~~Fernsteuerung/Mehrbildschirm~~
-    erledigt (Phase 5 + embedded Relay, `docs/DEPLOYMENT.md`). 12. **Phase 6
-    „Politur"** (Widget-Auswahl-UI, `bank-core.js`/`smoothing.js` → `src/lib/`)
-    + **Tailscale/TLS** für echtes Handy — siehe `TODO.md`.
+- **Tailscale/TLS** für echtes Handy — siehe `TODO.md`.
+- (Widget-Auswahl )
