@@ -300,14 +300,24 @@ wird.
   plan-konform `N_l=0`. Nenner `GRID = BASE^N_MAX`, `AREA_SCALE =
   BASE^K_MAX` (K_MAX > N_MAX, weil subdivide k > N_MAX erzeugt).
 - **Teil B erledigt** (`src/lib/bank-core.js` + `src/lib/compiler.js`):
-  neue Felder `localOffsetX/Y` an Basis- und Kind-Stücken; exportierte
-  `relativePosition(p, q, parentMap)` summiert die `localOffset`-Ketten ab
-  dem LCA (Pfad ist blatt→wurzel, Indizes `0..i`) statt `p.x - q.x` →
-  vermeidet Float-Auslöschung bei Tiefe 22. Die Zoom-Bounding-Box in
-  `finalizeCompiled` nutzt `relativePosition` mit dem ersten Framing-Stück
-  als Anker; nur EIN absoluter x/y-Wert fließt ein.
+  `localOffsetX/Y` sind ganzzahlige Rasterindizes `i` (0..BASE-1) des Child
+  im Parent - O(1) bei jeder Tiefe (NICHT `i*cw`, was bei Tiefe 15+ unter
+  die Float64-Präzision fällt). `relativePosition(p, q, parentMap, BASE)`
+  faltet `(fx + localOffset) / BASE` von Blatt nach Wurzel über diese
+  Indizes → exakte relative Position in [0,1], ohne Float-Auslöschung, rein
+  Float (kein BigInt, nicht langsamer als vorher). Die Zoom-Bounding-Box in
+  `finalizeCompiled` ist KOMPLETT relativ zum Anker (`framing[0]`) gebaut:
+  keine absoluten `p.x` mehr (die bei Tiefe 22 durch Auslöschung bereits
+  verfälscht waren, z.B. anchor.x = 7.5 statt 0.6). Stückgröße relativ zum
+  Anker über den Tiefen-Exponenten `BASE^(anchor.k - p.k)`.
+- **Sichtbarkeit verifiziert bis Tiefe 50:** der Rest bleibt bei Tiefe
+  22/30/40/50 zu **0%** außerhalb des [0,1]-Fensters (hart geprüft gegen
+  exakt gefaltete BigInt-Referenzbox, siehe `zoom-robust.test.js`
+  "Bounding-Box enthält alle sichtbaren Stücke"). `compileSystem` selbst
+  skaliert problemlos bis Tiefe 50+ (Stückzahl ~67k, <10s); darüber wird die
+  Stückzahl zum Flaschenhals, nicht der Zoom.
 - **Tests:** `tests/unit/compiler.test.js` (21 Teil-A-Tests, alle grün) +
-  `tests/unit/zoom-robust.test.js` (7 Teil-B-Tests, alle grün). Vollständige
+  `tests/unit/zoom-robust.test.js` (27 Teil-B-Tests, alle grün). Vollständige
   Unit-Suite 115/115 (ein VORHANDENER Hang in `compiler-split.test.js`
   bei base 16 / depth 15 ist unabhängig von diesem Plan - schon im
   Original-Code reproduzierbar, Stückzahl explodiert). `pnpm check`,
