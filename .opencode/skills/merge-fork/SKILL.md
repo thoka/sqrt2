@@ -12,15 +12,18 @@ metadata:
 
 Wiederholbarer Bidirektionaler-Workflow: Code aus einem Fork von `sqrt2`
 zurückführen (Pull) oder dorthin spiegeln (Push) und danach die
-Projektdokumentation vereinheitlichen. `sqrt2` gilt dabei als **Kanon** für
-`CLAUDE.md` / `AGENTS.md` / `TOOLING_SPEC.md` — Fork-Doku wird daran
-angeglichen, nicht umgekehrt.
+Projektdokumentation vereinheitlichen.
+
+**Wichtig:** Bei echten Forks gibt es KEINEN Kanon. Beide Repos entwickeln an
+verschiedenen Stellen; der Skill erzwingt keine Richtung. Die Doku-Richtung
+wird **pro Merge explizit entschieden** (siehe Schritt 3) — es darf in beide
+Richtungen fließen, fork-spezifische Abschnitte bleiben erhalten.
 
 ## Wann
 
-- Ein Fork enthält Arbeit, die in `sqrt2` fehlt (Pull) oder umgekehrt (Push).
-- Nach dem Code-Merge ist die Doku im Fork/Quell-Repo gegen den sqrt2-Kanon
-  zu vereinheitlichen (Regeln, GOTCHAS, Phasen-Status).
+- Ein Fork enthält Arbeit, die im anderen Repo fehlt (Pull) oder umgekehrt (Push).
+- Nach dem Code-Merge ist die Doku zwischen beiden Repos abzugleichen
+  (Regeln, GOTCHAS, Phasen-Status) — Richtung bewusst wählen.
 - Vor einem Commit/PR, damit beide Repos konsistente Agentenregeln haben.
 
 ## 0. Vorbereitung
@@ -68,21 +71,22 @@ git push fork <branch>
 - **Nie force-push** auf geteilte Branches. Push nur auf Fork, nie auf
   upstream/main ohne expliziten Auftrag.
 
-## 3. Doku vereinheitlichen (sqrt2 = Kanon)
+## 3. Doku vereinheitlichen (Richtung pro Merge entscheiden)
 
-Nach dem Code-Merge die Dokumentation angleichen. Kanon-Quelle in sqrt2:
-`CLAUDE.md`, `AGENTS.md`, `TOOLING_SPEC.md`.
+Nach dem Code-Merge die Dokumentation abgleichen. **Kein Kanon** — bewusst
+entscheiden, welche Repo-Doku "Quelle" für welchen Abschnitt ist:
 
-- Fork-/Quell-Doku (`<fork-pfad>/AGENTS.md` etc.) gegen sqrt2-Kanon lesen:
-  - **Regeln** (Commit-Pflicht, Tests pro Stufe, Thread-Ökonomie, C¹-Smoothing,
-    Layout-Regeln, Zahlentafel-aus-Simulation) müssen identisch sein.
-  - **GOTCHAS** (compiledStore hat kein depth, derived-Caching, SETTINGS als
-    EIN Array, vite@7, Connection-Service embedded, E2E stale dist,
-    compiler-split.test.js Timeout) übernehmen.
-  - **Phasen-Status** in `TOOLING_SPEC.md` synchronisieren (Phasen 0-5 erledigt,
-    Phase 6 Politur offen).
-- Fork-spezifische Ergänzungen (eigene Themen des Forks) als separater
-  Abschnitt "Fork-spezifisch" belassen — Kanon nicht dadurch verwässern.
+- **Regeln** (Commit-Pflicht, Tests pro Stufe, Thread-Ökonomie, C¹-Smoothing,
+  Layout-Regeln, Zahlentafel-aus-Simulation): wo sie sich unterscheiden, die
+  weiter entwickelte Fassung übernehmen; beide Seiten danach identisch halten.
+- **GOTCHAS** (compiledStore hat kein depth, derived-Caching, SETTINGS als
+  EIN Array, vite@7, Connection-Service embedded, E2E stale dist,
+  compiler-split.test.js Timeout): union bilden — Einträge, die nur in einem
+  Repo stehen, in beide übernehmen.
+- **Phasen-Status** in `TOOLING_SPEC.md`: den fortgeschritteneren Stand
+  synchronisieren (Phasen 0-5 erledigt, Phase 6 Politur offen).
+- Fork-spezifische Ergänzungen (z.B. eigene Themen des Forks) als separater
+  Abschnitt "Fork-spezifisch" belassen — nicht gegenseitig verwässern.
 - README/CLAUDE.md/AGENTS.md sind laut skills.sh-Konvention wohldefinierte
   Repo-Dateien; Markdown-Linter für diese überspringen.
 
