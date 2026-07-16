@@ -14,3 +14,6 @@ package-lock.json
 data/
 .relay.pid
 .relay.log
+
+# Pro-Klon lokale Ports (von scripts/init-local-ports.sh)
+.ports.local.env

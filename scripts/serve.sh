@@ -30,7 +30,7 @@ stop_old() {
 
 case "$MODE" in
   dev)
-    PORT=5200
+    PORT="${DEV_PORT:-5200}"
     ARGS=(--port "$PORT")
     ;;
   preview)

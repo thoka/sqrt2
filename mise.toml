@@ -12,3 +12,9 @@ pnpm = "11"
 # der Shell-Umgebung aufgelöst.
 [env]
 _.path = ["$PWD/node_modules/.bin"]
+# Pro-Klon Ports (von scripts/init-local-ports.sh erzeugt, gitignored).
+# Ermoeglicht mehrere geklonte Repos/Worker auf einem Host ohne
+# Port-Kollision. Fallback auf Defaults, falls .ports.local.env fehlt.
+_.file = { path = ".ports.local.env", type = "dotenv" }
+RELAY_PORT = "{{env.RELAY_PORT or '8080'}}"
+PORT = "{{env.PORT or '4173'}}"
