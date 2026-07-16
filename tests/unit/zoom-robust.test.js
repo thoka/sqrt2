@@ -123,10 +123,10 @@ test('Sichtbarkeit im kompaktierten Raum: alle sichtbaren Stücke in [0,1] (Teil
 		for (const p of vis) {
 			const rr = lookup(p, t);
 			if (!rr) continue;
-			const x0 = (rr.x - aR.x) / aR.w;
-			const x1 = x0 + rr.w / aR.w;
-			const y0 = (rr.y - aR.y) / aR.h;
-			const y1 = y0 + rr.h / aR.h;
+			const x0 = rr.x - aR.x;
+			const x1 = x0 + rr.w;
+			const y0 = rr.y - aR.y;
+			const y1 = y0 + rr.h;
 			const sx0 = x0 * s.z + s.offsetX,
 				sx1 = x1 * s.z + s.offsetX;
 			const sy0 = y0 * s.z + s.offsetY,

@@ -453,11 +453,14 @@ export function finalizeCompiled(data) {
 		for (let p of visibleNow) {
 			let r = zoom_rect_lookup(p, t);
 			if (!r) continue;
-			// Relativ zum Anker im kompaktierten Raum (Anker sitzt bei 0,0).
-			let relW = anchorRect.w > 0 ? r.w / anchorRect.w : 1;
-			let relH = anchorRect.h > 0 ? r.h / anchorRect.h : 1;
-			let x0 = (r.x - anchorRect.x) / anchorRect.w;
-			let y0 = (r.y - anchorRect.y) / anchorRect.h;
+			// Kompaktierte Position relativ zum Anker (Anker bei 0,0).
+			// NICHT durch anchorRect.w teilen — im alten Code war relW in
+			// [0,1]-Einheiten (anchor hatte relW=1 via BASE^0), analog
+			// hier: Breite in kompaktierten Einheiten direkt verwenden.
+			let relW = r.w;
+			let relH = r.h;
+			let x0 = r.x - anchorRect.x;
+			let y0 = r.y - anchorRect.y;
 			let x1 = x0 + relW;
 			let y1 = y0 + relH;
 			if (x0 < minRelX) minRelX = x0;
