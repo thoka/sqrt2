@@ -1,0 +1,3 @@
+#!/bin/sh
+echo "npm ist in diesem Projekt deaktiviert. Bitte pnpm verwenden." >&2
+exit 1
