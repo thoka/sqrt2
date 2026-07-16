@@ -11,6 +11,41 @@ import {
 } from './bank-core.js';
 import { buildMonotoneSpline, buildDampedFilterBundle } from './smoothing.js';
 
+// TEIL B (REST-PRECISION-PLAN): robuste Differenz zweier Stück-Positionen
+// über den gemeinsamen Vorfahren. Statt der rohen, bereits gerundeten
+// Float64-x-Werte p.x - q.x (Auslöschung bei tief geschachtelten,
+// benachbarten Stücken) werden die kurzen, gutkonditionierten
+// localOffsetX/Y-Ketten vom tiefsten gemeinsamen Vorfahren aufsummiert.
+// parentMap: id -> piece. Reine Funktion, worker-tauglich (keine Closures).
+export function relativePosition(p, q, parentMap) {
+	// Pfad von p bzw. q zur Wurzel (inkl. localOffsetX/Y je Knoten).
+	let pathP = [];
+	for (let cur = p; cur; cur = parentMap.get(cur.parent_id)) pathP.push(cur);
+	let pathQ = [];
+	for (let cur = q; cur; cur = parentMap.get(cur.parent_id)) pathQ.push(cur);
+	// Gemeinsamen Vorfahren von unten (Wurzel = letztes Element) finden.
+	let i = pathP.length - 1,
+		j = pathQ.length - 1;
+	while (i >= 0 && j >= 0 && pathP[i].id === pathQ[j].id) {
+		i--;
+		j--;
+	}
+	// pathP/pathQ sind blatt->wurzel geordnet (path[0] = Blatt). i / j
+	// zeigen auf den tiefsten gemeinsamen Vorfahren (LCA) selbst; die Knoten
+	// UNTERHALB des LCA sind path[0..i] bzw. path[0..j].
+	let dx = 0,
+		dy = 0;
+	for (let k = 0; k <= i; k++) {
+		dx += pathP[k].localOffsetX;
+		dy += pathP[k].localOffsetY;
+	}
+	for (let k = 0; k <= j; k++) {
+		dx -= pathQ[k].localOffsetX;
+		dy -= pathQ[k].localOffsetY;
+	}
+	return { dx, dy };
+}
+
 // compileSystemData(): der TEURE, rein numerische Teil (worker-tauglich).
 // Liefert NUR Arrays/Zahlen/Plain-Objects - KEINE Funktionen/Closures, damit
 // der Rückgabewert per postMessage (structuredClone) in einen Web Worker
@@ -50,6 +85,38 @@ export function compileSystemData(config) {
 	// P_FINAL = Summe aller Achsen-Breiten (b^-exp) inkl. des Basisquadrats
 	// (exp=0) - exakt der Wert, den axes[axes.length-1].cumulative früher lieferte.
 	let P_FINAL = axes.reduce((sum, a) => sum + Math.pow(BASE, -a.exp), 0);
+
+	// EXAKTE Zahlentafel (Teil A des REST-PRECISION-PLANs): l/l²/R ohne
+	// Wurzel, direkt aus Ziffern-Zählung bzw. k-Feld der Bank-Stücke.
+	//
+	// Nenner:
+	//   GRID      = BASE^N_MAX  – Nenner von l (axes[i].exp <= N_MAX immer).
+	//   K_MAX     = max(p.k) über ALLE erzeugten Bank-Stücke – der Nenner
+	//               von R, ABGELEITET nach dem Bank-Lauf (nicht angenommen:
+	//               im subdivide-Modus treten Stücke mit k > N_MAX auf, z.B.
+	//               die Ecke k = exp(u)+exp(v) mit u,v bis N_MAX, oder
+	//               Rand-Zellen, die p.k+1 fordern).
+	//   AREA_SCALE = BASE^K_MAX – Nenner von R (und von hochskaliertem l²
+	//               zum Kreuzproben-Vergleich). AREA_SCALE ist ein exaktes
+	//               Vielfaches von GRID² (BASE^(K_MAX-2·N_MAX)), die
+	//               Skalierung für die Kreuzprobe ist also verlustfreie
+	//               Multiplikation, kein Rundungsverlust.
+	const GRID = BigInt(BASE) ** BigInt(N_MAX);
+	let K_MAX = 0;
+	for (let p of bank_pieces) if (p.k > K_MAX) K_MAX = p.k;
+	const AREA_SCALE = BigInt(BASE) ** BigInt(K_MAX);
+
+	// GLOBAL_L_PREFIX[S] = Σ_{i<S} BASE^(N_MAX - axes[i].exp), als BigInt.
+	// Eine Präfixsumme über die Achsen, ausgewertet bis zum letzten
+	// vollständig abgeschlossenen Schalenindex S (siehe computeLiveL()).
+	// Einmalig O(TOTAL_STEPS) BigInt-Additionen – NICHT in der heissen
+	// isolationScore-Schleife. Pro HUD-Update dann ein reiner Array-Lookup.
+	let GLOBAL_L_PREFIX = new Array(TOTAL_STEPS + 1).fill(0n);
+	let acc = 0n;
+	for (let i = 0; i < TOTAL_STEPS; i++) {
+		acc += GRID / BigInt(BASE) ** BigInt(axes[i].exp);
+		GLOBAL_L_PREFIX[i + 1] = acc;
+	}
 
 	let render_pipeline = [];
 	let tickTimePairs = [];
@@ -186,6 +253,10 @@ export function compileSystemData(config) {
 		render_pipeline,
 		GLOBAL_N_ARR: n_arr,
 		P_FINAL,
+		GLOBAL_L_PREFIX,
+		GRID,
+		K_MAX,
+		AREA_SCALE,
 		GLOBAL_SHELL_START: shell_start_time,
 		tickTimePairs,
 		auto_zoom_checkpoints,
@@ -215,6 +286,10 @@ export function finalizeCompiled(data) {
 		render_pipeline,
 		GLOBAL_N_ARR,
 		P_FINAL,
+		GLOBAL_L_PREFIX,
+		GRID,
+		K_MAX,
+		AREA_SCALE,
 		GLOBAL_SHELL_START,
 		tickTimePairs,
 		auto_zoom_checkpoints,
@@ -303,39 +378,60 @@ export function finalizeCompiled(data) {
 	// NICHT ins Zoom-Framing ein (werden aber weiter gezeichnet) -
 	// verhindert, dass ein einzelner winziger Einzelgänger den Zoom aufhält.
 	const kThresholdDiff = 2 * BANK_ZOOM_THRESHOLD_POWERS;
+
+	// TEIL B (REST-PRECISION-PLAN): robuste Bounding-Box via lokale
+	// Vorfahren-Rezentrierung. Bei Tiefe 22 kollabiert die Box aus rohen
+	// Float64-x-Werten (Auslöschung: zwei benachbarte, tief geschachtelte
+	// Stücke liegen innerhalb der ~15-17 signifikanten Stellen, ihr
+	// Differenz->0 -> halfW->0 -> z->Infinity/NaN). Rettung: statt
+	// p.x - q.x (zwei bereits gerundete O(1)-Werte) abzuziehen, wird die
+	// Differenz aus den kurzen, gutkonditionierten localOffsetX/Y-Ketten
+	// vom gemeinsamen Vorfahren aufsummiert (siehe relativePosition()).
+	const parentMap = new Map(bank_pieces.map((p) => [p.id, p]));
 	let bank_zoom_states = new Array(eventTimes.length);
 	for (let i = 0; i < eventTimes.length; i++) {
 		let t = eventTimes[i];
-		let minX = Infinity,
-			maxX = -Infinity,
-			minY = Infinity,
-			maxY = -Infinity,
-			found = false;
 		let area = 0;
 		let visibleNow = bank_pieces.filter(
 			(p) => t >= p.born_time && t < p.cut_time && t < p.taken_time,
 		);
 		let kMin = visibleNow.length > 0 ? Math.min(...visibleNow.map((p) => p.k)) : 0;
-		for (let p of visibleNow) {
-			area += p.w * p.h; // Fläche zählt IMMER, auch für ausgeblendete (nur fürs Framing irrelevant)
-			if (BANK_ZOOM_THRESHOLD_POWERS > 0 && p.k > kMin + kThresholdDiff) continue;
-			found = true;
-			if (p.x < minX) minX = p.x;
-			if (p.x + p.w > maxX) maxX = p.x + p.w;
-			if (p.y < minY) minY = p.y;
-			if (p.y + p.h > maxY) maxY = p.y + p.h;
+		// Nur die Stücke, die ins Framing einfließen (kThresholdDiff-Filter).
+		let framing = visibleNow.filter(
+			(p) => !(BANK_ZOOM_THRESHOLD_POWERS > 0 && p.k > kMin + kThresholdDiff),
+		);
+		if (framing.length === 0) {
+			bank_zoom_states[i] = { z: 1, cx: 0.5, cy: 0.5, offsetX: 0, offsetY: 0, area: 1 };
+			continue;
 		}
-		if (!found) {
-			minX = 0;
-			maxX = 1;
-			minY = 0;
-			maxY = 1;
-			area = 1;
+		// Anker = erstes Framing-Stück; alle anderen Positionen werden
+		// ROBUST relativ zu ihm (via localOffset-Ketten) bestimmt. Nur EIN
+		// absoluter x/y-Wert (der des Ankers) fließt ein - kein Abzug
+		// zweier gerundeter O(1)-Koordinaten.
+		let anchor = framing[0];
+		let minRelX = 0,
+			maxRelX = 0,
+			minRelY = 0,
+			maxRelY = 0;
+		for (let p of framing) {
+			area += p.w * p.h; // Fläche zählt IMMER (auch ausgeblendete), nur fürs Framing irrelevant
+			let rel = relativePosition(p, anchor, parentMap);
+			let x0 = rel.dx,
+				x1 = rel.dx + p.w;
+			let y0 = rel.dy,
+				y1 = rel.dy + p.h;
+			if (x0 < minRelX) minRelX = x0;
+			if (x1 > maxRelX) maxRelX = x1;
+			if (y0 < minRelY) minRelY = y0;
+			if (y1 > maxRelY) maxRelY = y1;
 		}
-		let cx = (minX + maxX) / 2,
-			cy = (minY + maxY) / 2;
-		let halfW = Math.max((maxX - minX) / 2, 1e-9) * (1 + ZOOM_MARGIN);
-		let halfH = Math.max((maxY - minY) / 2, 1e-9) * (1 + ZOOM_MARGIN);
+		let cx_frame = (minRelX + maxRelX) / 2;
+		let cy_frame = (minRelY + maxRelY) / 2;
+		// Absoluter Mittelpunkt: Anker-Position + robuster relativer Versatz.
+		let cx = anchor.x + cx_frame;
+		let cy = anchor.y + cy_frame;
+		let halfW = Math.max((maxRelX - minRelX) / 2, 1e-9) * (1 + ZOOM_MARGIN);
+		let halfH = Math.max((maxRelY - minRelY) / 2, 1e-9) * (1 + ZOOM_MARGIN);
 		let z = Math.min(0.5 / halfW, 0.5 / halfH);
 		let offsetX = 0.5 - cx * z,
 			offsetY = 0.5 - cy * z;
@@ -398,6 +494,10 @@ export function finalizeCompiled(data) {
 		render_pipeline,
 		GLOBAL_N_ARR,
 		P_FINAL,
+		GLOBAL_L_PREFIX,
+		GRID,
+		K_MAX,
+		AREA_SCALE,
 		GLOBAL_SHELL_START,
 		GLOBAL_TTM: ttm,
 		GLOBAL_AUTO_ZOOM_CHECKPOINTS,
@@ -410,6 +510,7 @@ export function finalizeCompiled(data) {
 		GLOBAL_COMPACTION_LOGICAL_LOOKUP,
 		GLOBAL_COMPACTION_FIT_SPLINE,
 		MAX_TIME: local_max_time,
+		BASE: data.BASE,
 	};
 }
 
@@ -419,50 +520,78 @@ export function compileSystem(config) {
 	return finalizeCompiled(compileSystemData(config));
 }
 
-// Laufende Seitenlänge l zur Zeit `time`, DIREKT aus der Simulation
-// abgeleitet (keine eigene Ziffern-Umrechnung):
+// Laufende Seitenlänge l und Rest R zur Zeit `time`, EXAKT ohne Wurzel
+// direkt aus der Simulation abgeleitet (Teil A des REST-PRECISION-PLANs).
+// Verstößt damit gegen die alte, falsche Herleitung (R aus Float-Flächen
+// summieren, dann l = sqrt(2-R) zurückschließen) - siehe AGENTS.md:
+// l wird aus den STELLEN der Simulation abgelesen, R aus der ZÄHLUNG des
+// Rests, beide unabhängig, keine eigene Umrechnung.
 //
-//   Die Bank (Einheitsquadrat) wird Stück für Stück entnommen. Die Summe der
-//   Flächen der JETZT sichtbaren Bank-Stücke ist der Rest R(t). Da das
-//   Ziel-Quadrat die Fläche 2 hat, gilt l(t)² = 2 - R(t), also
-//   l(t) = sqrt(2 - R(t)). Anfang (nichts entnommen): R=1 -> l=1. Ende
-//   (alles entnommen): R=0 -> l=sqrt(2). Dazwischen wächst l stetig mit
-//   jeder Entnahme - exakt die laufende Annäherung an sqrt(2).
+//   l(t)   = Σ_{i=0}^{Step-1} BASE^(-axes[i].exp)   (Präfixsumme über
+//             die Achsen bis zur letzten vollständig abgeschlossenen Schale
+//             Step - eine TREPPENFUNKTION über abgeschlossene Schalen, keine
+//             Interpolation). Als BigInt (mit Nenner GRID=BASE^N_MAX):
+//             N_l = GLOBAL_L_PREFIX[Step].
 //
-// Für die Zahlentafel (Basis BASE) wird l als BigInt N = l * BASE^m gerundet,
-// wobei m die Anzahl der aktuell sichtbaren Nachkommastellen ist (die tiefste
-// Stelle, an der die Simulation noch arbeitet - aus den Achsen abgeleitet).
+//   R(t)   = Σ BASE^(-p.k)  über alle zum Zeitpunkt t sichtbaren
+//             Bank-Stücke (gleicher Sichtbarkeits-Filter wie früher). Als
+//             BigInt (mit Nenner AREA_SCALE=BASE^K_MAX):
+//             N_R = Σ BASE^(K_MAX - p.k).
 //
-// Rückgabe: { N, m, l } mit N = round(l * BASE^m) (BigInt), m = Nachkommastellen,
-// l = der float-Seitenlänge (zur Info/Tests).
+// Beide Nenner und die Präfixsumme kommen aus compileSystemData() - hier
+// läuft NUR ein Array-Lookup (l) plus eine Summe über die sichtbaren
+// Stücke (R), O(sichtbare Stücke), NICHT die heisse isolationScore-Schleife.
+//
+// l² = N_l * N_l (exakte BigInt-Multiplikation) - sobald l exakt ist, ist
+// auch l² exakt. l und R werden UNABHÄNGIG berechnet (verschiedene
+// Quellen: axes-Präfix vs. p.k der sichtbaren Stücke) - die geometrische
+// Verwandtschaft (l² + 2·R ≈ 2 bis auf die Tiefen-Abschneidung der
+// letzten Ziffernstelle) ist damit ein scharfer Korrektheitstest, KEIN
+// Berechnungsweg für R (R wird NICHT als 2 - l² hergeleitet, was
+// AGENTS.md für R explizit ausschließt).
+//
+// Rückgabe: { N_l, N_R, GRID, AREA_SCALE, Step } - alles BigInt bis auf
+// Step (Schalenindex). Zur Info: l = N_l/GRID (float), l² = (N_l*N_l)/GRID².
 export function computeLiveL(compiled, time, BASE) {
-	const { axes, bank_pieces, GLOBAL_SHELL_START, TOTAL_STEPS, MAX_TIME } = compiled;
+	const {
+		GLOBAL_L_PREFIX,
+		GRID,
+		AREA_SCALE,
+		bank_pieces,
+		GLOBAL_SHELL_START,
+		K_MAX,
+		MAX_TIME,
+		BASE: BASE_OUT,
+	} = compiled;
 
-	// Rest R(t) = Summe der Flächen der gerade sichtbaren Bank-Stücke.
-	// Sichtbar: born_time <= t < cut_time UND t < taken_time ( noch nicht
-	// ins Ziel entnommen). Das partitioniert das Einheitsquadrat ohne
-	// Überlapp - die Summe startet bei 1 (nur Basisquadrat) und endet bei 0.
-	let R = 0;
-	for (let p of bank_pieces) {
-		if (time >= p.born_time && time < p.cut_time && time < p.taken_time) {
-			R += p.w * p.h;
-		}
-	}
-	let l = Math.sqrt(2 - R);
-	if (!isFinite(l) || l < 0) l = 0;
-
-	// Anzahl der Nachkommastellen m: tiefste Stelle, an der die Simulation
-	// noch arbeitet. Über die höchste Schale, deren Startzeit erreicht ist.
+	// Höchste Schale Step, deren Startzeit erreicht ist. Schale 0 startet bei
+	// t=0; jede Schale startet erst, wenn die vorige fertig ist - Schalen
+	// 0..Step-1 sind damit garantiert vollständig abgeschlossen.
+	// GLOBAL_L_PREFIX[Step] ist die exakte Präfixsumme bis dorthin.
+	// Am Animationsende (time >= MAX_TIME) ist die letzte Schale ebenfalls
+	// abgeschlossen -> Step = TOTAL_STEPS, die volle Präfixsumme
+	// (exakt sqrt(2) bis N_MAX Stellen, siehe Testkriterium 3).
 	let Step = 0;
 	for (let S = 1; S < GLOBAL_SHELL_START.length; S++) {
 		if (time >= GLOBAL_SHELL_START[S]) Step = S;
 		else break;
 	}
-	if (TOTAL_STEPS > 0) Step = Math.max(0, Math.min(TOTAL_STEPS - 1, Step));
-	let m = axes[Step].exp;
+	if (MAX_TIME !== undefined && time >= MAX_TIME) Step = GLOBAL_L_PREFIX.length - 1;
+	if (Step > GLOBAL_L_PREFIX.length - 1) Step = GLOBAL_L_PREFIX.length - 1;
 
-	// l als BigInt mit m Nachkommastellen (gerundet).
-	let N = BigInt(Math.round(l * Math.pow(BASE, m)));
+	// l exakt: reine Präfixsumme (BigInt), kein Float, keine Wurzel.
+	let N_l = GLOBAL_L_PREFIX[Step];
 
-	return { N, m, l };
+	// R exakt: Summe über sichtbare Bank-Stücke, Nenner AREA_SCALE.
+	// Sichtbar: born_time <= t < cut_time UND t < taken_time (noch nicht
+	// ins Ziel entnommen). Partitioniert das Einheitsquadrat ohne Überlapp.
+	const BASE_BIG = BigInt(BASE_OUT);
+	let N_R = 0n;
+	for (let p of bank_pieces) {
+		if (time >= p.born_time && time < p.cut_time && time < p.taken_time) {
+			N_R += AREA_SCALE / BASE_BIG ** BigInt(p.k);
+		}
+	}
+
+	return { N_l, N_R, GRID, AREA_SCALE, Step };
 }
