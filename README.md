@@ -12,10 +12,12 @@ Steuerung über ein Gerät des Betrachtenden wird möglich sein.
 
 ```bash
 pnpm install          # Abhängigkeiten (svelte, vite, vitest, jsdom)
-pnpm dev              # Vite-Dev-Server; die gedruckte URL (meist localhost:5173)
-                      # im Browser öffnen -> live-Reload beim Editieren
-pnpm build            # produktiver Build -> dist/sqrt2.html (+ assets)
-                      # dist/sqrt2.html direkt im Browser öffnen (kein Server nötig)
+./scripts/init-local-ports.sh   # einmalig: klon-eindeutige Ports vergeben
+                                 # (RELAY_PORT/PORT/DEV_PORT in .ports.local.env)
+pnpm dev              # Vite-Dev-Server auf dem lokal vergebenen Port
+                      # (meist localhost:5173 bzw. DEV_PORT) -> live-Reload
+pnpm build            # produktiver Build -> dist/ (+ assets)
+                      # dist/index.html direkt im Browser oeffnen (kein Server nötig)
 pnpm test             # node --test *.test.js (reine Logik) UND vitest run (Svelte-Komponenten)
 ```
 
@@ -215,6 +217,21 @@ hartkodiertes `0.03`).
 - **Z/R-Modi vollständig neu (C¹):** eigenständiges Thema (§7).
 - **Tiefe-Standardwert** im Haupttool (`3`) vs Test-Tool (`10`): weiterhin
   nicht synchronisiert (offene Entscheidung).
+
+## 10.1 Deployment: GitHub Pages
+
+Die Live-Demo läuft auf **https://thoka.github.io/sqrt2/** — Deployment über
+GitHub Pages **Branch `gh-pages`** (kein CI-Build). Ein neuer Stand wird mit
+einem lokalen Build publiziert:
+
+```bash
+GITHUB_PAGES=true pnpm build   # baut mit base '/sqrt2/'
+./scripts/deploy-pages.sh      # kopiert dist/ als Root von gh-pages, pusht --force
+```
+
+Hintergrund: pnpm 11.13 blockiert `pnpm install` im CI bei esbuild-Build-
+Scripts, daher kein GitHub-Actions-Build (`build_type: legacy`). Details in
+`docs/TOOLING_SPEC.md` §8.
 
 ## 11. nächste Schritte
 
