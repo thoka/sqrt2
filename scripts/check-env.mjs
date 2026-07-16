@@ -82,9 +82,9 @@ test(
 	},
 );
 
-test('dist/sqrt2.html existiert (Build lief)', { skip: !playwrightAvailable }, () => {
+test('dist/index.html existiert (Build lief)', { skip: !playwrightAvailable }, () => {
 	assert.ok(
-		fs.existsSync(path.resolve('dist/sqrt2.html')),
-		'dist/sqrt2.html fehlt - "pnpm build" (setup-env.sh Schritt 6) fehlt',
+		fs.existsSync(path.resolve('dist/index.html')),
+		'dist/index.html fehlt - "pnpm build" (setup-env.sh Schritt 6) fehlt',
 	);
 });

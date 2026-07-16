@@ -122,7 +122,7 @@
 
 	// Relativer Pfad zur Fernsteuerung (berücksichtigt base: '/sqrt2/').
 	function remoteControlPath() {
-		return new URL('remote-control.html', location.href).pathname;
+		return new URL('remote.html', location.href).pathname;
 	}
 
 	async function renderQr(text) {

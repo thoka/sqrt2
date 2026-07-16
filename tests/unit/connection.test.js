@@ -38,14 +38,14 @@ test('buildWsUrl: PIN wird weggelassen, wenn null', () => {
 test('buildGuestLink: baut relativen Pfad + ws/token/pin-Parameter', () => {
 	const link = buildGuestLink({
 		pageOrigin: 'https://exhibit.example',
-		pagePath: '/sqrt2/remote-control.html',
+		pagePath: '/sqrt2/remote.html',
 		wsUrl: 'wss://relay:8080/ws',
 		token: 'TOK',
 		pin: '99',
 	});
 	const p = new URL(link);
 	assert.equal(p.origin, 'https://exhibit.example');
-	assert.equal(p.pathname, '/sqrt2/remote-control.html');
+	assert.equal(p.pathname, '/sqrt2/remote.html');
 	assert.equal(p.searchParams.get('ws'), 'wss://relay:8080/ws');
 	assert.equal(p.searchParams.get('token'), 'TOK');
 	assert.equal(p.searchParams.get('pin'), '99');

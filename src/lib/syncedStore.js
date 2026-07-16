@@ -178,7 +178,7 @@ export function syncedStore(store, key, channelOrTransports = CHANNEL) {
 let initializedBC = false;
 // Bindet configStore + playbackStore einmalig an den BroadcastChannel-Sync.
 // Idempotent (pro Seite/Modul-Instanz) - kann bedenkenlos aus mehreren
-// Entry-Points (index.html, remote-control.html) aufgerufen werden.
+// Entry-Points (index.html, remote.html) aufgerufen werden.
 export function initSync() {
 	if (initializedBC) return;
 	initializedBC = true;

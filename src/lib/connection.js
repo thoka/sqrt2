@@ -31,13 +31,7 @@ export function buildWsUrl(baseWsUrl, { token, role = 'guest', pin = null } = {}
 // demselben Deployment wie das Haupttool, aber verbindet per WS mit dem
 // Relay. `pageOrigin` ist i.d.R. `location.origin`, der Pfad wird relativ
 // zur aktuellen Seite aufgelöst (berücksichtigt z.B. `base: '/sqrt2/'`).
-export function buildGuestLink({
-	pageOrigin,
-	pagePath = 'remote-control.html',
-	wsUrl,
-	token,
-	pin,
-}) {
+export function buildGuestLink({ pageOrigin, pagePath = 'remote.html', wsUrl, token, pin }) {
 	const u = new URL(pagePath, pageOrigin);
 	u.searchParams.set('ws', wsUrl);
 	u.searchParams.set('token', token);

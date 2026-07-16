@@ -51,8 +51,81 @@ test('Canvas zeigt zwei weisse Quadrate nach Initialisierung', async ({ page }) 
 
 	await expect(page.locator('#canvasMount canvas')).toBeVisible({ timeout: 10000 });
 
-	// Rendering braucht einen Frame; Initialzustand (u_time=0) erwartet.
-	await page.waitForTimeout(500);
+	// Auf die beiden gefuellten weissen Quadrate warten, statt auf eine
+	// starre Verzoegerung - der async Compile (Worker) braucht beim
+	// Cold-Load etwas Laengeres, bis das Modell tatsaechlich gerendert ist.
+	await page.waitForFunction(
+		() => {
+			const c = document.querySelector('#canvasMount canvas');
+			if (!c) return false;
+			if (c.width < 400 || c.height < 400) return false;
+			const ctx = c.getContext('2d');
+			const w = c.width,
+				h = c.height;
+			const data = ctx.getImageData(0, 0, w, h).data;
+			const lum = (r, g, b) => 0.299 * r + 0.587 * g + 0.114 * b;
+			const seen = new Uint8Array(w * h);
+			const stack = [];
+			const comps = [];
+			for (let y = 0; y < h; y++) {
+				for (let x = 0; x < w; x++) {
+					const idx = y * w + x;
+					if (seen[idx]) continue;
+					const i = idx * 4;
+					const a = data[i + 3],
+						lp = lum(data[i], data[i + 1], data[i + 2]);
+					if (a > 0 && lp > 180) {
+						let minX = x,
+							minY = y,
+							maxX = x,
+							maxY = y,
+							cnt = 0;
+						stack.push(idx);
+						seen[idx] = 1;
+						while (stack.length) {
+							const cur = stack.pop();
+							const cy = Math.floor(cur / w),
+								cx = cur % w;
+							cnt++;
+							if (cx < minX) minX = cx;
+							if (cx > maxX) maxX = cx;
+							if (cy < minY) minY = cy;
+							if (cy > maxY) maxY = cy;
+							const ns = [
+								[cx + 1, cy],
+								[cx - 1, cy],
+								[cx, cy + 1],
+								[cx, cy - 1],
+							];
+							for (const [nx, ny] of ns) {
+								if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+								const nidx = ny * w + nx;
+								if (seen[nidx]) continue;
+								const ni = nidx * 4;
+								if (data[ni + 3] > 0 && lum(data[ni], data[ni + 1], data[ni + 2]) > 180) {
+									seen[nidx] = 1;
+									stack.push(nidx);
+								}
+							}
+						}
+						const bw = maxX - minX + 1,
+							bh = maxY - minY + 1;
+						comps.push({
+							w: bw,
+							h: bh,
+							aspect: bw / bh,
+							fill: cnt / (bw * bh),
+						});
+					}
+				}
+			}
+			const sq = comps.filter(
+				(o) => o.aspect > 0.6 && o.aspect < 1.6 && o.w >= 120 && o.h >= 120 && o.fill > 0.5,
+			);
+			return sq.length === 2;
+		},
+		{ timeout: 10000 },
+	);
 
 	const squares = await page.evaluate(() => {
 		const c = document.querySelector('#canvasMount canvas');
