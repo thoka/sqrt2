@@ -6,7 +6,7 @@
 // configStore, siehe TOOLING_SPEC.md 3.1).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { compileSystem } from '../../src/lib/compiler.js';
+import { compileSystem, computeLiveL } from '../../src/lib/compiler.js';
 
 const BASE_CONFIG = {
 	base: 10,
@@ -114,56 +114,53 @@ test('Kompaktierung mit ungültigem compactionTransitionTicks (NaN) fällt auf D
 	);
 });
 
-test('GLOBAL_SHELL_TAKEN: eine Stück-Liste pro Schale, Länge == TOTAL_STEPS, sortiert', () => {
-	let r = compileSystem(BASE_CONFIG);
-	assert.strictEqual(r.GLOBAL_SHELL_TAKEN.length, r.TOTAL_STEPS);
-	for (let S = 0; S < r.TOTAL_STEPS; S++) {
-		let times = r.GLOBAL_SHELL_TAKEN[S];
-		assert.ok(Array.isArray(times), `Schale ${S} muss ein Array sein`);
-		for (let i = 1; i < times.length; i++) {
-			assert.ok(
-				times[i] >= times[i - 1],
-				`Schale ${S}: Entnahme-Zeiten müssen aufsteigend sortiert sein`,
-			);
-		}
+test('computeLiveL: l wächst stetig und nimmt bei jeder vollendeten Schale den nächsten Meilenstein an', () => {
+	// Gewünschtes Verhalten der Zahlentafel (Basis 10, Tiefe 3):
+	//   Anfang                          -> l = 1
+	//   Schale 1 fertig (exp=1, Ziffer 4) -> l = 1.1
+	//   Schale 2 fertig                 -> l = 1.2
+	//   Schale 3 fertig                 -> l = 1.3
+	//   Schale 4 fertig (Stelle 1 voll) -> l = 1.4
+	//   Schale 5 fertig (exp=2, Ziffer 1) -> l = 1.41
+	const r = compileSystem(BASE_CONFIG);
+	const expectedAtShellEnd = ['1', '1.1', '1.2', '1.3', '1.4', '1.41'];
+	// l als String zur Basis BASE mit `m` Nachkommastellen formatieren.
+	function fmt(N, m) {
+		let s = N.toString(10);
+		if (m === 0) return s;
+		s = s.padStart(m + 1, '0');
+		return s.slice(0, s.length - m) + '.' + s.slice(s.length - m);
 	}
-	// Die Summe aller entnommenen Stücke über alle Schalen entspricht der
-	// Anzahl endlich entnommener Bank-Stücke (das Basisquadrat bleibt drin).
-	let finiteTaken = r.bank_pieces.filter((p) => isFinite(p.taken_time)).length;
-	let shellTotal = r.GLOBAL_SHELL_TAKEN.reduce((a, t) => a + t.length, 0);
-	assert.strictEqual(shellTotal, finiteTaken);
+	// Anfang (vor erster Schale): l = 1
+	let start = computeLiveL(r, 0, 10);
+	assert.strictEqual(fmt(start.N, start.m), '1', 'Anfang muss l = 1 sein');
+
+	for (let S = 1; S < expectedAtShellEnd.length; S++) {
+		// Zeit kurz VOR dem Start der nächsten Schale = Ende von Schale S.
+		let nextStart = r.GLOBAL_SHELL_START[S + 1] ?? r.MAX_TIME;
+		let t = nextStart - 1e-6;
+		let { N, m } = computeLiveL(r, t, 10);
+		assert.strictEqual(
+			fmt(N, m),
+			expectedAtShellEnd[S],
+			`Schale ${S} fertig: l soll ${expectedAtShellEnd[S]} sein, war ${fmt(N, m)}`,
+		);
+	}
 });
 
-test('GLOBAL_SHELL_TAKEN ermöglicht laufendes Mitwachsen der HUD-Zahl (liveDigit 0..Ziffer)', () => {
-	// Die Zahlentafel leitet aus den Entnahme-Zeiten einer Schale die laufende
-	// Ziffer der aktuellen Stelle ab. Wir simulieren das und prüfen, dass die
-	// Ziffer monoton von 0 bis zur vollen Ziffer der Stelle wächst.
-	let r = compileSystem(BASE_CONFIG);
-	let baseBig = 10n;
-	for (let S = 1; S < r.TOTAL_STEPS; S++) {
-		let m = r.axes[S].exp;
-		let fullDigit = r.GLOBAL_N_ARR[m];
-		let times = r.GLOBAL_SHELL_TAKEN[S];
-		if (times.length === 0) continue;
-		// Anfang der Schale: noch nichts entnommen -> liveDigit 0.
-		let fracStart = 0 / times.length;
-		let startDigit = Math.round(fullDigit * fracStart);
-		assert.strictEqual(startDigit, 0);
-		// Mitte der Schale: liveDigit wächst (bei mehrstelligen Ziffern
-		// strikt zwischen 0 und voll; bei einstelligen Ziffern ist spätestens
-		// nach der ersten Entnahme die volle Ziffer erreicht).
-		let midTime = times[Math.floor(times.length / 2)];
-		let doneMid = times.filter((t) => t <= midTime).length;
-		let midDigit = Math.round(fullDigit * (doneMid / times.length));
-		if (fullDigit > 1) {
-			assert.ok(midDigit > 0 && midDigit < fullDigit, `Schale ${S}: Mitte ${midDigit}`);
-		} else {
-			assert.ok(midDigit >= 0 && midDigit <= fullDigit, `Schale ${S}: Mitte ${midDigit}`);
-		}
-		// Ende der Schale: volle Ziffer.
-		let endDigit = Math.round(fullDigit * 1);
-		assert.strictEqual(endDigit, fullDigit);
-		// BigInt-Aufbau bleibt gültig (kein negative Digit).
-		assert.ok(BigInt(startDigit) >= 0n && BigInt(endDigit) <= baseBig);
+test('computeLiveL: l ist über die gesamte Animation monoton wachsend (stetig)', () => {
+	const r = compileSystem(BASE_CONFIG);
+	const steps = 400;
+	let prev = -Infinity;
+	for (let i = 0; i <= steps; i++) {
+		let t = (r.MAX_TIME * i) / steps;
+		let { N } = computeLiveL(r, t, 10);
+		// N ist l * BASE^m, also vergleichbar über die Zeit hinweg (m wächst
+		// nur, wenn N ohnehin mitwächst - durch padStart-Form nie kleiner).
+		assert.ok(
+			N >= prev,
+			`l bei t=${t.toFixed(2)} (${N}) darf nicht kleiner sein als vorher (${prev})`,
+		);
+		prev = N;
 	}
 });

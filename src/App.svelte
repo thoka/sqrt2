@@ -12,6 +12,7 @@
 	import { displayStore } from './lib/displayStore.js';
 	import { parseConfigFromUrl, parsePlaybackFromUrl } from './lib/urlState.js';
 	import { initSync } from './lib/syncedStore.js';
+	import { computeLiveL } from './lib/compiler.js';
 
 	import ControlPanel from './components/ControlPanel.svelte';
 	import PlaybackBar from './components/PlaybackBar.svelte';
@@ -44,44 +45,24 @@
 		let scale = Math.min(1, available / natural);
 		numberPanelInner.style.transform = `scale(${scale})`;
 	}
-
 	function updateHUD(time) {
 		const compiled = get(compiledStore);
 		if (!compiled || !compiled.axes) return;
-		const { axes, GLOBAL_N_ARR, GLOBAL_SHELL_START, GLOBAL_SHELL_TAKEN, TOTAL_STEPS } = compiled;
 		const BASE = get(configStore).base;
 
-		let Step = getShellStepAt(time, GLOBAL_SHELL_START, TOTAL_STEPS);
-		let current_m = axes[Step].exp;
+		// Laufende Seitenlänge l: wächst bei JEDER vollendeten Schale um eine
+		// Ziffer (1 -> 1.1 -> 1.2 -> ... -> 1.41 -> 1.411 -> ...) und ist
+		// innerhalb einer Schale stetig (anteilig). Liefert N = l * BASE^m.
+		let { N, m: current_m } = computeLiveL(compiled, time, BASE);
 
-		// Laufender Fortschritt der aktuellen Schale: wie viele ihrer Stücke
-		// sind zur Zeit `time` bereits entnommen? Daraus ergibt sich die
-		// laufende Ziffer der aktuellen Stelle (anteilig 0..GLOBAL_N_ARR[m]),
-		// sodass l/l²/R bei JEDER Stück-Entnahme mitwachsen - nicht erst bei
-		// der nächsten (komplett gefüllten) Stelle.
-		let taken = GLOBAL_SHELL_TAKEN ? GLOBAL_SHELL_TAKEN[Step] : [];
-		let done = 0;
-		for (let t of taken) if (time >= t) done++;
-		let total = taken.length;
-		let frac = total > 0 ? done / total : 1;
-		let liveDigit = Math.round(GLOBAL_N_ARR[current_m] * frac);
-
-		// Hash enthält Step + bereits entnommene Stücke + BASE: die Bank-Balken
-		// leben in <RestCounterBars>, diese Funktion rendert NUR die
-		// Zahlentafel l/l²/R.
-		let hash = Step + '_' + done + '_' + BASE;
+		let Step = getShellStepAt(time, compiled.GLOBAL_SHELL_START, compiled.TOTAL_STEPS);
+		// Hash enthält nur Step + BASE: die Bank-Balken leben in <RestCounterBars>,
+		// diese Funktion rendert NUR die Zahlentafel l/l²/R.
+		let hash = Step + '_' + BASE;
 		if (hash === current_hud_hash) return;
 		current_hud_hash = hash;
 
 		// === EXAKTE BIGINT-MATHEMATIK ===
-		let N = 0n;
-		let baseBig = BigInt(BASE);
-		for (let i = 0; i <= current_m; i++) {
-			// Stelle m (die laufende) wächst anteilig mit den entnommenen Stücken,
-			// alle tieferen Stellen sind bereits voll besetzt.
-			let digit = i === current_m ? BigInt(liveDigit) : BigInt(GLOBAL_N_ARR[i]);
-			N = N * baseBig + digit;
-		}
 
 		// Seitenlänge P
 		let P_str = N.toString(BASE).toUpperCase();

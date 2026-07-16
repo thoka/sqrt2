@@ -149,28 +149,6 @@ export function compileSystem(config) {
 		p.born_time = p.born_time === 0 ? 0 : ttm.tickToTime(p.born_time) - CUT_BORN_LEAD;
 	}
 
-	// Laufender HUD-Fortschritt (Zahlentafel l/l²/R): pro Schale S die
-	// sortierten Entnahme-Zeiten (taken_time) der Stücke, die in DIESER
-	// Schale entnommen werden. Die Zahlentafel leitet daraus ab, wie weit die
-	// aktuelle Ziffern-Stelle schon gefüllt ist - sie wächst dann bei JEDER
-	// Stück-Entnahme mit, statt erst bei der nächsten (komplett gefüllten)
-	// Stelle neu geschrieben zu werden. Gruppierung über die
-	// Schalen-Startzeiten (shell_start_time), da eine Schale S im Compiler
-	// exakt die Stücke mit taken_time in [shell_start[S], shell_start[S+1])
-	// entnimmt und axes[S].exp die dazugehörige Zahlstelle ist.
-	let GLOBAL_SHELL_TAKEN = new Array(TOTAL_STEPS);
-	for (let S = 0; S < TOTAL_STEPS; S++) {
-		let t0 = shell_start_time[S];
-		let t1 = S + 1 < TOTAL_STEPS ? shell_start_time[S + 1] : Infinity;
-		let times = [];
-		for (let p of bank_pieces) {
-			if (isFinite(p.taken_time) && p.taken_time >= t0 && p.taken_time < t1)
-				times.push(p.taken_time);
-		}
-		times.sort((a, b) => a - b);
-		GLOBAL_SHELL_TAKEN[S] = times;
-	}
-
 	// Auto-Zoom-Ziel (Ziel-Seite): pro Schale S der Exponent der tiefsten in
 	// dieser Schale neu sichtbaren Ziffern-Stelle - wächst mit der Animation
 	// von 0 (nur Basisquadrat) bis N_MAX, nicht von Anfang an fix auf N_MAX.
@@ -342,7 +320,6 @@ export function compileSystem(config) {
 		bank_pieces,
 		render_pipeline,
 		GLOBAL_N_ARR: n_arr,
-		GLOBAL_SHELL_TAKEN,
 		P_FINAL,
 		GLOBAL_SHELL_START: shell_start_time,
 		GLOBAL_TTM: ttm,
@@ -357,4 +334,72 @@ export function compileSystem(config) {
 		GLOBAL_COMPACTION_FIT_SPLINE,
 		MAX_TIME: local_max_time,
 	};
+}
+
+// Laufende Seitenlänge l zur Zeit `time` als BigInt im Stellenraum
+// (Basis BASE, `m` Nachkommastellen). Liefert exakt die Zahlentafel-Werte
+// l/l²/R, die bei JEDES vollendeten Schritt der Animation um eine Ziffer
+// mitwachsen:
+//
+//   Anfang          -> l = 1
+//   Schale 1 fertig -> l = 1.1
+//   Schale 2 fertig -> l = 1.2
+//   ...
+//   letzte Schale der Stelle m fertig -> l = volle Stelle m (Ziffer n_arr[m])
+//
+// Mehrere aufeinanderfolgende Schalen (axes-Einträge) können zur SELBEN
+// Zahlstelle m gehören (axes[S].exp === m); die Ziffer n_arr[m] ist dann auf
+// diese K_m Schalen verteilt. Innerhalb einer Schale wächst die laufende
+// Ziffer stetig (anteilig zum Fortschritt der Schale), sodass l monoton und
+// stetig wächst - nicht erst bei der nächsten komplett gefüllten Stelle.
+//
+// Rückgabe: { N, m } mit N = l * BASE^m (BigInt). Höhere Stellen (>m) sind 0,
+// tiefere Stellen sind voll besetzt (n_arr[i]).
+export function computeLiveL(compiled, time, BASE) {
+	const { axes, GLOBAL_N_ARR, GLOBAL_SHELL_START, TOTAL_STEPS, MAX_TIME } = compiled;
+
+	// Höchste Schale S, deren Startzeit bereits erreicht ist.
+	let Step = 0;
+	for (let S = 1; S < GLOBAL_SHELL_START.length; S++) {
+		if (time >= GLOBAL_SHELL_START[S]) Step = S;
+		else break;
+	}
+	if (TOTAL_STEPS > 0) Step = Math.max(0, Math.min(TOTAL_STEPS - 1, Step));
+
+	let m = axes[Step].exp;
+
+	// Block der Stelle m innerhalb von axes (zusammenhängende exp===m).
+	let firstS = Step;
+	while (firstS > 0 && axes[firstS - 1].exp === m) firstS--;
+	let K_m = 0;
+	while (firstS + K_m < axes.length && axes[firstS + K_m].exp === m) K_m++;
+	let idxInBlock = Step - firstS; // 0-basierter Index der laufenden Schale
+
+	// Anteiliger Fortschritt der laufenden Schale [0,1].
+	let t0 = GLOBAL_SHELL_START[Step];
+	let t1 = Step + 1 < TOTAL_STEPS ? GLOBAL_SHELL_START[Step + 1] : MAX_TIME;
+	let frac = t1 > t0 ? (time - t0) / (t1 - t0) : 1;
+	frac = Math.max(0, Math.min(1, frac));
+
+	// Wie viele Schalen der Stelle m sind (anteilig) erfüllt?
+	let completed = idxInBlock + frac;
+	let fullDigit = GLOBAL_N_ARR[m];
+	let liveDigit;
+	if (Step === 0) {
+		// Vor der ersten Schale ist das Basisquadrat (exp=0) bereits voll
+		// sichtbar - l startet bei 1, nicht bei 0.
+		liveDigit = fullDigit;
+	} else {
+		liveDigit = Math.round((fullDigit * completed) / K_m);
+		liveDigit = Math.max(0, Math.min(fullDigit, liveDigit));
+	}
+
+	// BigInt der laufenden Zahl: Stellen < m voll, Stelle m = liveDigit.
+	let N = 0n;
+	let baseBig = BigInt(BASE);
+	for (let i = 0; i <= m; i++) {
+		let d = i === m ? BigInt(liveDigit) : BigInt(GLOBAL_N_ARR[i]);
+		N = N * baseBig + d;
+	}
+	return { N, m };
 }
