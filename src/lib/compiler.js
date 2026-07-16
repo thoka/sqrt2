@@ -9,7 +9,7 @@ import {
 	makeCompactedLogicalRectLookup,
 	computeCompactionFitStates,
 } from '../../bank-core.js';
-import { buildMonotoneSpline, buildDampedFilterBundle } from '../../smoothing.js';
+import { buildMonotoneSpline, buildDampedFilterBundle } from './smoothing.js';
 
 export function compileSystem(config) {
 	const {

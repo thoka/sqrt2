@@ -17,7 +17,7 @@
 // existieren, ohne sich gegenseitig zu stoeren.
 // ============================================================================
 
-import { computeSegmentBlend } from './smoothing.js';
+import { computeSegmentBlend } from './src/lib/smoothing.js';
 
 // ---------------------------------------------------------------------------
 // TEIL 1: Bank-Algorithmus (Auswahl-Strategie "isolation" + Schneide-Strategie

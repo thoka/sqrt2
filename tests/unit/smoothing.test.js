@@ -8,7 +8,7 @@ import {
 	computeSegmentBlend,
 	buildDampedFilter,
 	buildDampedFilterBundle,
-} from '../../smoothing.js';
+} from '../../src/lib/smoothing.js';
 
 const EPS = 1e-9;
 

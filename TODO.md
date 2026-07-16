@@ -18,7 +18,7 @@ Offene Punkte, nach Relevanz sortiert. Erledigtes wird durchgestrichen
 - [ ] **`bank-core.js` → `src/lib/` migrieren** (ES-Modul-Struktur, von
       `TargetBankCanvas` importiert statt global). Tests nachführen
       (`bank-core-compaction.test.js` pfad-anpassen).
-- [ ] **`smoothing.js` → `src/lib/` migrieren** (gleiches Vorgehen).
+- [x] `smoothing.js` → `src/lib/` migriert
       Import-Pfade in `TargetBankCanvas.svelte` anpassen.
 
 ## Fernsteuerung / Connection (Nachpflege)
