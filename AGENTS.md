@@ -56,6 +56,16 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
   `computeSegmentBlend()`, träge/`buildDampedFilter()`.
 - **Layout-Umordnung:** masse-/trägheitsgewichtet (größte Gruppe = Anker),
   KEIN Förderband/Prefix-Sum.
+- **Zahlentafel l/l²/R aus der Simulation, nicht selbst hergeleitet:**
+  `l` wird direkt aus den **Stellen der Simulation** abgelesen (Achsen/Ziffern
+  der Bank, nicht aus einer eigenen Umrechnung hochgerechnet); `R` ergibt sich
+  direkt aus der **Zählung des Rests** (sichtbare Bank-Flächen / noch nicht
+  entnommene Stücke). Keine parallele, selbst gebaute Ableitung, wenn die
+  Simulation die Werte schon kennt.
+- **Canvas/DOM nie nur per Unit-Test verifizieren:** jede Änderung an
+  Mount-/Render-Pfaden braucht `pnpm build` + E2E (Test "Canvas zeigt zwei
+  weisse Quadrate") - ein JS-Fehler im Mount-Pfad crashat die ganze Seite und
+  bleibt in node-Tests unsichtbar.
 
 ## GOTCHAS (repo-weit)
 
