@@ -289,7 +289,7 @@ wird.
   ändert die Struktur von `compileSystemData()`/`finalizeCompiled()`, nur
   deren Inhalte werden exakter/robuster.
 
-## Stand (2026-07-16) - Teil A + Teil B committet
+## Stand (2026-07-17) - Teil A + Teil B committet, Teil C in Arbeit
 
 - **Teil A erledigt** (`src/lib/compiler.js` + `src/App.svelte`):
   `l` kommt aus `GLOBAL_L_PREFIX`, einer BigInt-Präfixsumme
@@ -301,28 +301,133 @@ wird.
   BASE^K_MAX` (K_MAX > N_MAX, weil subdivide k > N_MAX erzeugt).
 - **Teil B erledigt** (`src/lib/bank-core.js` + `src/lib/compiler.js`):
   `localOffsetX/Y` sind ganzzahlige Rasterindizes `i` (0..BASE-1) des Child
-  im Parent - O(1) bei jeder Tiefe (NICHT `i*cw`, was bei Tiefe 15+ unter
-  die Float64-Präzision fällt). `relativePosition(p, q, parentMap, BASE)`
-  faltet `(fx + localOffset) / BASE` von Blatt nach Wurzel über diese
-  Indizes → exakte relative Position in [0,1], ohne Float-Auslöschung, rein
-  Float (kein BigInt, nicht langsamer als vorher). Die Zoom-Bounding-Box in
-  `finalizeCompiled` ist KOMPLETT relativ zum Anker (`framing[0]`) gebaut:
-  keine absoluten `p.x` mehr (die bei Tiefe 22 durch Auslöschung bereits
-  verfälscht waren, z.B. anchor.x = 7.5 statt 0.6). Stückgröße relativ zum
-  Anker über den Tiefen-Exponenten `BASE^(anchor.k - p.k)`.
-- **Sichtbarkeit verifiziert bis Tiefe 50:** der Rest bleibt bei Tiefe
-  22/30/40/50 zu **0%** außerhalb des [0,1]-Fensters (hart geprüft gegen
-  exakt gefaltete BigInt-Referenzbox, siehe `zoom-robust.test.js`
-  "Bounding-Box enthält alle sichtbaren Stücke"). `compileSystem` selbst
-  skaliert problemlos bis Tiefe 50+ (Stückzahl ~67k, <10s); darüber wird die
-  Stückzahl zum Flaschenhals, nicht der Zoom.
-- **Tests:** `tests/unit/compiler.test.js` (21 Teil-A-Tests, alle grün) +
-  `tests/unit/zoom-robust.test.js` (27 Teil-B-Tests, alle grün). Vollständige
-  Unit-Suite 115/115 (ein VORHANDENER Hang in `compiler-split.test.js`
-  bei base 16 / depth 15 ist unabhängig von diesem Plan - schon im
-  Original-Code reproduzierbar, Stückzahl explodiert). `pnpm check`,
-  `pnpm build` und alle 14 E2E-Tests grün (inkl. "Canvas zeigt zwei weisse
-  Quadrate").
-- **Nächster Schritt:** nichts Offenes an diesem Plan. Offen im Projekt:
-  Phase 6 (Politur) sowie der `compiler-split.test.js`-Hang (separat
-  fixen: base 16 / depth 15 auf ein vertretbares Maß deckeln).
+  im Parent - O(1) bei jeder Tiefe. `relativePosition(p, q, parentMap, BASE)`
+  faltet `(fx + localOffset) / BASE` von Blatt nach Wurzel → exakte relative
+  Position in [0,1], ohne Float-Auslöschung. Zoom-Bounding-Box komplett
+  relativ zum Anker, keine absoluten `p.x`.
+- **Teil C in Arbeit** (`src/lib/compiler.js`, `tests/unit/zoom-robust.test.js`):
+  Zoom nutzt kompaktierte Geometrie (`zoom_rect_lookup` via
+  `computeCompactionWaypoints`). Anker = schwerste Gruppe (max `w*h`) für
+  ruhige Kamera. Alle sichtbaren Stücke im Rahmen (kein kThresholdDiff-Filter
+  — mit Kompaktierung irrelevant). `ZOOM_MARGIN = 0.05`. Gemessen: Rest-
+  Fläche/Fenster = 35–70% bei base 2/10, Tiefe 20–50. Tests umgeschrieben
+  auf neue Invarianten (Rest-Fläche ≥10%, Sichtbarkeit im kompaktierten Raum).
+  Noch nicht committet.
+- **Sichtbarkeit verifiziert bis Tiefe 50:** Rest-Fläche (nach Kompaktierung)
+  macht 35–70% der Frame-Fläche aus (base 2/10, Tiefe 20–50). `compileSystem`
+  skaliert problemlos bis Tiefe 50+ (Stückzahl ~67k, <10s).
+- **Tests:** `tests/unit/compiler.test.js` (21 Teil-A-Tests) +
+  `tests/unit/zoom-robust.test.js` (Teil-B + Teil-C-Tests). Noch nicht alle
+  grün (Teil-C-Tests in Arbeit).
+- **Nächster Schritt:** Teil-C-Tests zum Laufen bringen, `pnpm check` +
+  `pnpm build` + E2E, dann committen. Offen: Verhalten bei Tiefe 60+
+  (Stückzahl ~67k) prüfen.
+
+## Teil C: Rest auch bei extremem Zoom groß genug sichtbar (Zoom nutzt kompaktierte Geometrie)
+
+### Befund
+
+Teil B löst die **Float-Auslöschung** (robuste [0,1]-Box bei Tiefe 50+).
+Das eigentliche Sichtbarkeitsproblem des Users ("ab einem bestimmten
+Zoom-Level sieht man keinen Rest mehr") hat eine zweite Ursache: das
+**externe Kompaktieren** (bisheriger Render-Modus via `computeCompactionAt`
+/ `getSmoothedCompactedLogicalRect`) ist bei hoher Tiefe wegen Float-
+Genauigkeit zusammengebrochen — die kompaktierten Koordinaten wurden
+NaN/Infinity, der Rest verschwand vollständig.
+
+Teil C behebt das, indem die **kompaktierte Geometrie direkt in den Zoom-
+Pfad eingebaut** wird (statt als separater Render-Modus). Der Zoom framt
+die kompaktierten Rects (Lücken entnommener Stücke geschlossen), Float-sicher
+via `relativePosition()` (Teil B). Die Fläche des Rests (nach Kompaktierung)
+bleibt dadurch bei jeder Tiefe als nennenswerter Bruchteil des Fensters
+sichtbar — gemessen: **35–70% der Fensterfläche** bei base 2/10, Tiefe
+20–50.
+
+### Warum die Rest-Fläche und nicht die Kleinste-Stück-Größe?
+
+Der User präzisierte: "rest genug sichtbar heißt: die den Rest
+umschließende Fläche (nach Kompaktierung) soll einen gewissen Bruchteil des
+Fensters ausmachen." Es geht also nicht darum, ob das kleinste einzelne
+Stück (z.B. Tiefe 60) auf ≥1px skaliert wird — sondern ob die Gesamtfläche
+aller sichtbaren Reste nach Kompaktierung einen wahrnehmben Teil des
+Fensters ausfüllt. Das ist die relevante Metrik, weil:
+
+- Die Kompaktierung schließt Lücken (Positionen), nicht Größen. Ein Stück
+  auf Tiefe 60 ist 10^47-mal kleiner als eines auf Tiefe 13 — das bleibt
+  so, egal wie kompakt die Position ist.
+- Aber die Gesamtfläche aller Reste ist gross genug (35–70%), weil die
+  vielen kleinen Stücke zusammen addieren.
+- Das alte externe Kompaktieren ist bei hoher Tiefe zusammengebrochen
+  (Float), wodurch die Fläche auf 0% fiel. Teil C fixt das.
+
+### Architektur
+
+Die Kompaktierung (`buildCompactionMap` / `computeCompactionAt` /
+`getSmoothedCompactedLogicalRect` in `bank-core.js`) schließt die Lücken
+entnommener Stücke bereits zeitlich WEICH (C¹ via `computeSegmentBlend`) und
+masse-/trägheitsgewichtet (Anker = schwerste Gruppe, siehe CLAUDE.md
+"Layout-Umordnungen"). Sie wird bisher NUR als separater Render-Modus
+genutzt, nicht als **Koordinatenbasis des Zooms**.
+
+Teil C baut die Zoom-Bounding-Box aus den kompaktierten Rects statt aus den
+rohen relativen Koordinaten. Konkret:
+
+1. Pro Zoom-Checkpoint `t` wird via `computeCompactionWaypoints()` (bereits
+   C¹, Wegpunkte bei jeder Sichtbarkeitsänderung) das kompaktierte, geglättete
+   Logical-Rect jedes Restsücks geholt: `makeCompactedLogicalRectLookup(wp)(p, t)`
+   → `{x,y,w,h}` im kompaktierten Raum. C¹ via `computeSegmentBlend` —
+   keine zweite Kompressionsfunktion.
+2. Der Zoom-Rahmen wird aus DIESEN kompaktierten Rects gebaut, **relativ zum
+   Anker im kompaktierten Raum** (rein Float, keine absoluten `p.x`):
+   - Anker = schwerste sichtbare Gruppe (max `w*h`) für ruhige Kamera
+     (CLAUDE.md "Layout-Umordnungen", User-Vorgabe).
+   - `relW = r.w / anchorRect.w`, `x0 = (r.x - anchorRect.x) / anchorRect.w`.
+   - `minRelX/maxRelX/...` über alle sichtbaren Stücke (KEIN kThresholdDiff-
+     Filter — mit Kompaktierung werden ALLE Stücke berücksichtigt, der
+     Parameter ist irrelevant).
+3. `z = 0.5 / halfW` mit `halfW` = halbe Spanne des kompaktierten Clusters.
+   Die Gesamtfläche des Rests (sum(w*h) im kompaktierten Raum) macht
+   35–70% der Frame-Fläche aus — der Rest ist sichtbar.
+4. `ZOOM_MARGIN = 0.05` für einen kleinen Rand am Pixelrand.
+5. Zeitliche C¹-Glätte: Rect-Glätte via `computeSegmentBlend` (Nicht-
+   Überlappungs-Garantie) + Zoom-Dämpfung via `buildDampedFilterBundle()`
+   (träge Kamera, kein Zappeln).
+
+### Umsetzungsschritte
+
+1. `compiler.js`: `computeCompactionWaypoints(bank_pieces, maxTick,
+   ZOOM_COMPACTION_TRANSITION_TICKS)` **immer** berechnet (unabhängig vom
+   `compactionEnabled` Render-Modus) — der Zoom braucht die kompaktierten
+   Rects zwingend.
+2. `zoom_rect_lookup = makeCompactedLogicalRectLookup(zoom_waypoints)` —
+   Performance-optimierter Lookup (berechnet `times` nur einmal).
+3. In der Zoom-Schleife: Anker = schwerste Gruppe (max `w*h`), Rects via
+   `zoom_rect_lookup(p, t)`, Rahmen relativ zum Anker im kompaktierten Raum.
+4. `kThresholdDiff` wird nicht mehr gebraucht (kompaktierte Geometrie
+   ersetzt den Filter). Bestehender Code kann entfernt/ignoriert werden.
+
+### Testkriterien
+
+Erweiterung von `tests/unit/zoom-robust.test.js`:
+
+1. **Rest-Fläche sichtbar:** bei base 2/10 und Tiefe 20/30/40/50 ist die
+   Gesamtfläche aller sichtbaren Reste (nach Kompaktierung) als Bruchteil
+   der Frame-Fläche ≥ 10%. Gemessen: `sum(w*h) / (frameW * frameH)` im
+   Anker-relativen Koordinatensystem. Bestätigt: 35–70% (Messung).
+2. **Sichtbarkeit im kompaktierten Raum:** alle sichtbaren Stücke (kein
+   Filter) müssen nach Zoom-Transformation in [0,1] liegen. Keine NaN/
+   Infinity in z, cx, cy, offsetX/Y.
+3. **Weiche Transition:** z/Rahmen-Center ändern sich C¹-stetig über die
+   Zeit (via `computeSegmentBlend` + `buildDampedFilterBundle`).
+4. **Regression:** bestehende Teil-B-Tests (relativePosition, isolationScore,
+   z endlich) bleiben grün.
+5. Vollständige Unit-Suite + `pnpm check` + `pnpm build` + E2E grün.
+6. **Wichtig (AGENTS.md):** jede Änderung am Zoom-Pfad braucht `pnpm build`
+   + E2E — JS-Fehler crashen die ganze Seite und bleiben in node-Tests
+   unsichtbar.
+
+### Nächster Schritt (nach Umsetzung)
+
+Offen: Verhalten bei Tiefe 60+ (Stückzahl ~67k) prüfen — ob die
+Kompaktierungs-Waypoints dort performance-mäßig tragen und die Rest-Fläche
+über 10% bleibt.

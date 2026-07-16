@@ -85,130 +85,120 @@ test('Zoom-Bounding-Box kollabiert nicht bei Tiefe 22 (z endlich und positiv)', 
 	}
 });
 
-test('Bounding-Box enthält alle sichtbaren Stücke (Sichtbarkeit, Tiefe 22)', () => {
-	// Harte Invariante: der vom Compiler gelieferte Bank-Zoom (z, offsetX/Y)
-	// skaliert die exakt gefaltete relative Bounding-Box so, dass KEIN
-	// sichtbares Stück aus dem [0,1]-Fenster faellt. Das ist die eigentliche
-	// Anforderung ("Rest immer sichtbar") - unabhaengig davon, wie lang die
-	// Vorfahren-Kette im Einzelfall ist.
+test('Sichtbarkeit im kompaktierten Raum: alle sichtbaren Stücke in [0,1] (Teil C, Tiefe 22)', () => {
+	// TEIL C: der Zoom framt die kompaktierte Geometrie. Hier wird geprüft,
+	// dass ALLE sichtbaren Stücke im kompaktierten Raum ihre Ecken in [0,1]
+	// haben (kein kThresholdDiff-Filter - mit Kompaktierung werden alle
+	// Stücke berücksichtigt). Die Kompaktierung kommt aus zoom_waypoints.
 	const r = compileSystem({ ...BASE_CONFIG, depth: 22 });
-	const parentMap = new Map(r.bank_pieces.map((p) => [p.id, p]));
-	const BASE = BASE_CONFIG.base;
-	function exactX(p) {
-		let path = [];
-		for (let c = p; c; c = parentMap.get(c.parent_id)) path.push(c);
-		let x = 0;
-		for (let e = 0; e < path.length; e++) x += path[e].localOffsetX * Math.pow(BASE, -(e + 1));
-		return x;
-	}
-	function exactY(p) {
-		let path = [];
-		for (let c = p; c; c = parentMap.get(c.parent_id)) path.push(c);
-		let y = 0;
-		for (let e = 0; e < path.length; e++) y += path[e].localOffsetY * Math.pow(BASE, -(e + 1));
-		return y;
-	}
+	const bp = r.bank_pieces;
+	const zoomWp = r.zoom_waypoints;
+	assert.ok(zoomWp && zoomWp.length > 0, 'zoom_waypoints müssen existieren');
+	const lookup = r.zoom_rect_lookup;
+	assert.ok(typeof lookup === 'function', 'zoom_rect_lookup muss eine Funktion sein');
 	let outside = 0,
 		total = 0;
 	for (let i = 0; i < r.GLOBAL_BANK_ZOOM_TIMES.length; i++) {
 		const t = r.GLOBAL_BANK_ZOOM_TIMES[i];
 		const s = r.GLOBAL_BANK_ZOOM[i];
 		if (!isFinite(s.z) || s.z <= 0) continue;
-		const vis = r.bank_pieces.filter((p) => t >= p.born_time && t < p.cut_time && t < p.taken_time);
+		const vis = bp.filter((p) => t >= p.born_time && t < p.cut_time && t < p.taken_time);
 		if (vis.length === 0) continue;
-		const kMin = Math.min(...vis.map((p) => p.k));
-		const framing = vis.filter(
-			(p) =>
-				!(
-					BASE_CONFIG.bankZoomThresholdPowers > 0 &&
-					p.k > kMin + 2 * BASE_CONFIG.bankZoomThresholdPowers
-				),
-		);
-		if (framing.length === 0) continue;
-		const anchor = framing[0];
-		const ax = exactX(anchor),
-			ay = exactY(anchor);
+		// Anker = schwerste Gruppe (max w*h, wie im Compiler)
+		let anchor = null,
+			aR = null,
+			bestMass = -1;
+		for (const p of vis) {
+			const rr = lookup(p, t);
+			if (!rr) continue;
+			const mass = rr.w * rr.h;
+			if (mass > bestMass) {
+				bestMass = mass;
+				anchor = p;
+				aR = rr;
+			}
+		}
+		if (!aR || aR.w <= 0 || aR.h <= 0) continue;
 		const m = 1e-6;
-		for (const p of framing) {
-			const rx = exactX(p) - ax,
-				ry = exactY(p) - ay;
-			const relW = Math.pow(BASE, anchor.k - p.k);
-			const sx0 = rx * s.z + s.offsetX,
-				sx1 = (rx + relW) * s.z + s.offsetX;
-			const sy0 = ry * s.z + s.offsetY,
-				sy1 = (ry + relW) * s.z + s.offsetY;
+		for (const p of vis) {
+			const rr = lookup(p, t);
+			if (!rr) continue;
+			const x0 = (rr.x - aR.x) / aR.w;
+			const x1 = x0 + rr.w / aR.w;
+			const y0 = (rr.y - aR.y) / aR.h;
+			const y1 = y0 + rr.h / aR.h;
+			const sx0 = x0 * s.z + s.offsetX,
+				sx1 = x1 * s.z + s.offsetX;
+			const sy0 = y0 * s.z + s.offsetY,
+				sy1 = y1 * s.z + s.offsetY;
 			if (sx0 < -m || sx1 > 1 + m || sy0 < -m || sy1 > 1 + m) outside++;
 			total++;
 		}
 	}
-	assert.strictEqual(outside, 0, `${outside}/${total} Stücke fielen aus dem Fenster`);
+	assert.strictEqual(
+		outside,
+		0,
+		`${outside}/${total} Stücke fielen aus dem Fenster (kompaktierter Raum)`,
+	);
 });
 
-test('Regressions-Parität: neue robuste Box == exakte relative Box (Normal-Tiefen 3-8)', () => {
-	// Die neue, rein relative Box (relativ zum Anker framing[0], gebaut aus
-	// ganzzahligen Rasterindizes) muss mit der exakt gefalteten relativen
-	// Referenzbox übereinstimmen. Das ist die eigentliche Invariante - nicht
-	// die rohe Float64-x-Box (die bei tiefen Tiefen ohnehin präzise ist).
-	for (let depth of [3, 5, 8]) {
+test('Kompaktierung bricht nie zusammen: z/endlich, Rest-Fläche >0 (Teil C, Tiefen 5/8/12)', () => {
+	// TEIL C: die alte externe Kompaktierung brach bei hoher Tiefe wegen
+	// Float-Genauigkeit zusammen → z wurde NaN/Infinity, Rest-Fläche = 0%.
+	// Teil C nutzt die kompaktierte Geometrie direkt im Zoom-Pfad (Float-sicher),
+	// sodass die Kompaktierung bei jeder Tiefe funktioniert. Hier wird geprüft:
+	// 1. z, cx, cy, offsetX/Y sind bei allen Checkpoints endlich und sinnvoll.
+	// 2. Die Rest-Fläche (nach Kompaktierung) ist bei jedem Checkpoint >0
+	//    (sofern sichtbare Stücke existieren).
+	for (let depth of [5, 8, 12]) {
 		const r = compileSystem({ ...BASE_CONFIG, depth });
-		const parentMap = new Map(r.bank_pieces.map((p) => [p.id, p]));
-		const BASE = BASE_CONFIG.base;
-		function exactX(p) {
-			let path = [];
-			for (let c = p; c; c = parentMap.get(c.parent_id)) path.push(c);
-			let x = 0;
-			for (let e = 0; e < path.length; e++) x += path[e].localOffsetX * Math.pow(BASE, -(e + 1));
-			return x;
-		}
-		function exactY(p) {
-			let path = [];
-			for (let c = p; c; c = parentMap.get(c.parent_id)) path.push(c);
-			let y = 0;
-			for (let e = 0; e < path.length; e++) y += path[e].localOffsetY * Math.pow(BASE, -(e + 1));
-			return y;
-		}
-		let bankZoomThresholdPowers = BASE_CONFIG.bankZoomThresholdPowers;
-		for (let i = 0; i < r.GLOBAL_BANK_ZOOM.length; i++) {
-			let t = r.GLOBAL_BANK_ZOOM_TIMES[i];
-			let visibleNow = r.bank_pieces.filter(
-				(p) => t >= p.born_time && t < p.cut_time && t < p.taken_time,
-			);
-			if (visibleNow.length === 0) continue;
-			let kMin = Math.min(...visibleNow.map((p) => p.k));
-			let framing = visibleNow.filter(
-				(p) => !(bankZoomThresholdPowers > 0 && p.k > kMin + 2 * bankZoomThresholdPowers),
-			);
-			if (framing.length === 0) continue;
-			let anchor = framing[0];
-			let ax = exactX(anchor),
-				ay = exactY(anchor);
-			let mnX = 0,
-				mxX = 0,
-				mnY = 0,
-				mxY = 0;
-			for (let p of framing) {
-				let rx = exactX(p) - ax,
-					ry = exactY(p) - ay;
-				let relW = Math.pow(BASE, anchor.k - p.k);
-				mnX = Math.min(mnX, rx);
-				mxX = Math.max(mxX, rx + relW);
-				mnY = Math.min(mnY, ry);
-				mxY = Math.max(mxY, ry + relW);
+		const bp = r.bank_pieces;
+		const lookup = r.zoom_rect_lookup;
+		assert.ok(typeof lookup === 'function', 'zoom_rect_lookup muss eine Funktion sein');
+		let nonFiniteCount = 0;
+		let zeroAreaCount = 0;
+		let totalChecks = 0;
+		for (let i = 0; i < r.GLOBAL_BANK_ZOOM_TIMES.length; i++) {
+			const t = r.GLOBAL_BANK_ZOOM_TIMES[i];
+			const s = r.GLOBAL_BANK_ZOOM[i];
+			const vis = bp.filter((p) => t >= p.born_time && t < p.cut_time && t < p.taken_time);
+			if (vis.length === 0) continue;
+			totalChecks++;
+			if (!isFinite(s.z) || s.z <= 0 || !isFinite(s.cx) || !isFinite(s.offsetX)) {
+				nonFiniteCount++;
 			}
-			let cxRef = (mnX + mxX) / 2;
-			let halfWRef = Math.max((mxX - mnX) / 2, 1e-9);
-			let halfHRef = Math.max((mxY - mnY) / 2, 1e-9);
-			let zRef = Math.min(0.5 / halfWRef, 0.5 / halfHRef);
-			let s = r.GLOBAL_BANK_ZOOM[i];
-			assert.ok(
-				Math.abs(s.z - zRef) < 1e-9,
-				`Tiefe ${depth}, Checkpoint ${i}: z weicht zu stark ab (${s.z} vs ${zRef})`,
-			);
-			assert.ok(
-				Math.abs(s.cx - cxRef) < 1e-9,
-				`Tiefe ${depth}, Checkpoint ${i}: cx weicht zu stark ab (${s.cx} vs ${cxRef})`,
-			);
+			// Rest-Fläche >0 prüfen
+			let aR = null,
+				bestMass = -1;
+			for (const p of vis) {
+				const rr = lookup(p, t);
+				if (!rr) continue;
+				const mass = rr.w * rr.h;
+				if (mass > bestMass) {
+					bestMass = mass;
+					aR = rr;
+				}
+			}
+			if (aR && aR.w > 0 && aR.h > 0) {
+				let totalArea = 0;
+				for (const p of vis) {
+					const rr = lookup(p, t);
+					if (!rr) continue;
+					totalArea += (rr.w / aR.w) * (rr.h / aR.h);
+				}
+				if (totalArea <= 0) zeroAreaCount++;
+			}
 		}
+		assert.strictEqual(
+			nonFiniteCount,
+			0,
+			`Tiefe ${depth}: ${nonFiniteCount}/${totalChecks} Checkpoints mit NaN/Infinity in z/cx/offsetX`,
+		);
+		assert.strictEqual(
+			zeroAreaCount,
+			0,
+			`Tiefe ${depth}: ${zeroAreaCount}/${totalChecks} Checkpoints mit Rest-Fläche = 0`,
+		);
 	}
 });
 

@@ -9,6 +9,12 @@ import {
 	makeCompactedLogicalRectLookup,
 	computeCompactionFitStates,
 } from './bank-core.js';
+
+// TEIL C (REST-PRECISION-PLAN): Zoom nutzt kompaktierte Geometrie, damit der
+// kleinste sichtbare Rest auch bei extremem Zoom groß genug skaliert wird.
+// Die Kompaktierungs-Wegpunkte werden dafür IMMER berechnet (unabhängig vom
+// compactionEnabled Render-Modus) - der Zoom-Framing braucht sie zwingend.
+const ZOOM_COMPACTION_TRANSITION_TICKS = 3;
 import { buildMonotoneSpline, buildDampedFilterBundle } from './smoothing.js';
 
 // TEIL B (REST-PRECISION-PLAN): robuste Differenz zweier Stück-Positionen
@@ -258,6 +264,9 @@ export function compileSystemData(config) {
 		compaction_waypoints = computeCompactionWaypoints(bank_pieces, local_max_time, transitionTicks);
 	}
 
+	// TEIL C: Zoom-Wegpunkte werden in finalizeCompiled() berechnet (nach
+	// Tick→Zeit-Konversion, da computeCompactionWaypoints Animation-Zeiten
+	// braucht). Hier nur den Parameter übergeben.
 	return {
 		axes,
 		TOTAL_STEPS,
@@ -334,6 +343,19 @@ export function finalizeCompiled(data) {
 		p.born_time = p.born_time === 0 ? 0 : ttm.tickToTime(p.born_time) - CUT_BORN_LEAD;
 	}
 
+	// TEIL C: Zoom-Wegpunkte IMMER berechnet (unabhängig vom Render-Modus),
+	// damit der Bank-Zoom die kompaktierte Geometrie framen kann. Nutzt die
+	// zeitlich weiche Kompaktierung (computeSegmentBlend) als einzige
+	// Glätte-Quelle - kein lokales Komprimieren bei Geburt. MUSS nach der
+	// Tick→Zeit-Konversion oben passieren (computeCompactionWaypoints braucht
+	// Animation-Zeiten, nicht Ticks).
+	let zoom_waypoints = computeCompactionWaypoints(
+		bank_pieces,
+		local_max_time,
+		ZOOM_COMPACTION_TRANSITION_TICKS,
+	);
+	let zoom_rect_lookup = makeCompactedLogicalRectLookup(zoom_waypoints);
+
 	// Auto-Zoom-Ziel (Ziel-Seite): pro Schale S der Exponent der tiefsten in
 	// dieser Schale neu sichtbaren Ziffern-Stelle - wächst mit der Animation
 	// von 0 (nur Basisquadrat) bis N_MAX, nicht von Anfang an fix auf N_MAX.
@@ -379,27 +401,22 @@ export function finalizeCompiled(data) {
 	// PATCH V39: Kein Sicherheitsrand mehr (war 0.2) - der Zoom beim
 	// Startzustand (volles [0,1]-Quadrat) ist damit exakt 1.0, nachweislich
 	// der garantierte MINIMALE Zoom über die gesamte Laufzeit.
-	const ZOOM_MARGIN = 0;
+	// TEIL C: kleiner Rand, damit der kleinste sichtbare Rest nicht exakt am
+	// Pixelrand klebt (er bleibt groß genug sichtbar).
+	const ZOOM_MARGIN = 0.05;
 
 	// eventTimes sind jetzt echte Zeit-Werte (Tick -> Zeit via ttm).
 	let eventTimes = eventTimesTicks.map((tk) => ttm.tickToTime(tk));
 
-	// PATCH V35: Zoom-Schwellwert aus dem Algorithmus-Spiel-Tool
-	// übernommen. Stücke, die mehr als BANK_ZOOM_THRESHOLD_POWERS Potenzen
-	// von BASE kleiner sind als das größte gerade sichtbare Stück, fließen
-	// NICHT ins Zoom-Framing ein (werden aber weiter gezeichnet) -
-	// verhindert, dass ein einzelner winziger Einzelgänger den Zoom aufhält.
-	const kThresholdDiff = 2 * BANK_ZOOM_THRESHOLD_POWERS;
-
-	// TEIL B (REST-PRECISION-PLAN): robuste Bounding-Box via lokale
-	// Vorfahren-Rezentrierung. Bei Tiefe 22 kollabiert die Box aus rohen
-	// Float64-x-Werten (Auslöschung: zwei benachbarte, tief geschachtelte
-	// Stücke liegen innerhalb der ~15-17 signifikanten Stellen, ihr
-	// Differenz->0 -> halfW->0 -> z->Infinity/NaN). Rettung: statt
-	// p.x - q.x (zwei bereits gerundete O(1)-Werte) abzuziehen, wird die
-	// Differenz aus den kurzen, gutkonditionierten localOffsetX/Y-Ketten
-	// vom gemeinsamen Vorfahren aufsummiert (siehe relativePosition()).
-	const parentMap = new Map(bank_pieces.map((p) => [p.id, p]));
+	// TEIL C (REST-PRECISION-PLAN): mit kompaktierter Geometrie werden ALLE
+	// sichtbaren Stücke berücksichtigt (kein kThresholdDiff-Filter nötig -
+	// die Kompaktierung klumpt die Stücke räumlich zusammen, sodass der
+	// Rahmen automatisch kompakt bleibt). Anker = größte Fläche (schwerste
+	// Gruppe) für ruhige Kamera, wie buildCompactionMap().
+	//
+	// TEIL B: robuste Bounding-Box ( Float-Auslöschung bei Tiefe 22+ ):
+	// die kompaktierten Rects (zoom_rect_lookup) sind Float-sicher, da sie
+	// auf computeSegmentBlend basieren (keine absoluten p.x).
 	let bank_zoom_states = new Array(eventTimes.length);
 	for (let i = 0; i < eventTimes.length; i++) {
 		let t = eventTimes[i];
@@ -407,38 +424,42 @@ export function finalizeCompiled(data) {
 		let visibleNow = bank_pieces.filter(
 			(p) => t >= p.born_time && t < p.cut_time && t < p.taken_time,
 		);
-		let kMin = visibleNow.length > 0 ? Math.min(...visibleNow.map((p) => p.k)) : 0;
-		// Nur die Stücke, die ins Framing einfließen (kThresholdDiff-Filter).
-		let framing = visibleNow.filter(
-			(p) => !(BANK_ZOOM_THRESHOLD_POWERS > 0 && p.k > kMin + kThresholdDiff),
-		);
-		if (framing.length === 0) {
+		if (visibleNow.length === 0) {
 			bank_zoom_states[i] = { z: 1, cx: 0.5, cy: 0.5, offsetX: 0, offsetY: 0, area: 1 };
 			continue;
 		}
-		// Anker = erstes Framing-Stück. ALLES wird ROBUST RELATIV zum
-		// Anker gebaut (kein einziger absoluter Float-x-Wert fliesst ein -
-		// der waere bei Tiefe 22+ durch Float-Ausloeschung bereits
-		// verfaelscht, siehe probe9: anchor.x = 7.5 statt 0.6). Position via
-		// localOffset-Ketten (relativePosition), Groesse relativ zum Anker
-		// ueber den Tiefen-Exponenten: ein Stueck auf Tiefe k hat absolute
-		// Breite BASE^-k, relativ zum Anker (Tiefe a) also BASE^(a-k) - ein
-		// sauberer O(1)-Float solange die Framing-Stuecke aehnliche Tiefe
-		// haben (kThresholdDiff-Filter garantiert das).
-		let anchor = framing[0];
+		// Anker = schwerste Gruppe (max w*h) für ruhige Kamera.
+		// Kompaktierte Geometrie via zoom_rect_lookup (C¹ via computeSegmentBlend).
+		let anchor = visibleNow[0];
+		let anchorRect = null;
+		let bestMass = -1;
+		for (let p of visibleNow) {
+			area += p.w * p.h;
+			let r = zoom_rect_lookup(p, t);
+			if (r && r.w * r.h > bestMass) {
+				bestMass = r.w * r.h;
+				anchor = p;
+				anchorRect = r;
+			}
+		}
+		if (!anchorRect) {
+			bank_zoom_states[i] = { z: 1, cx: 0.5, cy: 0.5, offsetX: 0, offsetY: 0, area: 1 };
+			continue;
+		}
 		let minRelX = 0,
 			maxRelX = 0,
 			minRelY = 0,
 			maxRelY = 0;
-		for (let p of framing) {
-			area += p.w * p.h; // Fläche zählt IMMER (auch ausgeblendete), nur fürs Framing irrelevant
-			let rel = relativePosition(p, anchor, parentMap, data.BASE);
-			let relW = Math.pow(data.BASE, anchor.k - p.k);
-			let relH = relW;
-			let x0 = rel.dx,
-				x1 = rel.dx + relW;
-			let y0 = rel.dy,
-				y1 = rel.dy + relH;
+		for (let p of visibleNow) {
+			let r = zoom_rect_lookup(p, t);
+			if (!r) continue;
+			// Relativ zum Anker im kompaktierten Raum (Anker sitzt bei 0,0).
+			let relW = anchorRect.w > 0 ? r.w / anchorRect.w : 1;
+			let relH = anchorRect.h > 0 ? r.h / anchorRect.h : 1;
+			let x0 = (r.x - anchorRect.x) / anchorRect.w;
+			let y0 = (r.y - anchorRect.y) / anchorRect.h;
+			let x1 = x0 + relW;
+			let y1 = y0 + relH;
 			if (x0 < minRelX) minRelX = x0;
 			if (x1 > maxRelX) maxRelX = x1;
 			if (y0 < minRelY) minRelY = y0;
@@ -528,6 +549,10 @@ export function finalizeCompiled(data) {
 		GLOBAL_COMPACTION_WAYPOINTS,
 		GLOBAL_COMPACTION_LOGICAL_LOOKUP,
 		GLOBAL_COMPACTION_FIT_SPLINE,
+		// TEIL C: Zoom-Wegpunkte + Rect-Lookup für den Zoom-Pfad (immer
+		// berechnet, unabhängig vom compactionEnabled Render-Modus).
+		zoom_waypoints,
+		zoom_rect_lookup,
 		MAX_TIME: local_max_time,
 		BASE: data.BASE,
 	};
