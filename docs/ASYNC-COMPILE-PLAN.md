@@ -186,6 +186,19 @@ keine partiellen/Teilergebnisse, keine Änderung an `bank-core.js`/
     enthält bereits den NEUEN `depth`-Wert (beweist: `configStore`/
     `buildStateParams()` sind synchron, nur `compiledStore` hinkt hinterher).
 
+## Bekannte Stolperfalle: "Function object could not be cloned"
+
+Diese Meldung taucht NICHT durch einen Logikfehler im Code auf, sondern
+wenn E2E gegen einen **stale `dist/`-Build** läuft (der Preview-Server
+serviert einen alten Build, während `compiler.js`/der Worker sich geändert
+haben). Dann passen die Hashes der Worker-Chunks (`compile.worker-*.js`)
+nicht mehr zum Rest des Builds, und der strukturierte Klon/Transfer
+scheitert. **Immer vor `pnpm test:e2e` neu bauen** (`pnpm build`) und
+laufende Preview-Server stoppen (`scripts/serve.sh stop`), sonst wird ein
+völlig harmloser alter Build als "Worker-Fehler" angezeigt. Im frischen
+Build ist `compileSystemData()` sauber clonbar (Unit-Test 3 belegt: kein
+Funktionswert im Baum, `structuredClone` wirft nicht).
+
 ## Reihenfolge / Abgrenzung zu Phase 1
 
 Dieser Plan ist unabhängig vom Tab-/Label-Umbau (Phase 1 in
