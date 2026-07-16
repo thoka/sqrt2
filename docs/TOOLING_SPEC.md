@@ -1,6 +1,6 @@
 # Tooling-Umbau: Svelte + geteilter Zustand für austauschbare Widgets & Fernsteuerung
 
-**Status:** Phasen 0–5 erledigt (alle Tests grün). Phase 6 (Politur) offen. Ziel dieses Dokuments: genug Kontext, um den Umbau in einer neuen Sitzung effizient zu starten, ohne die Diskussion aus dem Gesprächsverlauf zu wiederholen.
+**Status:** Phasen 0–8 erledigt (alle Tests grün). Phase 6 (Politur) offen. Deployment läuft über GitHub Pages (Branch `gh-pages`, lokal gebaut via `scripts/deploy-pages.sh`). Lokale Port-Isolation über mise/direnv (`scripts/init-local-ports.sh`). Ziel dieses Dokuments: genug Kontext, um den Umbau in einer neuen Sitzung effizient zu starten, ohne die Diskussion aus dem Gesprächsverlauf zu wiederholen.
 
 ## 1. Warum (Kontext aus dem Gespräch)
 
@@ -76,6 +76,25 @@ Jede Phase ist einzeln committ- und testbar - wichtig, damit eine künftige Sitz
 **Neue Erkenntnis (Phase 7):** `window.MathJax` wird im `<head>` VOR dem Laden der MathJax-Bibliothek gesetzt (`{ chtml: { displayAlign: 'left' } }`) – `MathJax.typesetPromise` existiert erst NACH dem async-Laden. In `updateHUD` (jetzt `src/App.svelte`) daher NIEMALS blind `if (window.MathJax) MathJax.typesetPromise(...)` aufrufen: das wirft (`typesetPromise is not a function`) und bricht `App.onMount` ab → die Kind-Mounts (Canvas!) werden wieder abgebaut. Korrekt: `typeof window.MathJax.typesetPromise === 'function'` prüfen, sonst `window.MathJax?.startup?.promise` nutzen, sonst nur skalieren. Siehe `src/App.svelte`.
 
 **Nächster Schritt (Stand 2026-07-15):** Phase 8 (Connection-Service-Anbindung) ist committet. Offen: Phase 6 (Politur), "Reine-Svelte"-Vertiefung (`bank-core.js`/`smoothing.js` → `src/lib/`, `RemoteControl` als Route foldbar). E2E-Verifikation der WS-Verbindung liegt als **headless Integrationstest** `tests/relay/test-sqrt2-sync.mjs` vor (startet echten Relay, Host+Gast-Sync durch den Server, `pnpm test:wssync`) — ergänzt die Protokoll-Stufen-Tests `test-api.mjs`/`test-connection.mjs`. Eine Playwright-E2E über echtes Handy/QR ist im Browser-Sandbox nicht lauffähig (siehe CLAUDE.md Umgebungs-Bedingtheit).
+
+## 8. Deployment: GitHub Pages (committeter Build, kein CI)
+
+**Stand 2026-07-16:** GitHub Pages läuft über **Branch-Deploy** (`gh-pages`, `legacy`), nicht über GitHub Actions. Grund: pnpm 11.13 blockiert `pnpm install` bei esbuild-Build-Scripts (`ERR_PNPM_IGNORED_BUILDS`) — der ursprüngliche `build_type: workflow` (`.github/workflows/deploy-pages.yml`) schlug in CI daher dauerhaft fehl. Gelöst durch lokalen Build + committetes `dist/`.
+
+- **Live-URL:** `https://thoka.github.io/sqrt2/` (Vite `base: '/sqrt2/'` via `GITHUB_PAGES=true`).
+- **Workflow:** `scripts/deploy-pages.sh` baut lokal (`GITHUB_PAGES=true pnpm build`), kopiert `dist/`-Inhalt als Repo-Root in einen frischen `gh-pages`-Branch (orphan) und pusht `--force`. Danach zurück zu `master`. Pages liefert den Branch-Root aus.
+- **Wichtig:** `gh-pages` enthält NUR die Build-Artefakte (kein Source). Nie per Hand dort arbeiten.
+- **pnpm-Bug-Fix (relevant für ALLE lokalen Befehle):** statt `onlyBuiltDependencies` (wird von pnpm 11.13 bei der *Ausführung* ignoriert) steht in `pnpm-workspace.yaml` jetzt `allowBuilds: { esbuild: true }`. Damit laufen `pnpm install`/`pnpm check`/Pre-Commit-Hook wieder sauber durch.
+
+## 9. Lokale Port-Isolation (mehrere Klone/Worker auf einem Host)
+
+**Stand 2026-07-16:** Auf einem Host laufen oft mehrere geklonte Repos (oder versehentlich zwei Worker im selben Repo) parallel — feste Ports (Vite 4173/5200, Relay 8080) kollidieren. Gelöst über mise/direnv:
+
+- `scripts/init-local-ports.sh` vergibt **einmalig** (idempotent) pro Klon zufällige, getrennte Ports: `RELAY_PORT` (8100–8199), `PORT` (4200–4299, Vite preview), `DEV_PORT` (5200–5299, Vite dev) → schreibt `.ports.local.env` (gitignored).
+- `mise.toml` `[env]` lädt `.ports.local.env` (`_.file`, dotenv-Typ) und setzt Fallbacks (`8080`/`4173`). Beim `cd` (direnv → `mise hook-env`) stehen die Ports automatisch im PATH.
+- `vite.config.js` proxiet `/api`+`/ws` auf `RELAY_PORT`; `scripts/relay-dev.sh` nutzt `RELAY_PORT`; `scripts/serve.sh` nutzt `DEV_PORT` (dev) / `PORT` (preview); Playwright (`playwright.config.js`) nutzt `port: 0` (echt zufällig) + `reuseExistingServer: false`, damit zwei parallele E2E-Runs nicht denselben fremden Server nehmen.
+- **Workflow für neuen Klon:** `git clone … && cd sqrt2-gh && ./scripts/init-local-ports.sh && direnv allow`. Danach laufen Relay/Vite automatisch auf klon-eindeutigen Ports.
+- **Empfehlung:** Zwei Worker im *selben* Repo bleiben vermeiden (teilen Relay-State) — lieber ein zweites Klon.
 
 ## 5. Explizite Nicht-Ziele / Abgrenzung
 

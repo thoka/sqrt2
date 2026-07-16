@@ -7,7 +7,10 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 // Relay (server/relay) wird dafür als eigener Hintergrund-prozess gestartet
 // (siehe scripts/relay-dev.sh) und hier durchgereicht.
 // Produktion: server/index.js (Statics + Relay in einem Prozess).
-const RELAY_TARGET = process.env.RELAY_TARGET ?? 'http://localhost:8080';
+// RELAY_PORT ueberschreibbar, damit mehrere geklonte Repos/Worker auf
+// einem Host nicht den Relay auf 8080 blockieren (siehe scripts/relay-dev.sh).
+const RELAY_PORT = process.env.RELAY_PORT ?? '8080';
+const RELAY_TARGET = process.env.RELAY_TARGET ?? `http://localhost:${RELAY_PORT}`;
 const relayProxy = {
 	'/api': { target: RELAY_TARGET, changeOrigin: true },
 	'/ws': { target: RELAY_TARGET, ws: true, changeOrigin: true },

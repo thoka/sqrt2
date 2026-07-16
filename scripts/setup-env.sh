@@ -44,12 +44,11 @@ echo "==> [5/6] Projekt-Abhaengigkeiten via pnpm"
 # KEIN 'pnpm import' aus package-lock.json (stoest auf pnpms
 # resolution-policy-Pruefung). pnpm install erzeugt eine frische
 # pnpm-lock.yaml aus package.json.
-# pnpm install kann mit ERR_PNPM_IGNORED_BUILDS exit!=0 enden, wenn Build-
-# Skripte blockiert sind. Das ist hier bekannt (esbuild, s. pnpm-workspace.yaml
-# onlyBuiltDependencies) und wird gezielt per 'pnpm rebuild esbuild' nachgeholt.
-# Daher Install nicht hart abbrechen lassen (set -e).
-pnpm install || echo "pnpm install: ignorierte Build-Skripte (bekannt) - werden via rebuild nachgebaut"
-pnpm rebuild esbuild   # erzwingt esbuild-Postinstall trotz 'Already up to date'
+# pnpm install liess frueher (pnpm 11.13) mit ERR_PNPM_IGNORED_BUILDS fehl,
+# wenn Build-Skripte blockiert waren (esbuild, s. pnpm-workspace.yaml
+# allowBuilds). Seit dem allowBuilds-Eintrag laeuft install sauber durch.
+pnpm install
+pnpm rebuild esbuild   # erzwingt esbuild-Postinstall falls noetig
                       # (vom Vite-Build benoetigt)
 pnpm add -D @playwright/test
 
@@ -59,4 +58,4 @@ pnpm build
 
 echo ""
 echo "Fertig. E2E-Smoke-Test ausfuehren mit:  pnpm test:e2e"
-echo "(startet einen Vite-Preview-Server auf :4173 und prueft dist/sqrt2.html)"
+echo "(startet einen Vite-Preview-Server auf einem freien Port und prueft dist/sqrt2.html)"

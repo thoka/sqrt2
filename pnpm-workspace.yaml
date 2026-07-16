@@ -1,15 +1,16 @@
-# pnpm-Workspace-Konfiguration (pnpm 10+/11).
+# pnpm-Workspace-Konfiguration (pnpm 11).
 #
-# onlyBuiltDependencies: Build-Skripte, die pnpm aus Sicherheitsgruenden per
-# Default blockiert, hier explizit erlauben. Ohne esbuild-Postinstall fehlt das
+# allowBuilds: Build-Skripte, die pnpm aus Sicherheitsgruenden per Default
+# blockiert, hier explizit erlauben. Ohne esbuild-Postinstall fehlt das
 # esbuild-Binary und `vite build` (Schritt 6 von setup-env.sh) schlaegt fehl
-# (ERR_PNPM_IGNORED_BUILDS).
+# (ERR_PNPM_IGNORED_BUILDS). In pnpm 11 heisst das Feld `allowBuilds`
+# (Vorgänger-Versionen nutzten `onlyBuiltDependencies`).
 #
 # minimumReleaseAge: 0 -> die Supply-Chain-Alterspruefung fuer dieses Projekt
 # deaktivieren. Das Projekt nutzt bewusst aktuelle Versionen (z.B.
 # svelte@5.56.5 gilt als "zu frisch" fuer die Default-Cutoff und triggert
 # ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION). Wer die Policy behalten will, kann
 # stattdessen gezielt `minimumReleaseAgeExclude: [svelte@5.56.5]` setzen.
-onlyBuiltDependencies:
-  - esbuild
+allowBuilds:
+  esbuild: true
 minimumReleaseAge: 0
