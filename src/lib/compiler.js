@@ -149,6 +149,28 @@ export function compileSystem(config) {
 		p.born_time = p.born_time === 0 ? 0 : ttm.tickToTime(p.born_time) - CUT_BORN_LEAD;
 	}
 
+	// Laufender HUD-Fortschritt (Zahlentafel l/l²/R): pro Schale S die
+	// sortierten Entnahme-Zeiten (taken_time) der Stücke, die in DIESER
+	// Schale entnommen werden. Die Zahlentafel leitet daraus ab, wie weit die
+	// aktuelle Ziffern-Stelle schon gefüllt ist - sie wächst dann bei JEDER
+	// Stück-Entnahme mit, statt erst bei der nächsten (komplett gefüllten)
+	// Stelle neu geschrieben zu werden. Gruppierung über die
+	// Schalen-Startzeiten (shell_start_time), da eine Schale S im Compiler
+	// exakt die Stücke mit taken_time in [shell_start[S], shell_start[S+1])
+	// entnimmt und axes[S].exp die dazugehörige Zahlstelle ist.
+	let GLOBAL_SHELL_TAKEN = new Array(TOTAL_STEPS);
+	for (let S = 0; S < TOTAL_STEPS; S++) {
+		let t0 = shell_start_time[S];
+		let t1 = S + 1 < TOTAL_STEPS ? shell_start_time[S + 1] : Infinity;
+		let times = [];
+		for (let p of bank_pieces) {
+			if (isFinite(p.taken_time) && p.taken_time >= t0 && p.taken_time < t1)
+				times.push(p.taken_time);
+		}
+		times.sort((a, b) => a - b);
+		GLOBAL_SHELL_TAKEN[S] = times;
+	}
+
 	// Auto-Zoom-Ziel (Ziel-Seite): pro Schale S der Exponent der tiefsten in
 	// dieser Schale neu sichtbaren Ziffern-Stelle - wächst mit der Animation
 	// von 0 (nur Basisquadrat) bis N_MAX, nicht von Anfang an fix auf N_MAX.
@@ -320,6 +342,7 @@ export function compileSystem(config) {
 		bank_pieces,
 		render_pipeline,
 		GLOBAL_N_ARR: n_arr,
+		GLOBAL_SHELL_TAKEN,
 		P_FINAL,
 		GLOBAL_SHELL_START: shell_start_time,
 		GLOBAL_TTM: ttm,
