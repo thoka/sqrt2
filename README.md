@@ -51,7 +51,7 @@ pnpm test             # node --test *.test.js (reine Logik) UND vitest run (Svel
 | `sqrt2.html` | **Haupttool-Shell.** Mountet die Svelte-Komponenten und hält nur noch die Zahlentafel (`updateHUD`, l/l²/R), das `SETTINGS`-Array (URL-Sync) und die Playback-Brücke für die Zahlentafel. Das Canvas-Rendering selbst liegt seit Phase 4a in `TargetBankCanvas.svelte`. Enthält den *ausgelagerten* alten SYSTEM-C-Renderblock noch als toten Code (siehe `AGENTS.md`). | Funktionsfähig |
 | `selection_strategy_prototype.html` | **Algorithmus-Spiel-Tool.** Bank isoliert an echten Positionen, Tick-Zeitachse (1 Tick = 1 Entnahme), zum Testen von Auswahl-/Schneide-Strategien. | Funktionsfähig, im Browser getestet |
 | `p.html` | Referenz-Prototyp (Slot-basiertes Repacking, **verworfen**, nur als Vergleich). | historisch |
-| `bank-core.js` | **Gemeinsame Bibliothek** (ES-Modul), von beiden HTML-Tools importiert: Bank-Algorithmus + Kompaktierung + bijektive Tick↔Zeit-Abbildung. | Fertig, in Node getestet |
+| `src/lib/bank-core.js` | **Gemeinsame Bibliothek** (ES-Modul), von beiden HTML-Tools importiert: Bank-Algorithmus + Kompaktierung + bijektive Tick↔Zeit-Abbildung. | Fertig, in Node getestet |
 | `src/lib/smoothing.js` | **Gemeinsame Glättungs-Bibliothek** (3 Bausteine, siehe §6.1). | Fertig, persistent getestet |
 | `src/lib/compiler.js` | `compileSystem()` als reine Funktion (Config rein, kompilierter Zustand raus). | Fertig, `compiler.test.js` |
 | `src/lib/stores.js` | `configStore`/`playbackStore` (writable) + `compiledStore` (derived) + `displayStore` (lokaler UI-State, **nicht** synchronisiert). | Fertig |

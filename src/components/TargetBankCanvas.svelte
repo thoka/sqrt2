@@ -20,7 +20,7 @@
 	// sqrt2.html.
 	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
-	import { applyCompactionFit } from '../../bank-core.js';
+	import { applyCompactionFit } from '../lib/bank-core.js';
 	import { configStore, playbackStore, compiledStore } from '../lib/stores.js';
 
 	const COLORS = [

@@ -8,7 +8,7 @@ import {
 	computeCompactionWaypoints,
 	makeCompactedLogicalRectLookup,
 	computeCompactionFitStates,
-} from '../../bank-core.js';
+} from './bank-core.js';
 import { buildMonotoneSpline, buildDampedFilterBundle } from './smoothing.js';
 
 export function compileSystem(config) {

@@ -15,7 +15,7 @@ Beides braucht dieselbe Grundarchitektur: **Zustand von Darstellung trennen**, d
 
 ## 2. Aktuelle Architektur (Ist-Zustand, als Referenz)
 
-- `bank-core.js` - reine Algorithmus-Bibliothek (Bank-Auswahl/Schneiden + Schalen-Orchestrierung + Kompaktierung + Tick↔Zeit-Mapping), ES-Modul + CommonJS-Dual-Export, framework-agnostisch. **Bleibt unangetastet.**
+- `src/lib/bank-core.js` - reine Algorithmus-Bibliothek (Bank-Auswahl/Schneiden + Schalen-Orchestrierung + Kompaktierung + Tick↔Zeit-Mapping), ES-Modul, framework-agnostisch. Liegt in `src/lib/`.
 - `sqrt2.html` - Haupttool, eine Datei: `<style>` + `<script type="module">` mit allem drin:
   - **Compiler** (`compileSystem()`): ruft `buildSystem()` aus `bank-core.js`, baut `axes`/`bank_pieces`/`render_pipeline`/Tick↔Zeit-Mapping/Zoom-Checkpoints/Auto-Zoom-Checkpoints.
   - **Renderer** (`renderFrame()` + Helfer): Canvas-2D-Zeichnung, gesteuert von `u_time`/`u_mode_AB`/`AUTO_ZOOM_MIN_PX`/`BANK_ZOOM_THRESHOLD_POWERS`.

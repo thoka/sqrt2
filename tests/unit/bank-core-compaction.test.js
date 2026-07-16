@@ -14,7 +14,7 @@ import {
 	makeCompactedLogicalRectLookup,
 	computeCompactionFitStates,
 	applyCompactionFit,
-} from '../../bank-core.js';
+} from '../../src/lib/bank-core.js';
 import { buildDampedFilterBundle } from '../../src/lib/smoothing.js';
 
 // Müssen mit den Konstanten in bank-core.js übereinstimmen (nicht

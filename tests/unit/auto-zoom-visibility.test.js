@@ -11,7 +11,7 @@
 // Kopie, die sqrt2.html vorher zusätzlich brauchte.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createBankSimulation, buildSystem } from '../../bank-core.js';
+import { createBankSimulation, buildSystem } from '../../src/lib/bank-core.js';
 import { buildMonotoneSpline } from '../../src/lib/smoothing.js';
 
 // Repliziert NUR die Schalen-Start-Zeit-Berechnung aus compileSystem() in

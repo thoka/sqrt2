@@ -15,9 +15,8 @@ Offene Punkte, nach Relevanz sortiert. Erledigtes wird durchgestrichen
 - [ ] **Phase 6 „Politur"**: Widget-Auswahl-UI im `ControlPanel` (nicht nur
       `restwidget`-URL-Param) — z.B. sanfter Umschalt-Dialog für
       Rest-Bars/Grid. Tests: Svelte-Component-Test.
-- [ ] **`bank-core.js` → `src/lib/` migrieren** (ES-Modul-Struktur, von
-      `TargetBankCanvas` importiert statt global). Tests nachführen
-      (`bank-core-compaction.test.js` pfad-anpassen).
+- [x] **`bank-core.js` → `src/lib/` migriert** (ES-Modul-Struktur, von
+       `TargetBankCanvas` importiert statt global). Tests nachgeführt.
 - [x] `smoothing.js` → `src/lib/` migriert
       Import-Pfade in `TargetBankCanvas.svelte` anpassen.
 

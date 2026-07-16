@@ -15,7 +15,7 @@ vollständig lesen - hier nur das Nötigste (das *Warum/Wie* lebt in CLAUDE.md).
 - Stores (`src/lib/stores.js`): `configStore`/`playbackStore` (writable,
   synchronisiert), `compiledStore` (derived → `compileSystem`),
   `displayStore` (lokal, NICHT synchronisiert). URL-Sync:
-  `src/lib/urlState.js`. Geteilte Logik: `bank-core.js`, `src/lib/smoothing.js`.
+  `src/lib/urlState.js`. Geteilte Logik: `src/lib/bank-core.js`, `src/lib/smoothing.js`.
 
 ## Build / Test / Run
 
