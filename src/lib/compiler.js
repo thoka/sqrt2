@@ -17,7 +17,7 @@ import { buildMonotoneSpline, buildDampedFilterBundle } from './smoothing.js';
 // benachbarten Stücken) werden die kurzen, gutkonditionierten
 // localOffsetX/Y-Ketten vom tiefsten gemeinsamen Vorfahren aufsummiert.
 // parentMap: id -> piece. Reine Funktion, worker-tauglich (keine Closures).
-export function relativePosition(p, q, parentMap) {
+export function relativePosition(p, q, parentMap, BASE) {
 	// Pfad von p bzw. q zur Wurzel (inkl. localOffsetX/Y je Knoten).
 	let pathP = [];
 	for (let cur = p; cur; cur = parentMap.get(cur.parent_id)) pathP.push(cur);
@@ -33,17 +33,29 @@ export function relativePosition(p, q, parentMap) {
 	// pathP/pathQ sind blatt->wurzel geordnet (path[0] = Blatt). i / j
 	// zeigen auf den tiefsten gemeinsamen Vorfahren (LCA) selbst; die Knoten
 	// UNTERHALB des LCA sind path[0..i] bzw. path[0..j].
-	let dx = 0,
-		dy = 0;
-	for (let k = 0; k <= i; k++) {
-		dx += pathP[k].localOffsetX;
-		dy += pathP[k].localOffsetY;
+	//
+	// Jeder Knoten traegt den ganzzahligen Rasterindex localOffsetX/Y
+	// (0..BASE-1, O(1), siehe bank-core.js). Die echte Position eines
+	// Knotens ist die Faltung von WURZEL (e=letztes) nach BLATT (e=0):
+	//   x = ((...(i_root)/BASE + i_{L-2})/BASE + ... + i_0)/BASE
+	// also  fx = (fx + localOffset[e]) / BASE  von WURZEL nach BLATT - das
+	// gewichtet das BLATT (direkt am Ort) mit BASE^-1 (groesster Beitrag),
+	// den ROOT mit BASE^-L (kleinster), exakt und ohne Float-Ausloeschung,
+	// rein Float (kein BigInt). Wir falten JEDE Kette bis zur WURZEL; die
+	// gemeinsamen oberen Ebenen beider Stuecke sind identisch und heben
+	// sich in rel.dx = foldP - foldQ exakt weg.
+	function fold(path) {
+		let fx = 0,
+			fy = 0;
+		for (let e = path.length - 1; e >= 0; e--) {
+			fx = (fx + path[e].localOffsetX) / BASE;
+			fy = (fy + path[e].localOffsetY) / BASE;
+		}
+		return { fx, fy };
 	}
-	for (let k = 0; k <= j; k++) {
-		dx -= pathQ[k].localOffsetX;
-		dy -= pathQ[k].localOffsetY;
-	}
-	return { dx, dy };
+	let a = fold(pathP);
+	let b = fold(pathQ);
+	return { dx: a.fx - b.fx, dy: a.fy - b.fy };
 }
 
 // compileSystemData(): der TEURE, rein numerische Teil (worker-tauglich).
@@ -404,10 +416,15 @@ export function finalizeCompiled(data) {
 			bank_zoom_states[i] = { z: 1, cx: 0.5, cy: 0.5, offsetX: 0, offsetY: 0, area: 1 };
 			continue;
 		}
-		// Anker = erstes Framing-Stück; alle anderen Positionen werden
-		// ROBUST relativ zu ihm (via localOffset-Ketten) bestimmt. Nur EIN
-		// absoluter x/y-Wert (der des Ankers) fließt ein - kein Abzug
-		// zweier gerundeter O(1)-Koordinaten.
+		// Anker = erstes Framing-Stück. ALLES wird ROBUST RELATIV zum
+		// Anker gebaut (kein einziger absoluter Float-x-Wert fliesst ein -
+		// der waere bei Tiefe 22+ durch Float-Ausloeschung bereits
+		// verfaelscht, siehe probe9: anchor.x = 7.5 statt 0.6). Position via
+		// localOffset-Ketten (relativePosition), Groesse relativ zum Anker
+		// ueber den Tiefen-Exponenten: ein Stueck auf Tiefe k hat absolute
+		// Breite BASE^-k, relativ zum Anker (Tiefe a) also BASE^(a-k) - ein
+		// sauberer O(1)-Float solange die Framing-Stuecke aehnliche Tiefe
+		// haben (kThresholdDiff-Filter garantiert das).
 		let anchor = framing[0];
 		let minRelX = 0,
 			maxRelX = 0,
@@ -415,11 +432,13 @@ export function finalizeCompiled(data) {
 			maxRelY = 0;
 		for (let p of framing) {
 			area += p.w * p.h; // Fläche zählt IMMER (auch ausgeblendete), nur fürs Framing irrelevant
-			let rel = relativePosition(p, anchor, parentMap);
+			let rel = relativePosition(p, anchor, parentMap, data.BASE);
+			let relW = Math.pow(data.BASE, anchor.k - p.k);
+			let relH = relW;
 			let x0 = rel.dx,
-				x1 = rel.dx + p.w;
+				x1 = rel.dx + relW;
 			let y0 = rel.dy,
-				y1 = rel.dy + p.h;
+				y1 = rel.dy + relH;
 			if (x0 < minRelX) minRelX = x0;
 			if (x1 > maxRelX) maxRelX = x1;
 			if (y0 < minRelY) minRelY = y0;
@@ -427,9 +446,9 @@ export function finalizeCompiled(data) {
 		}
 		let cx_frame = (minRelX + maxRelX) / 2;
 		let cy_frame = (minRelY + maxRelY) / 2;
-		// Absoluter Mittelpunkt: Anker-Position + robuster relativer Versatz.
-		let cx = anchor.x + cx_frame;
-		let cy = anchor.y + cy_frame;
+		// Mittelpunkt IM RELATIVSYSTEM des Ankers (Anker sitzt bei 0,0).
+		let cx = cx_frame;
+		let cy = cy_frame;
 		let halfW = Math.max((maxRelX - minRelX) / 2, 1e-9) * (1 + ZOOM_MARGIN);
 		let halfH = Math.max((maxRelY - minRelY) / 2, 1e-9) * (1 + ZOOM_MARGIN);
 		let z = Math.min(0.5 / halfW, 0.5 / halfH);

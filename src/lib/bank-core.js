@@ -177,14 +177,20 @@ function createBankSimulation(BASE, N_MAX, squareSplit) {
 		let cw = is_vert_cut ? best_parent.w / BASE : best_parent.w;
 		let ch = is_vert_cut ? best_parent.h : best_parent.h / BASE;
 		for (let i = 0; i < BASE; i++) {
-			let localOffsetX = is_vert_cut ? i * cw : 0;
-			let localOffsetY = is_vert_cut ? 0 : i * ch;
+			// TEIL B (REST-PRECISION-PLAN): localOffset = ganzzahliger
+			// Rasterindex i (0..BASE-1) des Child im Parent, O(1) bei jeder
+			// Tiefe. Die absolute Position x/y bleibt unveraendert
+			// (i*cw). relativePosition() in compiler.js faltet diese Indizes
+			// als  fx = (fx + localOffset) / BASE  von Blatt nach Wurzel -
+			// exakt und ohne Float-Ausloeschung, weil jeder Offset O(1) ist.
+			let localOffsetX = is_vert_cut ? i : 0;
+			let localOffsetY = is_vert_cut ? 0 : i;
 			let child = {
 				id: global_id++,
 				parent_id: best_parent.id,
 				k: best_parent.k + 1,
-				x: best_parent.x + localOffsetX,
-				y: best_parent.y + localOffsetY,
+				x: best_parent.x + (is_vert_cut ? i * cw : 0),
+				y: best_parent.y + (is_vert_cut ? 0 : i * ch),
 				localOffsetX,
 				localOffsetY,
 				w: cw,
