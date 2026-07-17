@@ -23,6 +23,14 @@
 	import { applyCompactionFit } from '../lib/bank-core.js';
 	import { layoutBox, findRect } from '../lib/recursive-layout.js';
 	import { configStore, playbackStore, compiledStore } from '../lib/stores.js';
+	import {
+		setDebugCanvas,
+		setDebugFrame,
+		setDebugBankTransform,
+		setDebugBankTime,
+		setDebugBankDrawnRest,
+		setDebugBankDrawnDetail,
+	} from '../lib/debugAgent.js';
 
 	const COLORS = [
 		'#cbd5e1',
@@ -254,6 +262,28 @@
 			(bank_frame.mass * 100).toLocaleString('de-DE', {
 				maximumFractionDigits: bank_frame.mass < 0.01 ? 4 : 1,
 			}) + '%';
+
+		// Debug-Telemetrie: Bank-Zoom-Transform fuer den Inspect-Kanal melden.
+		setDebugBankTransform(teilDCamera.z, teilDCamera.cx, teilDCamera.cy);
+
+		// Debug: welche Rest-Stuecke (k -> Anzahl) zeichnet die Bank gerade?
+		const drawn = {};
+		const drawnDetail = [];
+		for (const r of bank_out) {
+			const k = r.piece ? r.piece.k : null;
+			if (k == null) continue;
+			const px = project(0, 0, 0, 0, false, r);
+			if (px[2] < 0.2 && px[3] < 0.2) continue;
+			drawn[k] = (drawn[k] || 0) + 1;
+			drawnDetail.push({
+				k,
+				taken: r.piece.taken_time,
+				cut: r.piece.cut_time,
+				born: r.piece.born_time,
+			});
+		}
+		setDebugBankDrawnRest(drawn);
+		setDebugBankDrawnDetail(drawnDetail);
 
 		ctx.save();
 		ctx.translate(50, H - 50);
@@ -527,11 +557,13 @@
 		if (!isPlaying) return;
 		let dt = (now - lastTime) / 1000.0;
 		lastTime = now;
+		setDebugFrame(dt);
 
 		if (animPause > 0) {
 			animPause -= dt;
 		} else {
 			u_time += dt * ANIM_SPEED * animDirection;
+			setDebugBankTime(u_time);
 			if (u_time >= MAX_TIME) {
 				u_time = MAX_TIME;
 				animDirection = -1;
@@ -551,6 +583,7 @@
 
 	onMount(() => {
 		ctx = canvasEl.getContext('2d');
+		setDebugCanvas(canvasEl);
 		bankZoomLabel = document.getElementById('bankZoomLabel');
 		bankAreaLabel = document.getElementById('bankAreaLabel');
 		autoZoomMarker = document.getElementById('autoZoomMarker');

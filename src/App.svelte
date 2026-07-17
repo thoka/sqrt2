@@ -12,6 +12,7 @@
 	import { displayStore } from './lib/displayStore.js';
 	import { parseConfigFromUrl, parsePlaybackFromUrl } from './lib/urlState.js';
 	import { initSync } from './lib/syncedStore.js';
+	import { initDebugAgent } from './lib/debugAgent.js';
 	import { computeLiveL } from './lib/compiler.js';
 
 	import ControlPanel from './components/ControlPanel.svelte';
@@ -157,6 +158,10 @@
 	onMount(() => {
 		// Fensterübergreifender Sync (BroadcastChannel) - idempotent.
 		initSync();
+		// Debug-Inspect-Kanal (opt-in ?debug=1): legt window.__debugSnapshot()
+		// offen, damit ein Playwright-Peer (connectOverCDP) den inneren Stand
+		// direkt aus dem JS-Kontext liest.
+		initDebugAgent();
 
 		// URL-Sync: configStore/playbackStore aus der URL befüllen, BEVOR die
 		// Komponenten mounten (ControlPanel/PlaybackBar lesen sie direkt).

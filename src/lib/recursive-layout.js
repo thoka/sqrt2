@@ -48,14 +48,7 @@ function leafEffectiveSize(piece, t) {
 	if (!isFinite(piece.taken_time) || t < piece.taken_time) {
 		return { w: piece.w, h: piece.h };
 	}
-	let holdEnd = piece.taken_time + piece.delaySnapshot;
-	if (t < holdEnd) return { w: piece.w, h: piece.h };
-	// Math.max(..., 1e-9): defensiv gegen transitionSnapshot=0 (te===holdEnd)
-	// - dieser Zweig wird dann ohnehin nie erreicht (t<holdEnd deckt schon
-	// alles t<te ab), die Guard verhindert nur eine 0/0-Division in
-	// exotischen Konfigurationen (Testkriterium "keine NaN/Infinity").
-	let s = smoothstep((t - holdEnd) / Math.max(piece.te - holdEnd, 1e-9));
-	return { w: piece.w * (1 - s), h: piece.h * (1 - s) };
+	return { w: 0, h: 0 };
 }
 
 // Top-down-Rekursion: der Abstieg IST der Walk (siehe Datei-Kopfkommentar).
@@ -95,9 +88,10 @@ export function layoutBox(piece, t, originX, originY, out, stats, hideFading = f
 		let { w, h } = leafEffectiveSize(piece, t);
 		if (w <= 0 || h <= 0) return { w: 0, h: 0, mass: 0, momentX: 0, momentY: 0 };
 		let mass = w * h;
-		let fading =
-			hideFading && isFinite(piece.taken_time) && t >= piece.taken_time + piece.delaySnapshot;
-		if (out && !fading) out.push({ piece, x: originX, y: originY, w, h });
+		// leafEffectiveSize liefert ab taken_time bereits Groesse 0 (sichtbarer
+		// Rest endet bei taken_time, synchron zum alten Rest-Modell). Die
+		// Bank zeichnet das Stueck also ab taken_time nicht mehr.
+		if (out) out.push({ piece, x: originX, y: originY, w, h });
 		return { w, h, mass, momentX: mass * (originX + w / 2), momentY: mass * (originY + h / 2) };
 	}
 
