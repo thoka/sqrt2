@@ -191,8 +191,18 @@ export function computeZoomFrame(frame, margin = 0.05, boundX = 0, boundY = 0) {
 	}
 	let cx = momentX / mass;
 	let cy = momentY / mass;
-	let halfW = Math.max(cx - boundX, boundX + w - cx, 1e-9) * (1 + margin);
-	let halfH = Math.max(cy - boundY, boundY + h - cy, 1e-9) * (1 + margin);
+	// KEIN fixer 1e-9-Floor mehr (Bug, Gespraechsverlauf): w>0/h>0 ist durch
+	// den early-return oben bereits garantiert, und cx liegt per Konstruktion
+	// immer in [boundX, boundX+w] (gewichteter Schwerpunkt innerhalb der
+	// eigenen Bounding-Box) - `(cx-boundX) + (boundX+w-cx) === w > 0`, also
+	// ist IMMER mindestens einer der beiden Max-Terme positiv, ganz ohne
+	// zusaetzliche Untergrenze. Ein fixer Floor wie beim EPS-Bug oben wird
+	// bei genuegend tiefer Rekursion (hier: echte Bounding-Box ~1e-12) zur
+	// AKTIVEN Grenze statt zum reinen Div-durch-Null-Schutz - der Zoom bleibt
+	// dann weit hinter dem noetigen Wert zurueck, der Rest verschwindet fast
+	// vollstaendig (Symptom: "ab einem Tick nichts mehr sichtbar").
+	let halfW = Math.max(cx - boundX, boundX + w - cx) * (1 + margin);
+	let halfH = Math.max(cy - boundY, boundY + h - cy) * (1 + margin);
 	let z = Math.min(0.5 / halfW, 0.5 / halfH);
 	return { z, cx, cy, offsetX: 0.5 - cx * z, offsetY: 0.5 - cy * z };
 }
