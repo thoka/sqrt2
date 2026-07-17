@@ -55,7 +55,6 @@
 	let BANK_ZOOM_THRESHOLD_POWERS = 0;
 	let GLOBAL_AUTO_ZOOM_CHECKPOINTS = [];
 	let GLOBAL_AUTO_ZOOM_SPLINE = null;
-	let COMPACTION_ENABLED = false;
 	let GLOBAL_COMPACTION_WAYPOINTS = [];
 	let GLOBAL_COMPACTION_LOGICAL_LOOKUP = null;
 	let GLOBAL_COMPACTION_FIT_SPLINE = null;
@@ -130,7 +129,6 @@
 			GLOBAL_BANK_ZOOM_TIMES = compiled.GLOBAL_BANK_ZOOM_TIMES;
 			GLOBAL_BANK_ZOOM = compiled.GLOBAL_BANK_ZOOM;
 			GLOBAL_BANK_ZOOM_SPLINE = compiled.GLOBAL_BANK_ZOOM_SPLINE;
-			COMPACTION_ENABLED = compiled.COMPACTION_ENABLED;
 			GLOBAL_COMPACTION_WAYPOINTS = compiled.GLOBAL_COMPACTION_WAYPOINTS;
 			GLOBAL_COMPACTION_LOGICAL_LOOKUP = compiled.GLOBAL_COMPACTION_LOGICAL_LOOKUP;
 			GLOBAL_COMPACTION_FIT_SPLINE = compiled.GLOBAL_COMPACTION_FIT_SPLINE;
@@ -246,10 +244,9 @@
 
 		const BANK_X_OFFSET = SQRT2 + 0.1;
 		const bankT = getBankTransform(u_time);
-		const compactionFit =
-			COMPACTION_ENABLED && GLOBAL_COMPACTION_FIT_SPLINE
-				? GLOBAL_COMPACTION_FIT_SPLINE.at(u_time)
-				: null;
+		const compactionFit = GLOBAL_COMPACTION_FIT_SPLINE
+			? GLOBAL_COMPACTION_FIT_SPLINE.at(u_time)
+			: null;
 		let displayBankZoom = compactionFit ? compactionFit.z : bankT.z;
 		bankZoomLabel.innerText = formatZoomFactor(displayBankZoom);
 		bankAreaLabel.innerText =
@@ -269,7 +266,7 @@
 				let final_h = h * V_SCALE_TARGET;
 				return [final_x * scale, final_y * scale, final_w * scale, final_h * scale];
 			}
-			if (COMPACTION_ENABLED && piece && GLOBAL_COMPACTION_LOGICAL_LOOKUP && compactionFit) {
+			if (piece && GLOBAL_COMPACTION_LOGICAL_LOOKUP && compactionFit) {
 				let logical = GLOBAL_COMPACTION_LOGICAL_LOOKUP(piece, u_time);
 				let r = applyCompactionFit(logical, compactionFit);
 				let final_x = BANK_X_OFFSET + r.x * V_SCALE_BANK;
@@ -292,12 +289,6 @@
 		let [t_x, t_y, t_w, t_h] = project(0, 0, SQRT2 / V_SCALE_TARGET, SQRT2 / V_SCALE_TARGET, true);
 		ctx.strokeStyle = 'rgba(255,255,255,0.1)';
 		ctx.strokeRect(t_x, t_y, t_w, t_h);
-
-		if (!COMPACTION_ENABLED) {
-			let [b_x, b_y, b_w, b_h] = project(0, 0, 1.0, 1.0, false);
-			ctx.strokeStyle = 'rgba(255,255,255,0.1)';
-			ctx.strokeRect(b_x, b_y, b_w, b_h);
-		}
 
 		let [base_x, base_y, base_w, base_h] = project(
 			dyn_prefA[0],

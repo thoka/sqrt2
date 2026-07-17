@@ -77,7 +77,6 @@ export function compileSystemData(config) {
 		transformMode,
 		bankZoomThresholdPowers: BANK_ZOOM_THRESHOLD_POWERS,
 		zoomSpeedCoef,
-		compactionEnabled,
 		compactionTransitionTicks,
 	} = config;
 
@@ -256,13 +255,14 @@ export function compileSystemData(config) {
 		eventTimesTicks = Array.from(new Set(sampled));
 	}
 
-	// Kompaktierung (nur numerisch; Closure-Bau in finalizeCompiled()).
-	let compaction_waypoints = null;
-	if (compactionEnabled) {
-		let transitionTicks = compactionTransitionTicks;
-		if (!(transitionTicks >= 0)) transitionTicks = 3;
-		compaction_waypoints = computeCompactionWaypoints(bank_pieces, local_max_time, transitionTicks);
-	}
+	// Kompaktierung (immer berechnet — kein Nicht-Kompaktierungs-Modus).
+	let transitionTicks = compactionTransitionTicks;
+	if (!(transitionTicks >= 0)) transitionTicks = 3;
+	let compaction_waypoints = computeCompactionWaypoints(
+		bank_pieces,
+		local_max_time,
+		transitionTicks,
+	);
 
 	// TEIL C: Zoom-Wegpunkte werden in finalizeCompiled() berechnet (nach
 	// Tick→Zeit-Konversion, da computeCompactionWaypoints Animation-Zeiten
@@ -283,7 +283,6 @@ export function compileSystemData(config) {
 		auto_zoom_checkpoints,
 		eventTimesTicks,
 		compaction_waypoints,
-		compactionEnabled,
 		MAX_TIME: local_max_time,
 		// Felder, die finalizeCompiled() für die Splines/Filter braucht:
 		BASE,
@@ -316,7 +315,6 @@ export function finalizeCompiled(data) {
 		auto_zoom_checkpoints,
 		eventTimesTicks,
 		compaction_waypoints,
-		compactionEnabled,
 		zoomSpeedCoef,
 		local_max_time,
 		BANK_ZOOM_THRESHOLD_POWERS,
@@ -498,37 +496,27 @@ export function finalizeCompiled(data) {
 		BANK_ZOOM_TAU,
 	);
 
-	// Kompaktierung ("Zeilen/Spalten ausblenden", siehe bank-core.js TEIL 2)
-	// - nur berechnet, wenn die Einstellung aktiv ist (nicht kostenlos bei
-	// tiefer Rekursion). Ersetzt bei aktiver Kompaktierung den obigen
-	// bankT-basierten Auto-Zoom für die Bank-Darstellung vollständig (siehe
-	// project() in renderFrame()) - beide Modi sind bewusst gegenseitig
-	// exklusiv, analog zum Algorithmus-Spiel-Tool.
-	let GLOBAL_COMPACTION_WAYPOINTS = [];
-	let GLOBAL_COMPACTION_LOGICAL_LOOKUP = null;
-	let GLOBAL_COMPACTION_FIT_SPLINE = null;
-	if (compactionEnabled) {
-		// transitionTicks einstellbar (siehe README Abschnitt 6.2 "Siebte
-		// Voraussetzung") - Default hier niedriger als der Bibliotheks-
-		// Default in bank-core.js (weniger Wartezeit bis eine Lücke
-		// sichtbar schließt).
-		GLOBAL_COMPACTION_WAYPOINTS = compaction_waypoints;
-		// Schnell/exakt: "wo steht jedes Stück im kompaktierten Layout"
-		// (computeSegmentBlend()-basiert, für die Nichtüberlappungs-
-		// Garantie - siehe bank-core.js).
-		GLOBAL_COMPACTION_LOGICAL_LOOKUP = makeCompactedLogicalRectLookup(GLOBAL_COMPACTION_WAYPOINTS);
-		// Gedämpft: "wie wird das Layout aufs [0,1]-Fenster gezoomt" -
-		// dieselbe (einstellbare) Zeitkonstante wie beim regulären
-		// Bank-Zoom oben, UNABHÄNGIG von den schnellen Logical-Rects.
-		// Sicherheit bleibt erhalten, weil JEDE gemeinsame affine
-		// Skalierung+Verschiebung Nichtüberlappung bewahrt, siehe
-		// computeCompactionFitStates()-Kommentar.
-		GLOBAL_COMPACTION_FIT_SPLINE = buildDampedFilterBundle(
-			computeCompactionFitStates(GLOBAL_COMPACTION_WAYPOINTS),
-			['z', 'offsetX', 'offsetY'],
-			BANK_ZOOM_TAU,
-		);
-	}
+	// Kompaktierung (immer berechnet): "Zeilen/Spalten ausblenden", siehe
+	// bank-core.js TEIL 2. Ersetzt den bankT-basierten Auto-Zoom für die
+	// Bank-Darstellung vollständig (siehe project() in renderFrame()).
+	let GLOBAL_COMPACTION_WAYPOINTS = compaction_waypoints;
+	// Schnell/exakt: "wo steht jedes Stück im kompaktierten Layout"
+	// (computeSegmentBlend()-basiert, für die Nichtüberlappungs-
+	// Garantie - siehe bank-core.js).
+	let GLOBAL_COMPACTION_LOGICAL_LOOKUP = makeCompactedLogicalRectLookup(
+		GLOBAL_COMPACTION_WAYPOINTS,
+	);
+	// Gedämpft: "wie wird das Layout aufs [0,1]-Fenster gezoomt" -
+	// dieselbe (einstellbare) Zeitkonstante wie beim regulären
+	// Bank-Zoom oben, UNABHÄNGIG von den schnellen Logical-Rects.
+	// Sicherheit bleibt erhalten, weil JEDE gemeinsame affine
+	// Skalierung+Verschiebung Nichtüberlappung bewahrt, siehe
+	// computeCompactionFitStates()-Kommentar.
+	let GLOBAL_COMPACTION_FIT_SPLINE = buildDampedFilterBundle(
+		computeCompactionFitStates(GLOBAL_COMPACTION_WAYPOINTS),
+		['z', 'offsetX', 'offsetY'],
+		BANK_ZOOM_TAU,
+	);
 
 	return {
 		axes,
@@ -548,12 +536,10 @@ export function finalizeCompiled(data) {
 		GLOBAL_BANK_ZOOM_TIMES: eventTimes,
 		GLOBAL_BANK_ZOOM: bank_zoom_states,
 		GLOBAL_BANK_ZOOM_SPLINE,
-		COMPACTION_ENABLED: compactionEnabled,
 		GLOBAL_COMPACTION_WAYPOINTS,
 		GLOBAL_COMPACTION_LOGICAL_LOOKUP,
 		GLOBAL_COMPACTION_FIT_SPLINE,
-		// TEIL C: Zoom-Wegpunkte + Rect-Lookup für den Zoom-Pfad (immer
-		// berechnet, unabhängig vom compactionEnabled Render-Modus).
+		// TEIL C: Zoom-Wegpunkte + Rect-Lookup für den Zoom-Pfad.
 		zoom_waypoints,
 		zoom_rect_lookup,
 		MAX_TIME: local_max_time,

@@ -94,11 +94,11 @@ test('transformMode S vs. Z erzeugt unterschiedliche Bank-Belegungen bei sonst g
 	assert.notStrictEqual(rS.bank_pieces.length, rZ.bank_pieces.length);
 });
 
-test('Kompaktierung deaktiviert: alle GLOBAL_COMPACTION_*-Felder sind leer/null', () => {
-	let r = compileSystem({ ...BASE_CONFIG, compactionEnabled: false });
-	assert.deepStrictEqual(r.GLOBAL_COMPACTION_WAYPOINTS, []);
-	assert.strictEqual(r.GLOBAL_COMPACTION_LOGICAL_LOOKUP, null);
-	assert.strictEqual(r.GLOBAL_COMPACTION_FIT_SPLINE, null);
+test('Kompaktierung wird immer berechnet: Waypoints und Lookup sind immer vorhanden', () => {
+	let r = compileSystem({ ...BASE_CONFIG });
+	assert.ok(r.GLOBAL_COMPACTION_WAYPOINTS.length > 0);
+	assert.strictEqual(typeof r.GLOBAL_COMPACTION_LOGICAL_LOOKUP, 'function');
+	assert.strictEqual(typeof r.GLOBAL_COMPACTION_FIT_SPLINE.at, 'function');
 });
 
 test('Kompaktierung aktiviert: Waypoints und Lookup werden gebaut', () => {
