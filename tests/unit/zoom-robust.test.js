@@ -202,6 +202,70 @@ test('Kompaktierung bricht nie zusammen: z/endlich, Rest-Fläche >0 (Teil C, Tie
 	}
 });
 
+test('Größte Reste im Zoom-Rahmen: k-größte Stücke landen innerhalb [0,1] (Tiefe 10, Base 10)', () => {
+	// Der Zoom framt die kompaktierte Geometrie. Die größten sichtbaren
+	// Reste (kleinste k → größte Fläche) müssen nach Zoom-Transform
+	// (compactedRect - anchor) * z + offset innerhalb [0,1] liegen.
+	// FAILED, wenn die größten Reste außerhalb des Zoom-Rahmens landen.
+	const r = compileSystem({ ...BASE_CONFIG, depth: 10 });
+	const bp = r.bank_pieces;
+	const lookup = r.zoom_rect_lookup;
+	assert.ok(typeof lookup === 'function');
+	let violations = [];
+	let totalLargest = 0;
+	for (let i = 0; i < r.GLOBAL_BANK_ZOOM_TIMES.length; i++) {
+		const t = r.GLOBAL_BANK_ZOOM_TIMES[i];
+		const s = r.GLOBAL_BANK_ZOOM[i];
+		if (!isFinite(s.z) || s.z <= 0) continue;
+		const vis = bp.filter((p) => t >= p.born_time && t < p.cut_time && t < p.taken_time);
+		if (vis.length === 0) continue;
+		// Anker = schwerste Gruppe (max w*h), wie im Compiler
+		let anchor = null,
+			aR = null,
+			bestMass = -1;
+		for (const p of vis) {
+			const rr = lookup(p, t);
+			if (!rr) continue;
+			if (rr.w * rr.h > bestMass) {
+				bestMass = rr.w * rr.h;
+				anchor = p;
+				aR = rr;
+			}
+		}
+		if (!aR) continue;
+		// Größte Reste = kleinste k (größte Fläche w*h)
+		const kMin = Math.min(...vis.map((p) => p.k));
+		const largest = vis.filter((p) => p.k === kMin);
+		const m = 1e-6;
+		for (const p of largest) {
+			totalLargest++;
+			const rr = lookup(p, t);
+			if (!rr) continue;
+			const x0 = rr.x - aR.x;
+			const y0 = rr.y - aR.y;
+			const sx0 = x0 * s.z + s.offsetX;
+			const sx1 = (x0 + rr.w) * s.z + s.offsetX;
+			const sy0 = y0 * s.z + s.offsetY;
+			const sy1 = (y0 + rr.h) * s.z + s.offsetY;
+			if (sx0 < -m || sx1 > 1 + m || sy0 < -m || sy1 > 1 + m) {
+				violations.push({
+					tick: i,
+					t: t.toFixed(2),
+					k: p.k,
+					sx: `${sx0.toFixed(3)}..${sx1.toFixed(3)}`,
+					sy: `${sy0.toFixed(3)}..${sy1.toFixed(3)}`,
+				});
+			}
+		}
+	}
+	assert.ok(totalLargest > 0, 'mindestens ein größeres Stück vorhanden');
+	assert.strictEqual(
+		violations.length,
+		0,
+		`${violations.length}/${totalLargest} größte Reste außerhalb [0,1]: ${JSON.stringify(violations.slice(0, 5))}`,
+	);
+});
+
 test('isolationScore / Simulationskern unverändert: localOffset ist Rasterindex, x/y im [0,1]', () => {
 	// Teil B fasst bank-core.js nur additiv an (neue Felder) - x/y/w/h
 	// und damit die Hot-Path-Simulation dürfen sich nicht ändern.
