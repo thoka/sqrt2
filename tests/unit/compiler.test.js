@@ -94,6 +94,40 @@ test('transformMode S vs. Z erzeugt unterschiedliche Bank-Belegungen bei sonst g
 	assert.notStrictEqual(rS.bank_pieces.length, rZ.bank_pieces.length);
 });
 
+test('flightQueryTime: jedes Stück bekommt einen definierten Wert (born_time bei geteilten/Z_micro-Blättern, sonst taken_time)', () => {
+	// PERFORMANCE-FIX (REST-PRECISION-PLAN, Stand 2026-07-17): flightQueryTime
+	// wird jetzt EINMALIG beim Kompilieren hergeleitet (finalizeCompiled()),
+	// statt bei jedem Frame in bankOriginState() neu berechnet zu werden - die
+	// Regel selbst bleibt unverändert (siehe TargetBankCanvas.svelte).
+	let r = compileSystem({ ...BASE_CONFIG, transformMode: 'Z' });
+	for (let p of r.bank_pieces) {
+		let expected = p.isZMicroLeaf || p.children.length > 0 ? p.born_time : p.taken_time;
+		assert.strictEqual(p.flightQueryTime, expected);
+		assert.strictEqual(p.flightOrigin, null);
+	}
+});
+
+test('flightQueryTime: Z_micro-Geschwister einer Zerschneiden-Gruppe teilen denselben Wert (Bug-3-Regression)', () => {
+	// Ohne diese Gleichheit driften Geschwister sichtbar auseinander (siehe
+	// REST-PRECISION-PLAN, Bug 3) - jetzt eine statische Eigenschaft des
+	// Kompilats statt eines pro Aufruf neu hergeleiteten Werts.
+	let r = compileSystem({ ...BASE_CONFIG, transformMode: 'Z', depth: 4 });
+	let byParent = new Map();
+	for (let p of r.bank_pieces) {
+		if (!p.isZMicroLeaf) continue;
+		if (!byParent.has(p.parent_id)) byParent.set(p.parent_id, []);
+		byParent.get(p.parent_id).push(p);
+	}
+	let groupsChecked = 0;
+	for (let siblings of byParent.values()) {
+		if (siblings.length < 2) continue;
+		groupsChecked++;
+		let first = siblings[0].flightQueryTime;
+		for (let s of siblings) assert.strictEqual(s.flightQueryTime, first);
+	}
+	assert.ok(groupsChecked > 0, 'Testvoraussetzung: mindestens eine Zerschneiden-Gruppe erwartet');
+});
+
 test('Kompaktierung wird immer berechnet: Waypoints und Lookup sind immer vorhanden', () => {
 	let r = compileSystem({ ...BASE_CONFIG });
 	assert.ok(r.GLOBAL_COMPACTION_WAYPOINTS.length > 0);

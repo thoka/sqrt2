@@ -9,13 +9,22 @@ import {
 	makeCompactedLogicalRectLookup,
 	computeCompactionFitStates,
 } from './bank-core.js';
+import { layoutBox, computeZoomFrame } from './recursive-layout.js';
 
 // TEIL C (REST-PRECISION-PLAN): Zoom nutzt kompaktierte Geometrie, damit der
 // kleinste sichtbare Rest auch bei extremem Zoom groß genug skaliert wird.
 // Die Kompaktierungs-Wegpunkte werden dafür IMMER berechnet (unabhängig vom
 // compactionEnabled Render-Modus) - der Zoom-Framing braucht sie zwingend.
+// TEIL D ERSETZT den Render-/Zoom-Konsum dieser Wegpunkte (siehe
+// GLOBAL_TEIL_D_ZOOM_SPLINE weiter unten) - die Berechnung selbst bleibt
+// hier additiv bestehen (u.a. weiter von zoom-robust.test.js geprüft),
+// TargetBankCanvas.svelte konsumiert sie nach der Umstellung nicht mehr.
 const ZOOM_COMPACTION_TRANSITION_TICKS = 3;
 import { buildMonotoneSpline, buildDampedFilterBundle } from './smoothing.js';
+
+// TEIL D (REST-PRECISION-PLAN): Zoom-Rand, analog ZOOM_MARGIN weiter unten -
+// kleiner Puffer, damit der Rest nicht exakt am Pixelrand klebt.
+const TEIL_D_ZOOM_MARGIN = 0.05;
 
 // TEIL B (REST-PRECISION-PLAN): robuste Differenz zweier Stück-Positionen
 // über den gemeinsamen Vorfahren. Statt der rohen, bereits gerundeten
@@ -89,7 +98,15 @@ export function compileSystemData(config) {
 	// (Z: Zerschneiden) BASE Stücke der nächsten Ebene pro Rand-Zelle -
 	// siehe bank-core.js für Details.
 	let cellMode = transformMode === 'Z' ? 'subdivide' : 'morph';
-	let { sim, events } = buildSystem(BASE, N_MAX, 'fixed', cellMode);
+	// TEIL D (REST-PRECISION-PLAN): transitionTicks wird an buildSystem
+	// durchgereicht, damit bank-core.js das `te`-Feld jedes Blatt-Stücks bei
+	// der Entnahme mit der TATSÄCHLICH konfigurierten Übergangsdauer
+	// einfriert (fällt bank-core.js's eigener Default nicht implizit anders
+	// aus als der Rest dieses Kompilierlaufs).
+	let compactionParams = {
+		transitionTicks: compactionTransitionTicks >= 0 ? compactionTransitionTicks : undefined,
+	};
+	let { sim, events } = buildSystem(BASE, N_MAX, 'fixed', cellMode, compactionParams);
 	let axes = sim.axes;
 	let TOTAL_STEPS = sim.TOTAL_STEPS;
 	let bank_pieces = sim.bank_pieces;
@@ -201,6 +218,13 @@ export function compileSystemData(config) {
 			render_pipeline.push({ type: 'Z_ghost', bp: parent_bp, u: e.u, v: e.v, time_fuse: t_fuse });
 			for (let g of group) {
 				tickTimePairs.push({ tick: g.tick, time: t_cut });
+				// PERFORMANCE-FIX (REST-PRECISION-PLAN, Stand 2026-07-17): markiert
+				// dieses Blatt als Zerschneiden-Gruppenmitglied - finalizeCompiled()
+				// nutzt das, um flightQueryTime auf born_time statt taken_time zu
+				// setzen (Bug 3: alle Geschwister einer Gruppe teilen born_time,
+				// ihre EIGENEN taken_time-Werte unterscheiden sich sonst und
+				// lassen sie sichtbar auseinanderdriften).
+				g.piece.isZMicroLeaf = true;
 				render_pipeline.push({
 					type: 'Z_micro',
 					bp: g.piece,
@@ -337,6 +361,22 @@ export function finalizeCompiled(data) {
 		p.taken_time = isFinite(p.taken_time) ? ttm.tickToTime(p.taken_time) : Infinity;
 		p.cut_time = isFinite(p.cut_time) ? ttm.tickToTime(p.cut_time) - CUT_BORN_LEAD : Infinity;
 		p.born_time = p.born_time === 0 ? 0 : ttm.tickToTime(p.born_time) - CUT_BORN_LEAD;
+		// TEIL D (REST-PRECISION-PLAN): te ist wie taken_time/cut_time/born_time
+		// bisher ein roher Tick-Wert (siehe bank-core.js) - dieselbe Brücke
+		// überträgt es in die Animationszeit, auf der recursive-layout.js im
+		// Render-Pfad ausgewertet wird (kein separates Zeit-Mapping nötig,
+		// siehe REST-PRECISION-PLAN Teil D "Zeitachse").
+		p.te = isFinite(p.te) ? ttm.tickToTime(p.te) : Infinity;
+		// PERFORMANCE-FIX (REST-PRECISION-PLAN, Stand 2026-07-17): additiv, der
+		// Zeitpunkt, an dem TargetBankCanvas.svelte die Herkunfts-Position
+		// dieses Stücks für die Flug-Animation einfrieren soll - EINMAL hier
+		// hergeleitet (dieselbe Regel, die bankOriginState() bisher bei JEDEM
+		// Frame neu ausgewertet hat: geteilte Stücke UND Z_micro-Blätter nutzen
+		// born_time, gewöhnliche Blätter taken_time), statt bei jedem Aufruf neu
+		// berechnet zu werden. Muss NACH der obigen taken_time/born_time-
+		// Konversion stehen (braucht die bereits umgerechneten Werte).
+		p.flightQueryTime = p.isZMicroLeaf || p.children.length > 0 ? p.born_time : p.taken_time;
+		p.flightOrigin = null;
 	}
 
 	// TEIL C: Zoom-Wegpunkte IMMER berechnet (unabhängig vom Render-Modus),
@@ -494,6 +534,27 @@ export function finalizeCompiled(data) {
 		BANK_ZOOM_TAU,
 	);
 
+	// TEIL D (REST-PRECISION-PLAN): Kamera aus dem rekursiven Box-in-Boxes-
+	// Modell statt aus den (Teil C-)Kompaktierungs-Wegpunkten oben - ERSETZT
+	// bank_zoom_states/GLOBAL_BANK_ZOOM_SPLINE als Quelle für den Render-Pfad
+	// (siehe TargetBankCanvas.svelte). layoutBox() liefert pro Checkpoint
+	// Moment/Masse (statt einer diskreten Anker-Wahl), computeZoomFrame()
+	// leitet daraus z/cx/cy/offsetX/offsetY ab - roh/exakt, wie bei
+	// bank_zoom_states. Genau wie beim alten Bank-Zoom braucht die KAMERA
+	// selbst KEINE Wegpunkt-Exaktheit (nur die zugrundeliegende Geometrie
+	// muss stimmen) - dieselbe BANK_ZOOM_TAU-Dämpfung wie oben, aus denselben
+	// eventTimes-Checkpoints (kein zweites Sampling-Schema).
+	let root = bank_pieces[0];
+	let teil_d_zoom_states = eventTimes.map((t) => {
+		let frame = layoutBox(root, t, 0, 0, null);
+		return computeZoomFrame(frame, TEIL_D_ZOOM_MARGIN);
+	});
+	let GLOBAL_TEIL_D_ZOOM_SPLINE = buildDampedFilterBundle(
+		eventTimes.map((t, i) => ({ t, ...teil_d_zoom_states[i] })),
+		['z', 'cx', 'cy', 'offsetX', 'offsetY'],
+		BANK_ZOOM_TAU,
+	);
+
 	// Kompaktierung (immer berechnet): "Zeilen/Spalten ausblenden", siehe
 	// bank-core.js TEIL 2. Ersetzt den bankT-basierten Auto-Zoom für die
 	// Bank-Darstellung vollständig (siehe project() in renderFrame()).
@@ -541,6 +602,9 @@ export function finalizeCompiled(data) {
 		GLOBAL_BANK_ZOOM_TIMES: eventTimes,
 		GLOBAL_BANK_ZOOM: bank_zoom_states,
 		GLOBAL_BANK_ZOOM_SPLINE,
+		// TEIL D: Kamera-Spline aus dem rekursiven Modell (ersetzt
+		// GLOBAL_BANK_ZOOM_SPLINE/GLOBAL_COMPACTION_FIT_SPLINE im Render-Pfad).
+		GLOBAL_TEIL_D_ZOOM_SPLINE,
 		GLOBAL_COMPACTION_WAYPOINTS,
 		GLOBAL_COMPACTION_LOGICAL_LOOKUP,
 		GLOBAL_COMPACTION_FIT_SPLINE,

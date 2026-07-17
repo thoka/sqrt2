@@ -35,8 +35,17 @@ import { computeSegmentBlend } from './smoothing.js';
 // (siehe TEIL 3: buildTickTimeMapping) - der Algorithmus selbst muss davon
 // nichts wissen, er liefert nur die Tick-Nummer jeder Entnahme mit zurueck.
 
-function createBankSimulation(BASE, N_MAX, squareSplit) {
+// compactionParams (TEIL D, REST-PRECISION-PLAN): gapCloseDelayTicks/
+// transitionTicks werden NUR gebraucht, um bei jeder ENTNAHME das Feld `te`
+// (siehe unten, "Rekursives Box-in-Boxes-Modell") einmalig einzufrieren -
+// Defaults sind dieselben Konstanten, die auch die alte, externe
+// Kompaktierung (TEIL 2 weiter unten) nutzt, damit beide Modelle bei
+// unveränderter Konfiguration exakt denselben Verzögerungs-/
+// Übergangs-Zeitraum sehen.
+function createBankSimulation(BASE, N_MAX, squareSplit, compactionParams) {
 	squareSplit = squareSplit || 'fixed'; // 'fixed' oder 'alternating'
+	let gapCloseDelayTicks = compactionParams?.gapCloseDelayTicks ?? GAP_CLOSE_DELAY_TICKS;
+	let transitionTicks = compactionParams?.transitionTicks ?? DEFAULT_GAP_CLOSE_TRANSITION_TICKS;
 	let baseBig = BigInt(BASE);
 	let n_arr = [1];
 	let P_int = 1n;
@@ -72,6 +81,15 @@ function createBankSimulation(BASE, N_MAX, squareSplit) {
 			born_time: 0,
 			cut_time: Infinity,
 			taken_time: Infinity,
+			// TEIL D (REST-PRECISION-PLAN): dir wird erst beim tatsächlichen
+			// Schnitt bekannt (siehe getPieceFromBank unten); te (Zeitpunkt,
+			// ab dem das Stück komplett verschwunden/"beendet" ist) startet
+			// bei Infinity - wird bei einer Blatt-Entnahme eingefroren bzw.
+			// per computeSubtreeTe() rekursiv aus den Kindern übernommen.
+			dir: null,
+			te: Infinity,
+			delaySnapshot: null,
+			transitionSnapshot: null,
 			children: [],
 		},
 	];
@@ -125,6 +143,14 @@ function createBankSimulation(BASE, N_MAX, squareSplit) {
 			available.sort((a, b) => isolationScore(a, tick) - isolationScore(b, tick));
 			let chosen = available[0];
 			chosen.taken_time = tick;
+			// TEIL D: te/delaySnapshot beim Entnehmen einmalig einfrieren (siehe
+			// Kommentar an compactionParams oben) - eine spätere Änderung von
+			// gapCloseDelayTicks/transitionTicks (z.B. bei einem Neu-Kompilat mit
+			// anderer Konfiguration) wirkt dadurch nie rückwirkend auf bereits
+			// eingefrorene Stücke aus einem ANDEREN Simulationslauf.
+			chosen.delaySnapshot = gapCloseDelayTicks;
+			chosen.transitionSnapshot = transitionTicks;
+			chosen.te = tick + gapCloseDelayTicks + transitionTicks;
 
 			let usedTick = tick;
 			tick++;
@@ -174,6 +200,11 @@ function createBankSimulation(BASE, N_MAX, squareSplit) {
 			if (squareSplit === 'fixed') is_vert_cut = true;
 			else is_vert_cut = (best_parent.k / 2) % 2 === 0;
 		}
+		// TEIL D: dir haelt fest, entlang welcher Achse best_parent in seine
+		// Kinder zerfaellt - Grundlage fuer die rekursive Top-down-Komposition
+		// (effektive Groesse = Summe der Kinder in Laufrichtung `dir`, Maximum
+		// quer dazu, siehe recursive-layout.js).
+		best_parent.dir = is_vert_cut ? 'x' : 'y';
 		let cw = is_vert_cut ? best_parent.w / BASE : best_parent.w;
 		let ch = is_vert_cut ? best_parent.h : best_parent.h / BASE;
 		for (let i = 0; i < BASE; i++) {
@@ -198,6 +229,10 @@ function createBankSimulation(BASE, N_MAX, squareSplit) {
 				born_time: best_parent.cut_time,
 				cut_time: Infinity,
 				taken_time: Infinity,
+				dir: null,
+				te: Infinity,
+				delaySnapshot: null,
+				transitionSnapshot: null,
 				children: [],
 			};
 			bank_pieces.push(child);
@@ -249,9 +284,9 @@ function createBankSimulation(BASE, N_MAX, squareSplit) {
 // das gibt Aufrufern (z.B. dem Haupttool) genug Information, um daraus ihre
 // eigene Animations-/Render-Pipeline zu bauen, ohne die Schalen-Konstruktion
 // selbst zu duplizieren.
-export function buildSystem(BASE, N_MAX, squareSplit, cellMode) {
+export function buildSystem(BASE, N_MAX, squareSplit, cellMode, compactionParams) {
 	cellMode = cellMode || 'subdivide';
-	let sim = createBankSimulation(BASE, N_MAX, squareSplit);
+	let sim = createBankSimulation(BASE, N_MAX, squareSplit, compactionParams);
 	let events = [];
 	for (let S = 1; S < sim.TOTAL_STEPS; S++) {
 		let shell = [];
@@ -272,6 +307,9 @@ export function buildSystem(BASE, N_MAX, squareSplit, cellMode) {
 		}
 	}
 	let local_max_time = sim.currentTick - 1;
+	// TEIL D: te der geteilten (nicht-Blatt) Stuecke erst jetzt bestimmbar -
+	// der gesamte Bank-Lauf (alle Entnahmen) ist an dieser Stelle beendet.
+	computeSubtreeTe(sim.bank_pieces[0]);
 	return { sim, local_max_time, events };
 }
 
@@ -665,6 +703,30 @@ export function buildTickTimeMapping(tickTimePairs) {
 	return { tickToTime, timeToTick, maxTick: tickToTimeArr.length - 1 };
 }
 
+// TEIL D (REST-PRECISION-PLAN): `te` einer BLATT-Stueck wird beim Entnehmen
+// eingefroren (siehe getPieceFromBank oben). Ein GETEILTES Stueck hat aber
+// erst dann ein `te`, wenn alle seine Kinder ihres kennen - das ist erst NACH
+// dem vollstaendigen Bank-Lauf der Fall (ein Kind kann selbst wieder
+// geschnitten werden, beliebig tief). Post-Pass: einmal bottom-up ueber den
+// GESAMTEN Baum, `te` jedes geteilten Stuecks = max(te) seiner Kinder - ein
+// Blatt, das NIE entnommen wurde, behaelt te=Infinity (verschwindet nie),
+// wodurch auch JEDER seiner Vorfahren te=Infinity behaelt (ein Teilbaum mit
+// einem permanent unbenutzten Rest-Stueck "raeumt" sich nie vollstaendig).
+// Reine Baum-Rekursion (kein Memo noetig, jeder Knoten wird genau einmal
+// besucht) - Tiefe ist die tatsaechliche Schnitt-Tiefe (k), nicht die
+// Gesamtzahl der Stuecke, bleibt bei jeder getesteten Tiefe klein genug fuer
+// den Aufruf-Stack.
+export function computeSubtreeTe(piece) {
+	if (piece.children.length === 0) return piece.te;
+	let maxTe = -Infinity;
+	for (let child of piece.children) {
+		let childTe = computeSubtreeTe(child);
+		if (childTe > maxTe) maxTe = childTe;
+	}
+	piece.te = maxTe;
+	return maxTe;
+}
+
 export { createBankSimulation };
 
 // Fuer Node-Tests (require) UND direkte Einbindung per <script> gleichermassen nutzbar:
@@ -681,5 +743,6 @@ if (typeof module !== 'undefined' && module.exports) {
 		computeCompactionFitStates,
 		applyCompactionFit,
 		buildTickTimeMapping,
+		computeSubtreeTe,
 	};
 }
