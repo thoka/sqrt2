@@ -18,13 +18,11 @@ export default defineConfig({
 		trace: 'retain-on-failure',
 	},
 	projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
-	webServer: {
-		// Fester Port 4173 (passend zur baseURL url), strictPort verhindert
-		// silent fail wenn der Port belegt ist. reuseExistingServer:false,
-		// damit zwei parallele E2E-Runs nicht denselben fremden Server nehmen.
-		command: 'node_modules/.bin/vite preview --port 4173 --strictPort',
-		url: 'http://localhost:4173/',
-		reuseExistingServer: false,
-		timeout: 60000,
-	},
+	// Kein config.webServer: Playwrights eingebauter Verfügbarkeits-Check
+	// (isURLAvailable) setzt keinen socketTimeout und hängt in dieser
+	// WSL2-Umgebung für immer, weil Verbindungen zu geschlossenen
+	// Loopback-Ports kein ECONNREFUSED liefern (siehe
+	// docs/E2E-PLAYWRIGHT-SPEC.md). globalSetup startet den Preview-Server
+	// stattdessen selbst und pollt mit fetch()+AbortSignal.timeout.
+	globalSetup: './tests/e2e/global-setup.js',
 });
