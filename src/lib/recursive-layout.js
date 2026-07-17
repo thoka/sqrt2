@@ -59,16 +59,12 @@ function leafEffectiveSize(piece, t) {
 }
 
 // Top-down-Rekursion: der Abstieg IST der Walk (siehe Datei-Kopfkommentar).
-// Liefert die effektive Größe + Moment/Masse dieses Teilbaums (lokale
-// Einheitskoordinaten im Koordinatensystem des AUFRUFERS, `originX/Y` ist
-// die vom Aufrufer vergebene Position dieser Box). `out`, wenn übergeben,
-// sammelt {piece,x,y,w,h} für jede tatsächlich sichtbare (w>0 && h>0) Box -
-// das sind entweder echte Blätter oder noch nicht geschnittene Stücke; eine
-// GETEILTE, aktive Box selbst wird nie direkt gezeichnet, nur ihre Kinder.
-// `stats`, wenn übergeben, zählt besuchte Knoten (stats.visited++) und
-// sammelt optional deren id in stats.ids (falls als Set übergeben) - für den
-// Pruning-Korrektheits-/Performance-Test (siehe recursive-layout.test.js).
-export function layoutBox(piece, t, originX, originY, out, stats) {
+// `depth` (default 0): nur die ersten MAX_CENTER_DEPTH Ebenen zentrieren
+// die Kinder (Lücken gleichmäßig verteilen). Tiefer unten reicht der
+// schnelle Prefix-Sum-Pack (die Boxen sind dort so klein, dass es visuell
+// keine Rolle spielt).
+const MAX_CENTER_DEPTH = 2;
+export function layoutBox(piece, t, originX, originY, out, stats, depth = 0) {
 	if (stats) {
 		stats.visited = (stats.visited || 0) + 1;
 		if (stats.ids) stats.ids.add(piece.id);
@@ -99,24 +95,78 @@ export function layoutBox(piece, t, originX, originY, out, stats) {
 		return { w, h, mass, momentX: mass * (originX + w / 2), momentY: mass * (originY + h / 2) };
 	}
 
-	// Geteilt & aktiv: Kinder entlang `dir` per Präfixsumme packen (Lücken
-	// bereits entnommener/verblassender Geschwister schließen sich dadurch
-	// automatisch) - quer dazu bleibt der Ursprung (originX/originY)
-	// gemeinsam für alle Kinder (dieselbe Kante wie beim ursprünglichen
-	// Schnitt, siehe bank-core.js is_vert_cut-Konstruktion). Überlappung ist
-	// per Konstruktion ausgeschlossen: der Cursor wächst monoton (jedes
-	// mainDelta >= 0), kein Kind bekommt je eine kleinere Position als sein
-	// Vorgänger + dessen Breite.
+	// Geteilt & aktiv: Kinder entlang `dir` mittig im verfügbaren Raum
+	// anordnen (statt am Origin zu beginnen, was sie nach unten links
+	// rutschen lässt) - NUR in den ersten MAX_CENTER_DEPTH Ebenen, wo es
+	// visuell relevant ist. Tiefer unten: schneller Prefix-Sum-Pack.
 	let alongX = piece.dir === 'x';
-	let cursor = alongX ? originX : originY;
+	let origin = alongX ? originX : originY;
+	let cursor = origin;
 	let crossMax = 0;
 	let mass = 0,
 		momentX = 0,
 		momentY = 0;
+	let centered = depth < MAX_CENTER_DEPTH;
+	if (centered) {
+		// Pass 1: Größen pro Kind sammeln (ohne out/stats, nur w/h).
+		let childSizes = [];
+		let totalAlong = 0;
+		for (let child of piece.children) {
+			let res = layoutBox(child, t, 0, 0, null, null, depth + 1);
+			childSizes.push(alongX ? res.w : res.h);
+			totalAlong += alongX ? res.w : res.h;
+		}
+		// Aktive Indizes + Summe.
+		let activeIdxs = [];
+		let activeAlong = 0;
+		for (let i = 0; i < childSizes.length; i++) {
+			if (childSizes[i] > 0) {
+				activeIdxs.push(i);
+				activeAlong += childSizes[i];
+			}
+		}
+		let nActive = activeIdxs.length;
+		let gap = totalAlong - activeAlong;
+		let step = gap > 0 && nActive > 1 ? gap / (nActive + 1) : 0;
+		// Pass 2: neue Positionen berechnen + rendern.
+		let lastActiveEnd = origin;
+		for (let i = 0; i < piece.children.length; i++) {
+			let child = piece.children[i];
+			let mainDelta = childSizes[i];
+			let pos;
+			if (mainDelta > 0) {
+				// Neue Position mit gleichmäßig verteilten Lücken.
+				pos = origin + step;
+				for (let j = 0; j < nActive; j++) {
+					if (activeIdxs[j] >= i) break;
+					pos += childSizes[activeIdxs[j]];
+					pos += step;
+				}
+				lastActiveEnd = pos + mainDelta;
+			} else {
+				pos = cursor;
+			}
+			let cx = alongX ? pos : originX;
+			let cy = alongX ? originY : pos;
+			let res = layoutBox(child, t, cx, cy, out, stats, depth + 1);
+			mainDelta = alongX ? res.w : res.h;
+			let crossDelta = alongX ? res.h : res.w;
+			cursor += mainDelta;
+			if (crossDelta > crossMax) crossMax = crossDelta;
+			mass += res.mass;
+			momentX += res.momentX;
+			momentY += res.momentY;
+		}
+		let mainSize = lastActiveEnd - origin;
+		let w = alongX ? mainSize : crossMax;
+		let h = alongX ? crossMax : mainSize;
+		return { w, h, mass, momentX, momentY };
+	}
+	// Schneller Ein-Pass (tiefe Ebenen): Prefix-Sum-Pack.
 	for (let child of piece.children) {
 		let cx = alongX ? cursor : originX;
 		let cy = alongX ? originY : cursor;
-		let res = layoutBox(child, t, cx, cy, out, stats);
+		let res = layoutBox(child, t, cx, cy, out, stats, depth + 1);
 		let mainDelta = alongX ? res.w : res.h;
 		let crossDelta = alongX ? res.h : res.w;
 		cursor += mainDelta;
@@ -140,15 +190,20 @@ export function layoutBox(piece, t, originX, originY, out, stats) {
 // [0,w]x[0,h] (root.w/root.h sind bereits eine straffe Bounding-Box durch
 // Konstruktion, siehe layoutBox()) im [0,1]-Fenster bleibt, auch wenn der
 // Schwerpunkt weit von der geometrischen Mitte abweicht.
-export function computeZoomFrame(frame, margin = 0.05) {
+// `boundX`/`boundY` (default 0): die untere Kante der TATSÄCHLICHEN
+// Bounding-Box - normalerweise 0 (layoutBox() packt ab Origin), aber bei
+// layoutCentered() (siehe unten) verschoben. Nötig, damit halfW/halfH den
+// Abstand von cx zu BEIDEN echten Kanten misst, nicht zu einer angenommenen
+// Kante bei 0 - sonst kann `w - cx` negativ werden und der Zoom bricht.
+export function computeZoomFrame(frame, margin = 0.05, boundX = 0, boundY = 0) {
 	const { w, h, mass, momentX, momentY } = frame;
 	if (mass <= 0 || w <= 0 || h <= 0) {
 		return { z: 1, cx: 0.5, cy: 0.5, offsetX: 0, offsetY: 0 };
 	}
 	let cx = momentX / mass;
 	let cy = momentY / mass;
-	let halfW = Math.max(cx, w - cx, 1e-9) * (1 + margin);
-	let halfH = Math.max(cy, h - cy, 1e-9) * (1 + margin);
+	let halfW = Math.max(cx - boundX, boundX + w - cx, 1e-9) * (1 + margin);
+	let halfH = Math.max(cy - boundY, boundY + h - cy, 1e-9) * (1 + margin);
 	let z = Math.min(0.5 / halfW, 0.5 / halfH);
 	return { z, cx, cy, offsetX: 0.5 - cx * z, offsetY: 0.5 - cy * z };
 }
@@ -162,6 +217,44 @@ export function layoutVisible(root, t, margin = 0.05, stats) {
 	return { rects, frame, zoom: computeZoomFrame(frame, margin) };
 }
 
+// Zentriert das GESAMTE sichtbare Ergebnis UNGEWICHTET in der Mitte des
+// logischen [0,root.w]x[0,root.h]-Raums, statt es (wie layoutBox() pur) an
+// der Ecke (0,0) kleben zu lassen (Gesprächsverlauf: reines Prefix-Sum-
+// Packen lässt überlebende Stücke IMMER Richtung originX/Y rutschen -
+// "kompaktiert immer nach unten links"; besser zur Mitte hin kompaktieren,
+// das hält auch den Massenschwerpunkt zentrierter). EIN zusätzlicher
+// O(n)-Nachlauf über die bereits von layoutBox() gesammelten Rects (KEINE
+// zweite Traversierung): layoutBox() liefert Größe/Momente korrekt bei
+// Origin (0,0), eine konstante Verschiebung aller Rects + eine analytische
+// Translations-Korrektur von momentX/momentY (neues Moment = altes Moment +
+// Verschiebung × Masse) zentriert das Ergebnis, ohne pro Split-Ebene neu zu
+// gewichten. MUSS überall konsistent genutzt werden, wo Bank-Geometrie für
+// denselben Zeitpunkt gebraucht wird (Render-Pfad in TargetBankCanvas.svelte,
+// findRect() unten, die Kamera-Spline-Vorberechnung in compiler.js) - sonst
+// laufen Kamera und tatsächlich gerenderte Position auseinander.
+export function layoutCentered(root, t, out, stats, margin = 0.05) {
+	let frame = layoutBox(root, t, 0, 0, out, stats);
+	if (frame.mass <= 0 || frame.w <= 0 || frame.h <= 0) {
+		return { frame, zoom: computeZoomFrame(frame, margin) };
+	}
+	let shiftX = (root.w - frame.w) / 2;
+	let shiftY = (root.h - frame.h) / 2;
+	if (out) {
+		for (let r of out) {
+			r.x += shiftX;
+			r.y += shiftY;
+		}
+	}
+	let shiftedFrame = {
+		w: frame.w,
+		h: frame.h,
+		mass: frame.mass,
+		momentX: frame.momentX + shiftX * frame.mass,
+		momentY: frame.momentY + shiftY * frame.mass,
+	};
+	return { frame: shiftedFrame, zoom: computeZoomFrame(shiftedFrame, margin, shiftX, shiftY) };
+}
+
 // Herkunfts-Position EINES bestimmten Stücks zu EINEM festen Zeitpunkt t -
 // für die Flug-Animation (render_pipeline in compiler.js/TargetBankCanvas.svelte).
 // Ein fliegendes Stück braucht KEINE kontinuierlich mitlaufende Bank-Position
@@ -173,8 +266,12 @@ export function layoutVisible(root, t, margin = 0.05, stats) {
 // von layoutBox() - keine zweite Positions-Berechnung, kein neuer,
 // eingefrorener Zustand am Stück nötig (siehe REST-PRECISION-PLAN Teil D,
 // Gesprächsverlauf: "man bräuchte nur die id des Herkunftsorts und das Ziel").
+// Nutzt layoutCentered() (nicht layoutBox() direkt) - MUSS dieselbe
+// Zentrierung wie der Render-Pfad verwenden, sonst startet die Flug-
+// Animation an der UNVERSCHOBENEN statt der tatsächlich gerenderten
+// Position.
 export function findRect(root, t, pieceId) {
 	let out = [];
-	layoutBox(root, t, 0, 0, out);
+	layoutCentered(root, t, out);
 	return out.find((r) => r.piece.id === pieceId) || null;
 }

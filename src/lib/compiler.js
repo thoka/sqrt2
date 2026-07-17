@@ -9,7 +9,7 @@ import {
 	makeCompactedLogicalRectLookup,
 	computeCompactionFitStates,
 } from './bank-core.js';
-import { layoutBox, computeZoomFrame } from './recursive-layout.js';
+import { layoutCentered } from './recursive-layout.js';
 
 // TEIL C (REST-PRECISION-PLAN): Zoom nutzt kompaktierte Geometrie, damit der
 // kleinste sichtbare Rest auch bei extremem Zoom groß genug skaliert wird.
@@ -570,18 +570,20 @@ export function finalizeCompiled(data) {
 	// TEIL D (REST-PRECISION-PLAN): Kamera aus dem rekursiven Box-in-Boxes-
 	// Modell statt aus den (Teil C-)Kompaktierungs-Wegpunkten oben - ERSETZT
 	// bank_zoom_states/GLOBAL_BANK_ZOOM_SPLINE als Quelle für den Render-Pfad
-	// (siehe TargetBankCanvas.svelte). layoutBox() liefert pro Checkpoint
-	// Moment/Masse (statt einer diskreten Anker-Wahl), computeZoomFrame()
-	// leitet daraus z/cx/cy/offsetX/offsetY ab - roh/exakt, wie bei
-	// bank_zoom_states. Genau wie beim alten Bank-Zoom braucht die KAMERA
-	// selbst KEINE Wegpunkt-Exaktheit (nur die zugrundeliegende Geometrie
-	// muss stimmen) - dieselbe BANK_ZOOM_TAU-Dämpfung wie oben, aus denselben
-	// eventTimes-Checkpoints (kein zweites Sampling-Schema).
+	// (siehe TargetBankCanvas.svelte). layoutCentered() liefert pro Checkpoint
+	// Moment/Masse (statt einer diskreten Anker-Wahl) UND zentriert das
+	// sichtbare Ergebnis ungewichtet im Bank-Raum (Gesprächsverlauf) -
+	// computeZoomFrame() leitet daraus z/cx/cy/offsetX/offsetY ab. MUSS
+	// dieselbe Zentrierung wie der Render-Pfad (TargetBankCanvas.svelte) und
+	// findRect() verwenden, sonst laufen Kamera und tatsächlich gerenderte
+	// Position auseinander. Genau wie beim alten Bank-Zoom braucht die
+	// KAMERA selbst KEINE Wegpunkt-Exaktheit (nur die zugrundeliegende
+	// Geometrie muss stimmen) - dieselbe BANK_ZOOM_TAU-Dämpfung wie oben,
+	// aus denselben eventTimes-Checkpoints (kein zweites Sampling-Schema).
 	let root = bank_pieces[0];
-	let teil_d_zoom_states = eventTimes.map((t) => {
-		let frame = layoutBox(root, t, 0, 0, null);
-		return computeZoomFrame(frame, TEIL_D_ZOOM_MARGIN);
-	});
+	let teil_d_zoom_states = eventTimes.map(
+		(t) => layoutCentered(root, t, null, undefined, TEIL_D_ZOOM_MARGIN).zoom,
+	);
 	let GLOBAL_TEIL_D_ZOOM_SPLINE = buildDampedFilterBundle(
 		eventTimes.map((t, i) => ({ t, ...teil_d_zoom_states[i] })),
 		['z', 'cx', 'cy', 'offsetX', 'offsetY'],

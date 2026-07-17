@@ -21,7 +21,7 @@
 	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
 	import { applyCompactionFit } from '../lib/bank-core.js';
-	import { layoutBox, findRect } from '../lib/recursive-layout.js';
+	import { layoutCentered, findRect } from '../lib/recursive-layout.js';
 	import { configStore, playbackStore, compiledStore } from '../lib/stores.js';
 	import {
 		setDebugCanvas,
@@ -247,14 +247,19 @@
 
 		// TEIL D (REST-PRECISION-PLAN): BANK-Seite kommt jetzt ausschließlich aus
 		// dem rekursiven Box-in-Boxes-Modell (recursive-layout.js), EINE
-		// Traversierung pro Frame (layoutBox liefert Rects UND Moment/Masse
-		// zusammen - kein doppeltes Layout). Die Kamera (teilDCamera) ist
-		// gedämpft (GLOBAL_TEIL_D_ZOOM_SPLINE, siehe compiler.js) - die Rects
-		// selbst bleiben exakt/ungedämpft.
+		// Traversierung pro Frame (layoutCentered liefert Rects UND Moment/
+		// Masse zusammen - kein doppeltes Layout). layoutCentered() statt
+		// layoutBox() direkt: zentriert das sichtbare Ergebnis ungewichtet
+		// im [0,1]-Bank-Raum statt es an der unteren linken Ecke kleben zu
+		// lassen (Gesprächsverlauf) - MUSS mit derselben Zentrierung
+		// arbeiten wie findRect() und die Kamera-Spline-Vorberechnung in
+		// compiler.js. Die Kamera (teilDCamera) ist gedämpft
+		// (GLOBAL_TEIL_D_ZOOM_SPLINE, siehe compiler.js) - die Rects selbst
+		// bleiben exakt/ungedämpft.
 		let bank_out = [];
-		let bank_frame = bank_root
-			? layoutBox(bank_root, u_time, 0, 0, bank_out)
-			: { w: 0, h: 0, mass: 0, momentX: 0, momentY: 0 };
+		let { frame: bank_frame } = bank_root
+			? layoutCentered(bank_root, u_time, bank_out)
+			: { frame: { w: 0, h: 0, mass: 0, momentX: 0, momentY: 0 } };
 		let teilDCamera = GLOBAL_TEIL_D_ZOOM_SPLINE
 			? GLOBAL_TEIL_D_ZOOM_SPLINE.at(u_time)
 			: { z: 1, cx: 0.5, cy: 0.5, offsetX: 0, offsetY: 0 };
