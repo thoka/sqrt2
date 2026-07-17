@@ -255,14 +255,12 @@ export function compileSystemData(config) {
 		eventTimesTicks = Array.from(new Set(sampled));
 	}
 
-	// Kompaktierung (immer berechnet — kein Nicht-Kompaktierungs-Modus).
-	let transitionTicks = compactionTransitionTicks;
-	if (!(transitionTicks >= 0)) transitionTicks = 3;
-	let compaction_waypoints = computeCompactionWaypoints(
-		bank_pieces,
-		local_max_time,
-		transitionTicks,
-	);
+	// Kompaktierung: computeCompactionWaypoints enthält mapX/mapY-Funktionen,
+	// die NICHT per postMessage (structuredClone) zum Main-Thread übertragen
+	// werden können. Daher werden hier NUR die Parameter vorbereitet, die
+	// eigentliche Berechnung passiert in finalizeCompiled() auf dem Main-Thread.
+	let compactionTransitionTicksClean = compactionTransitionTicks;
+	if (!(compactionTransitionTicksClean >= 0)) compactionTransitionTicksClean = 3;
 
 	// TEIL C: Zoom-Wegpunkte werden in finalizeCompiled() berechnet (nach
 	// Tick→Zeit-Konversion, da computeCompactionWaypoints Animation-Zeiten
@@ -282,7 +280,7 @@ export function compileSystemData(config) {
 		tickTimePairs,
 		auto_zoom_checkpoints,
 		eventTimesTicks,
-		compaction_waypoints,
+		compactionTransitionTicks: compactionTransitionTicksClean,
 		MAX_TIME: local_max_time,
 		// Felder, die finalizeCompiled() für die Splines/Filter braucht:
 		BASE,
@@ -314,7 +312,7 @@ export function finalizeCompiled(data) {
 		tickTimePairs,
 		auto_zoom_checkpoints,
 		eventTimesTicks,
-		compaction_waypoints,
+		compactionTransitionTicks,
 		zoomSpeedCoef,
 		local_max_time,
 		BANK_ZOOM_THRESHOLD_POWERS,
@@ -499,7 +497,14 @@ export function finalizeCompiled(data) {
 	// Kompaktierung (immer berechnet): "Zeilen/Spalten ausblenden", siehe
 	// bank-core.js TEIL 2. Ersetzt den bankT-basierten Auto-Zoom für die
 	// Bank-Darstellung vollständig (siehe project() in renderFrame()).
-	let GLOBAL_COMPACTION_WAYPOINTS = compaction_waypoints;
+	// Berechnung hier (Main-Thread), NICHT in compileSystemData() (Worker):
+	// computeCompactionWaypoints liefert mapX/mapY-Funktionen, die via
+	// postMessage (structuredClone) nicht übertragbar sind.
+	let GLOBAL_COMPACTION_WAYPOINTS = computeCompactionWaypoints(
+		bank_pieces,
+		local_max_time,
+		compactionTransitionTicks,
+	);
 	// Schnell/exakt: "wo steht jedes Stück im kompaktierten Layout"
 	// (computeSegmentBlend()-basiert, für die Nichtüberlappungs-
 	// Garantie - siehe bank-core.js).

@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { compileSystem, relativePosition } from '../../src/lib/compiler.js';
-import { buildSystem } from '../../src/lib/bank-core.js';
+import { buildSystem, applyCompactionFit } from '../../src/lib/bank-core.js';
 
 const BASE_CONFIG = {
 	base: 10,
@@ -263,6 +263,105 @@ test('Größte Reste im Zoom-Rahmen: k-größte Stücke landen innerhalb [0,1] (
 		violations.length,
 		0,
 		`${violations.length}/${totalLargest} größte Reste außerhalb [0,1]: ${JSON.stringify(violations.slice(0, 5))}`,
+	);
+});
+
+test('Renderer-Pfad (compactionFit): project() liefert finite, sichtbare Koordinaten für alle Stücke (Tiefe 5)', () => {
+	// Der Renderer nutzt GLOBAL_COMPACTION_LOGICAL_LOOKUP + applyCompactionFit
+	// (NICHT bankT). Dieser Test exercised genau diesen Pfad und prüft, dass
+	// er für alle sichtbaren Stücke bei allen Checkpoints finite,
+	// nicht-negative Koordinaten liefert (die auf dem Canvas landen).
+	const r = compileSystem({ ...BASE_CONFIG, depth: 5 });
+	const bp = r.bank_pieces;
+	const lookup = r.GLOBAL_COMPACTION_LOGICAL_LOOKUP;
+	const fitSpline = r.GLOBAL_COMPACTION_FIT_SPLINE;
+	assert.ok(lookup, 'GLOBAL_COMPACTION_LOGICAL_LOOKUP muss existieren');
+	assert.ok(fitSpline, 'GLOBAL_COMPACTION_FIT_SPLINE muss existieren');
+	const times = r.GLOBAL_BANK_ZOOM_TIMES;
+	assert.ok(times.length > 0, 'mindestens ein Checkpoint');
+	let violations = 0;
+	let total = 0;
+	for (let i = 0; i < times.length; i++) {
+		const t = times[i];
+		const fit = fitSpline.at(t);
+		assert.ok(fit, `compactionFit muss für t=${t} existieren`);
+		assert.ok(
+			Number.isFinite(fit.z) && fit.z > 0,
+			`fit.z muss positiv sein, war ${fit.z} bei t=${t}`,
+		);
+		const vis = bp.filter((p) => t >= p.born_time && t < p.cut_time && t < p.taken_time);
+		for (const p of vis) {
+			const logical = lookup(p, t);
+			if (!logical) continue;
+			const r = applyCompactionFit(logical, fit);
+			total++;
+			const ok =
+				Number.isFinite(r.x) &&
+				Number.isFinite(r.y) &&
+				Number.isFinite(r.w) &&
+				Number.isFinite(r.h) &&
+				r.w > 0 &&
+				r.h > 0 &&
+				r.x >= -1 &&
+				r.x <= 2 &&
+				r.y >= -1 &&
+				r.y <= 2;
+			if (!ok) violations++;
+		}
+	}
+	assert.ok(total > 0, 'mindestens ein Stück geprüft');
+	assert.strictEqual(
+		violations,
+		0,
+		`${violations}/${total} Stücke mit invaliden Koordinaten im Compaction-Fit-Pfad`,
+	);
+});
+
+test('Renderer-Pfad vollständig: Canvas-Koordinaten sind finite, positive Pixelwerte (Tiefe 5)', () => {
+	// Simuliert den exakten Pfad aus TargetBankCanvas project():
+	// applyCompactionFit → V_SCALE_BANK → BANK_X_OFFSET → *scale.
+	// Prüft, dass das Ergebnis finite, positive Pixel-Koordinaten sind.
+	const r = compileSystem({ ...BASE_CONFIG, depth: 5 });
+	const bp = r.bank_pieces;
+	const lookup = r.GLOBAL_COMPACTION_LOGICAL_LOOKUP;
+	const fitSpline = r.GLOBAL_COMPACTION_FIT_SPLINE;
+	assert.ok(lookup && fitSpline);
+	const SQRT2 = Math.SQRT2;
+	const V_SCALE_BANK = 1.0;
+	const BANK_X_OFFSET = SQRT2 + 0.1;
+	const times = r.GLOBAL_BANK_ZOOM_TIMES;
+	let violations = 0;
+	let total = 0;
+	for (let i = 0; i < times.length; i++) {
+		const t = times[i];
+		const fit = fitSpline.at(t);
+		if (!fit || !Number.isFinite(fit.z)) continue;
+		const vis = bp.filter((p) => t >= p.born_time && t < p.cut_time && t < p.taken_time);
+		for (const p of vis) {
+			const logical = lookup(p, t);
+			if (!logical) continue;
+			const cr = applyCompactionFit(logical, fit);
+			// Exakter Pfad aus project():
+			const final_x = BANK_X_OFFSET + cr.x * V_SCALE_BANK;
+			const final_y = cr.y * V_SCALE_BANK;
+			const final_w = cr.w * V_SCALE_BANK;
+			const final_h = cr.h * V_SCALE_BANK;
+			total++;
+			const ok =
+				Number.isFinite(final_x) &&
+				Number.isFinite(final_y) &&
+				Number.isFinite(final_w) &&
+				Number.isFinite(final_h) &&
+				final_w > 0 &&
+				final_h > 0;
+			if (!ok) violations++;
+		}
+	}
+	assert.ok(total > 0);
+	assert.strictEqual(
+		violations,
+		0,
+		`${violations}/${total} Stücke mit invaliden Canvas-Koordinaten`,
 	);
 });
 

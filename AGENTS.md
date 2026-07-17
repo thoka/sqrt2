@@ -43,6 +43,18 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
   vorherigen Commit. Betrifft JEDE Änderung (Bugfix, Refactor, Docs, Config).
   Nur phasen-zugehörige Dateien (`git add` einzeln, nicht `-A`), Message kurz
   im Repo-Stil. **Nicht** pushen/amenden, keine leeren Commits, keine Secrets.
+- **Playwright-E2E muss funktionieren:** Keine Arbeit an Renderer/Canvas/Zoom
+  ohne funktionierendes Playwright. Wenn `pnpm test:e2e` hängt oder fehlschlägt,
+  ist das das ERSTE Problem das gelöst wird. Root-Cause + Fix in
+  `docs/E2E-PLAYWRIGHT-SPEC.md` (gelöst): diese Sandbox (WSL2 mit gespiegeltem
+  Networking, z.B. für Tailscale) liefert für Verbindungen zu geschlossenen
+  Loopback-Ports kein RST/ECONNREFUSED, sondern hängt auf SYN-SENT.
+  Playwrights `config.webServer`-Verfügbarkeitscheck setzt dafür keinen
+  Socket-Timeout und hängt ewig, bevor der Server-Prozess überhaupt startet.
+  Fix: kein `webServer` in `playwright.config.js`, stattdessen
+  `globalSetup: tests/e2e/global-setup.js` startet den Preview-Server selbst
+  und pollt mit `fetch()` + `AbortSignal.timeout` (bricht zuverlässig ab statt
+  auf den TCP-Fehler zu warten).
 - **Tests für alle Stufen:** Jede Stufe eines Features braucht eigene Tests
   (Unit und/oder e2e). Stufe ohne Tests = nicht abgeschlossen.
   Logik: `tests/unit/*.test.js` + `tests/e2e/*.test.js`. Connection-Service
