@@ -105,6 +105,16 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
    (s.o.) ließ den Actions-Workflow dauerhaft fehlschlagen. Neuer Stand via
    `GITHUB_PAGES=true pnpm build` + `./scripts/deploy-pages.sh`. Live:
    `https://thoka.github.io/sqrt2/`.
+9. **Fixe Float-Schwellen in `bank-core.js`/`recursive-layout.js` sind
+   verdächtig:** zwei reale Bugs (Tiefe 30, siehe `REST-PRECISION-PLAN.md`
+   "Stand 2026-07-18") kamen von festen `1e-9`-Konstanten, die auf mit der
+   Tiefe schrumpfende Größen (`w`/`h`, Bounding-Box) angewendet wurden - ab
+   `k≈9` wird die Schwelle größer als die verglichenen Werte selbst. Vor
+   einer neuen Konstante dieser Art: (1) schrumpft der verglichene Wert mit
+   `k`/Tiefe? (2) gibt es eine exakte, tiefenunabhängige Alternative
+   (Integer-Zähler wie `k_v`/`k_h`, oder ist der Floor durch einen
+   vorhandenen Guard ohnehin überflüssig)? Reine Divisionsketten (`w`/`h`
+   selbst) sind NICHT betroffen (präzise bis `k≈300` bei Basis 10).
 
 ## Stolpersteine (nur diese Sandbox)
 

@@ -949,3 +949,98 @@ setzen, `flightOrigin`-Erfassung in die `bank_out`-Schleife in
 im `render_pipeline`-Loop entsprechend vereinfachen. Danach erneut bei
 Tiefe 16/22 profilen (dasselbe Skript wie oben) zur Bestätigung, dass die
 Pro-Frame-Kosten jetzt tatsächlich unabhängig von der Tiefe klein bleiben.
+
+**Nachtrag:** umgesetzt in Commit `0b47cea` - `flightQueryTime`/`flightOrigin`
+sind produktiv, `bankOriginState()` ist O(1) im Normalfall. Dieser Abschnitt
+war seither nicht mehr aktualisiert; der obige "Nächster Schritt" ist erledigt.
+
+## Stand (2026-07-18) - zwei reale Geometrie-Bugs gefunden + gefixt (fixe Float-Schwellen brechen bei Tiefe 30)
+
+Ausgangspunkt: User-Beobachtung auf Branch `rest-model-teil-d` (Basis 10,
+Tiefe 30) - bei Tick 6000 kollabierte die X-Auflösung der Reststücke
+sichtbar (Rest wurde zu einem unsichtbaren Haarlinien-Strich), bei Tick 8100 war
+der Rest komplett unsichtbar. Diagnose lief per **Live-CDP-Verbindung** zum
+laufenden User-Chrome (`scripts/debug-cdp.mjs`-Pattern, siehe
+`DEBUG-INSPECT-SPEC.md`) - Snapshot + Screenshot direkt aus dem Browser
+statt Vermutung, plus gezielte Node-Reproduktionsskripte gegen
+`compileSystem()`/`layoutBox()`. Zwei unabhängige, aber strukturell
+identische Bugs gefunden:
+
+### Bug 1: Schnittrichtung kippt bei Tiefe ~9+ (`bank-core.js`)
+
+`getPieceFromBank()` entschied die nächste Schnittachse über
+`best_parent.w > best_parent.h + EPS` mit festem `EPS=1e-9`. Sobald `w`/`h`
+selbst in diese Größenordnung sanken (ab `k≈9`), verschluckte das feste EPS
+die echte Differenz - der Vergleich fiel fälschlich in den
+"ist-ein-Quadrat"-Zweig, die dann frei gewählte Richtung schnitt teils
+dieselbe (bereits kurze) Achse erneut statt der tatsächlich längeren. Der
+Fehler kompoundierte über weitere Tiefen: ein bei Tiefe 21 noch moderates
+1000:1-Stück wurde bei Tiefe 42 zu einem Seitenverhältnis von 10²²:1 -
+obwohl die Konstruktion (Quadrat → BASE Streifen → Quadrat → ...) laut
+Bauplan **ausschließlich** 1:1 oder 1:BASE zulässt. Am konkreten Baum
+nachgewiesen (Vorfahren-Kette von Wurzel bis zum größten Reststück bei Tick
+6319, 22 Ebenen, jedes Geschwister einzeln geprüft).
+
+**Fix (`b880a3f`):** `k_v`/`k_h` als exakte Integer-Schnittzähler pro Achse
+additiv am Stück (`k_v+k_h===k` immer). Die Richtungsentscheidung vergleicht
+jetzt `k_v`/`k_h` direkt - kein Epsilon nötig, funktioniert bei jeder Tiefe
+gleich zuverlässig. `w`/`h` selbst waren nie das Problem (reine
+Divisionsketten, präzise bis weit jenseits der hier relevanten Tiefen) -
+nur die Vergleichsschwelle war falsch skaliert. Verifiziert: alle 16.961
+Stücke einer Testkompilierung (Tiefe 30) haben exakt Verhältnis 1:1 oder
+1:10, keine Ausnahme.
+
+### Bug 2: fixer `1e-9`-Floor in `computeZoomFrame()` (`recursive-layout.js`)
+
+Nach Bug-1-Fix baute sich eine neue, aber viel kleinere Anomalie auf: ab
+einem bestimmten Tick war der Rest komplett unsichtbar. Ursache: derselbe
+Fehlertyp, eine Ebene weiter oben. `halfW`/`halfH` nutzten
+`Math.max(..., 1e-9)` als vermeintlichen Divide-by-Zero-Schutz. Die (nach
+Bug 1 jetzt korrekt proportionierte, aber bei Tiefe 30 weiterhin winzige,
+`~6·10⁻¹²`) echte Bounding-Box lag darunter - der Floor wurde zur AKTIVEN
+Grenze, der Zoom blieb ~150-200× zu schwach, der Rest füllte nur einen
+verschwindenden Bruchteil des Fensters.
+
+**Fix (`d608fbd`):** Floor ersatzlos entfernt. `mass<=0||w<=0||h<=0` wird
+bereits eine Zeile darüber abgefangen; danach gilt immer
+`(cx-boundX)+(boundX+w-cx)===w>0`, mindestens einer der beiden Max-Terme ist
+also zwangsläufig positiv - kein zusätzlicher Floor nötig.
+
+### Lektion (verallgemeinerbar, für künftige Arbeit an `bank-core.js`/`recursive-layout.js`)
+
+**Jede feste absolute Float-Schwelle/Untergrenze in diesem Baum ist
+verdächtig**, sobald sie auf Größen angewendet wird, die mit der
+Rekursionstiefe schrumpfen (`w`/`h`, Bounding-Box-Maße, o.ä.) - beide Bugs
+dieser Sitzung waren genau dieses Muster, an zwei unabhängigen Stellen. Vor
+einer neuen Konstante dieser Art prüfen: (1) wird sie auf einen Wert
+angewendet, der mit `k`/Tiefe kleiner wird? (2) gibt es eine exakte,
+tiefenunabhängige Alternative (Integer-Zähler wie `k_v`/`k_h`, oder ein
+bereits vorhandener Guard, der die Schwelle überflüssig macht, wie bei
+Bug 2)? Reine Multiplikationsketten (`w`/`h` selbst) sind NICHT das Problem
+(präzise bis `k≈300` bei Basis 10) - nur Vergleiche/Floors mit einer festen
+Zahl, die nicht mit der Skala mitschrumpft.
+
+### Verifiziert
+
+- Live-Browser (CDP, Tick 6319 + 8100, Basis 10/Tiefe 30): Rest wieder
+  sichtbar, füllt den Rahmen korrekt.
+- `node --test` (alle Suiten außer dem vorbestehenden, unabhängigen
+  `compiler-split.test.js`-Hang, siehe GOTCHA in `AGENTS.md`): 137/138 grün
+  (der eine Rest ist der bereits vorher als `todo` dokumentierte
+  `transformMode Z`-Grenzfall).
+- `pnpm check`: 0 Fehler (nur vorbestehende Warnings).
+- `pnpm build`: ok.
+- `pnpm test:e2e`: 12/14 grün; die 2 Ausreißer (Kriterium 6/10, Timing-Tests)
+  sind per `git stash`-Vergleich als vorbestehende Sandbox-Flakiness unter
+  Volllast bestätigt (reproduzieren identisch auf unverändertem Code, laufen
+  isoliert beide durch) - keine Regression.
+- Kompilierzeit Tiefe 20 minimal schneller als vorher (4,99s vs. 6,88s) -
+  kein Performance-Verlust durch die zusätzlichen `k_v`/`k_h`-Felder.
+
+### Nächster Schritt
+
+Kein offener Handlungsbedarf aus dieser Sitzung. Mögliche Folgearbeit (nicht
+angefragt, nur notiert): ein expliziter Regressionstest "jedes erzeugte
+Stück hat Seitenverhältnis 1:1 oder 1:BASE" (analog dem Ad-hoc-Check aus
+dieser Sitzung) würde Bug 1 dauerhaft gegen Wiederauftreten absichern - bisher
+nur indirekt über die bestehenden Geometrie-/Sichtbarkeitstests abgedeckt.
