@@ -431,3 +431,195 @@ Erweiterung von `tests/unit/zoom-robust.test.js`:
 Offen: Verhalten bei Tiefe 60+ (Stückzahl ~67k) prüfen — ob die
 Kompaktierungs-Waypoints dort performance-mäßig tragen und die Rest-Fläche
 über 10% bleibt.
+
+## Teil D: Rekursives Box-in-Boxes-Modell ersetzt Wegpunkte/externe Kompaktierung
+
+Konsolidiert aus einer Diskussion zu `docs/NEW-REST-MODEL-SPEC.md` (Ausgangs-
+Vorschlag des Users, dort unverändert als Rohfassung stehen gelassen). Status:
+**Entwurf, mit User besprochen, noch nicht implementiert.** Ersetzt (nicht
+ergänzt) die Rendering-/Kompaktierungs-Schicht aus Teil C, sobald umgesetzt.
+
+### Befund
+
+- `bank_pieces` (`bank-core.js`) ist bereits genau der Baum, den ein
+  rekursives Box-in-Boxes-Modell braucht: jeder Schnitt teilt einen Parent in
+  genau `BASE` gleich große Kinder entlang **einer** Achse
+  (`is_vert_cut`, `bank-core.js:169-176`) - kein Umbau des Kernalgorithmus
+  nötig, nur additive Felder (wie schon Teil B).
+- Die zweistufige Architektur aus Teil C (Wegpunkte vorberechnen via
+  `computeCompactionWaypoints`, dann pro Frame interpolieren/lookup via
+  `makeCompactedLogicalRectLookup`) hat zwei strukturelle Nachteile, die ein
+  Live-Modell nicht hat:
+  - **Ordnungstreue** (CLAUDE.md Bug-Klasse 2) muss dort extern über
+    `computeSegmentBlend()` erzwungen werden. Wertet man effektive
+    Größe/Position dagegen als geschlossene Funktion von `t` aus, bei der
+    alle Geschwister einer Box zum selben `t` per Präfixsumme ihrer
+    effektiven Größen positioniert werden, ist Überlappung durch
+    Konstruktion unmöglich - keine externe Garantie nötig.
+  - **Live-Parameteränderung ohne Neukompilat** (z.B.
+    `GAP_CLOSE_DELAY_TICKS` zur Laufzeit verstellen) ist mit vorberechneten
+    Wegpunkten grundsätzlich nicht möglich, weil der Parameter im
+    Wegpunkt-Raster fest eingebacken ist. Bei reiner Live-Auswertung ist er
+    nur ein Formel-Parameter - Änderung wirkt im nächsten Frame.
+- **Vorbedingung für Live-Auswertung bei ~67k Stücken (Tiefe 50+):** die zu
+  jedem Zeitpunkt `t` tatsächlich "aktive" Teilmenge des Baums (nicht
+  `beendet`, nicht `nicht gestartet`) ist strukturell klein (User-
+  Beobachtung) - Pruning (siehe Architektur) macht die Kosten pro Frame
+  unabhängig von der Gesamtgröße von `bank_pieces`.
+
+### Architektur
+
+**Datenmodell - additiv auf `bank_pieces`, keine zweite Struktur** (User-
+Vorgabe: "wir wollen definitiv nicht zwei Weisheiten"):
+
+| Spec-Feld | Herkunft |
+|---|---|
+| `ts` | `born_time` (vorhanden) |
+| `td` | `cut_time` (vorhanden) |
+| `te` (Blatt) | **neu**, beim Entnehmen einmalig berechnet + eingefroren (siehe unten) |
+| `te` (geteilt) | rekursiv `max(te_child)` über alle Kinder, sobald bekannt |
+| `wd`/`hd` | `w`/`h` (vorhanden, ändern sich nach Erzeugung nie) |
+| `k` | `k` (vorhanden) |
+| `dir` | **neu**, 1 Feld: beim Schnitt am Parent speichern (bisher nur implizit über `localOffsetX` vs. `localOffsetY` der Kinder ablesbar) |
+
+**Zeitachse:** dieselbe Tick-Achse wie die Simulation, aus Symmetriegründen
+(User-Entscheidung) - kein separates Animationszeit-Mapping für dieses
+Modell nötig; die vorhandene `buildTickTimeMapping`-Brücke bleibt für andere
+Zwecke unangetastet nutzbar, falls später doch gebraucht.
+
+**Zustandsmaschine pro Box, als reine Funktion von `t`:**
+
+- `t < ts`: nicht gestartet → effektive Größe 0.
+- `ts <= t < td` (bzw. bis zum eigenen Exit bei Blättern): gestartet, nicht
+  geteilt → effektive Größe = designte Größe (`wd`/`hd`), **sofort ab `ts`**,
+  kein Fade-in (User-Entscheidung: "sofort, kann später noch markiert
+  werden" - siehe Offene Punkte).
+- `td <= t < Exit`: geteilt → effektive Größe rekursiv aus Kindern (Summe in
+  Laufrichtung `dir`, Maximum quer dazu).
+- **Exit eines Blatts, 3 Phasen** (ersetzt einfaches "wird ausgeblendet" aus
+  dem Ausgangsvorschlag - notwendig für "Lücke bleibt eine Zeit lang
+  erkennbar", User-Vorgabe):
+  1. `[taken_time, taken_time + delaySnapshot)`: effektive Größe bleibt auf
+     designtem Wert stehen (Lücke sichtbar, keine Kompaktierung).
+  2. `[taken_time + delaySnapshot, te)`: C¹-Ease designte Größe → 0
+     (Nullsteigung an beiden Enden - vorhandenes `smoothing.js`-Bauteil
+     wiederverwenden, keine neue Kernel-Formel).
+  3. `t >= te`: `beendet`, effektive Größe 0, Teilbaum wird ab hier für alle
+     künftigen Frames übersprungen (Pruning).
+  `delaySnapshot`/die Transition-Länge werden **beim Entnehmen einmalig aus
+  den dann aktuellen `GAP_CLOSE_DELAY_TICKS`/Transition-Konstanten
+  eingefroren** und als Feld am Stück gespeichert (User-Vorgabe: "einfrieren
+  wäre super") - eine spätere Laufzeit-Änderung der globalen Konstante wirkt
+  dadurch nur auf künftige Entnahmen, nie rückwirkend auf bereits laufende
+  Ausblendungen (kein Sprung).
+- **Exit einer geteilten Box:** automatisch `beendet`, sobald
+  `te_parent = max(te_child)` erreicht ist - keine Sonderregel, identisch
+  zum Blatt-Exit aus Sicht des Elternknotens (das ist der eigentliche Kern
+  der Kompaktierung, siehe Diskussion: ein leergeräumter Teilbaum verhält
+  sich für seinen Parent exakt wie ein entnommenes Blatt).
+
+**Rendering/Komposition: top-down, nicht bottom-up.** Jeder
+Rekursionsschritt der ohnehin rekursiven Zeichenfunktion multipliziert einen
+lokalen Skalenfaktor (Bereich `[1/BASE, 1]`, wandert Richtung `1`, während
+Geschwister auf dieser Ebene kompaktieren) auf den von oben mitgeführten
+Transform auf. Im Unterschied zu Teil Bs `relativePosition()` (die für
+Paarvergleiche AUSSERHALB einer Top-down-Traversierung eine Ahnen-Kette zur
+Laufzeit suchen musste) wird hier kein Ahnen-Walk gebraucht - der
+Rekursionsabstieg IST der Walk. Jede Ebene bleibt lokal in einem
+gutkonditionierten Zahlenbereich nahe 1 (kein Auslöschungsrisiko) -
+Präzision entsteht durch Komposition vieler harmloser Faktoren statt durch
+eine einzelne Zahl mit riesiger Dynamik. Damit wird Teil Bs
+`relativePosition()`/Ahnen-Suche für den Zoom-Pfad überflüssig, sobald Teil D
+den kompletten Rendering-/Zoom-Pfad übernimmt; `localOffsetX/Y` selbst kann
+als Feld bleiben (harmlos, ggf. für `dir`-Herleitung nützlich).
+
+**Moment/Masse - kontinuierlicher Zoom-Anker statt diskreter Wahl.** Jede
+Box führt neben effektiver Größe zusätzlich ein Moment
+(`Σ effective_size_child · center_child`) und eine Masse
+(`Σ effective_size_child`) in lokalen Einheitskoordinaten mit, exakt
+bottom-up komponiert wie die effektive Größe selbst. Der daraus abgeleitete
+Schwerpunkt (`Moment/Masse`) ersetzt Teil Cs diskrete Anker-Wahl ("schwerste
+sichtbare Gruppe", Zoom-Loop in `compiler.js`) durch einen stetig
+mitgeführten, kontinuierlich wandernden Referenzpunkt für die Kamera - keine
+Sprunggefahr durch Anker-*Wechsel* (welche Gruppe gerade "am schwersten"
+ist), weil diese diskrete Entscheidung entfällt. Formalisiert damit exakt
+CLAUDE.mds Massen-/Trägheits-Regel für Layout-Umordnungen ("große Objekte
+bekommen am wenigsten Beschleunigung") - hier nicht als Sonderregel für eine
+Ebene, sondern strukturell in jeder Rekursionsebene eingebaut.
+
+**Live-Auswertung pro Frame mit Pruning:** die Rekursion steigt nur in einen
+Teilbaum ab, wenn er zum aktuellen `t` weder `beendet` noch `nicht
+gestartet` ist (letzteres hat noch keine Kinder, trivial). Die "aktive
+Front" ist strukturell klein, unabhängig von der Gesamtgröße von
+`bank_pieces` (~67k bei Tiefe 50).
+
+### Offene Punkte (bewusst nicht in diesem Konsolidierungsschritt entschieden)
+
+- **Fade-in bei `ts`:** User-Entscheidung "sofort" (kein Fade-in) -
+  markiert als mögliche spätere Verfeinerung, falls sich beim Bauen ein
+  sichtbarer C⁰/C¹-Sprung zeigt (siehe Testkriterium 4 unten).
+
+### Verhältnis zu Teil A/B/C
+
+- **Teil A** (exakte `l`/`l²`/`R` über BigInt-Ziffernzählung) bleibt komplett
+  unberührt - eigene, unabhängige Quelle (`axes`/`p.k`), keine Berührung mit
+  diesem geometrischen Rendering-Modell.
+- **Teil B** wird für den Zoom-Pfad funktional überflüssig (siehe
+  Architektur oben), muss aber nicht sofort entfernt werden - additive
+  Felder bleiben, nur der Aufrufpfad ändert sich.
+- **Teil C** (Wegpunkte + `zoom_rect_lookup`) wird komplett **ersetzt**, nicht
+  ergänzt - Teil D übernimmt Kompaktierung und Zoom-Framing in einem
+  Mechanismus.
+
+### Umsetzungsschritte (Entwurf, vor Beginn mit User zu bestätigen)
+
+1. `bank-core.js`: `dir`-Feld beim Schnitt ergänzen (additiv,
+   `getPieceFromBank`).
+2. `bank-core.js`: `te`/`delaySnapshot`-Felder beim Entnehmen berechnen
+   (`taken_time` + aktuell gültige `GAP_CLOSE_DELAY_TICKS`/Transition-Länge).
+3. Neues Modul (Kandidat: eigene Datei, z.B. `recursive-layout.js`, um
+   `bank-core.js` nicht weiter aufzublähen): `effectiveSize(box, t)` +
+   `composeTransform(box, t, parentTransform)` als reine, pro Frame neu
+   ausgewertete Funktionen mit Pruning.
+4. `TargetBankCanvas.svelte`: Rendering + Zoom-Framing auf die neue
+   Top-down-Rekursion umstellen, alte Wegpunkt-Aufrufe entfernen.
+5. `compiler.js`: `computeCompactionWaypoints`/`zoom_rect_lookup`-Aufrufe aus
+   `finalizeCompiled` entfernen, sobald Teil D produktiv ist.
+
+### Testkriterien (Entwurf)
+
+1. **Pruning-Korrektheit:** ein Teilbaum, dessen `te` erreicht ist, wird
+   nachweislich nicht mehr rekursiv besucht (Aufruf-Zähler-Test).
+2. **Ordnungstreue automatisch:** für zufällige `t`-Stichproben überlappen
+   Geschwister nie (Regressionstest gegen CLAUDE.md Bug-Klasse 2, hier als
+   Beweis der Konstruktion statt externer Prüfung).
+3. **Eingefrorene Delay-Werte:** `GAP_CLOSE_DELAY_TICKS` zur Laufzeit
+   ändern - bereits laufende Ausblendungen bleiben unverändert (kein
+   Sprung), nur neue Entnahmen nutzen den neuen Wert.
+4. **C¹ an Phasengrenzen:** Ableitung der effektiven Größe an
+   `taken_time + delaySnapshot` und an `te` numerisch prüfen (keine
+   Sprünge); zusätzlich Ableitung an `ts` prüfen und dokumentieren, ob der
+   "sofort"-Ansatz dort tatsächlich sprungfrei bleibt (siehe Offene Punkte).
+5. **Performance:** aktive Knotenzahl pro Frame bei Tiefe 50+ bleibt klein
+   (messen, nicht nur behaupten - analog Teil As Testkriterium 6).
+6. **Präzision:** keine NaN/Infinity über den gesamten Tiefenbereich bis
+   mindestens Tiefe 60 (Nachfolgetest zu Teil Bs Testkriterium 10, diesmal
+   ohne Ahnen-Suche).
+7. **Regressions-Parität:** bei Tiefe 3-8 weichen Positionen/Größen von den
+   heutigen (Teil-C-)Werten innerhalb enger Toleranz ab (visuell keine
+   Überraschung).
+8. **E2E:** Canvas bleibt über die komplette Wiedergabe bei Tiefe 22 visuell
+   stabil (analog Teil B Testkriterium 15).
+9. **Schwerpunkt stetig:** der komponierte Moment/Masse-Schwerpunkt ändert
+   sich C¹-stetig über `t` (keine Sprünge bei Entnahme/Fade einzelner
+   Stücke) - direkter Test der "kein Sprung durch Anker-Wechsel"-Behauptung.
+
+### Nächster Schritt
+
+Diese Skizze mit dem User gegenlesen (insb. Offene Punkte Fade-in/
+Moment-Masse). Der aktuelle Branch-Stand ist laut User "kläglich
+gescheitert" (uncommittete Änderungen an `TargetBankCanvas.svelte`,
+`bank-core.js`, `smoothing.js`, `bank-core-compaction.test.js`) - vor Beginn
+der Umsetzung klären, ob dieser Stand zurückgesetzt wird (ggf. für spätere
+Auswertung gesichert, z.B. als Patch/Branch) und Teil D auf sauberem Stand
+nach committetem Teil C neu aufgesetzt wird.
