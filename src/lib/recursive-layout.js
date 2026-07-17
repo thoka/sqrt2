@@ -108,48 +108,37 @@ export function layoutBox(piece, t, originX, originY, out, stats, depth = 0) {
 		momentY = 0;
 	let centered = depth < MAX_CENTER_DEPTH;
 	if (centered) {
-		// Pass 1: Größen pro Kind sammeln (ohne out/stats, nur w/h).
-		let childSizes = [];
-		let totalAlong = 0;
+		// Pass 1: packen ab Origin, Positionen sammeln.
+		let childPositions = []; // {mainDelta, crossDelta, pos} pro Kind
 		for (let child of piece.children) {
-			let res = layoutBox(child, t, 0, 0, null, null, depth + 1);
-			childSizes.push(alongX ? res.w : res.h);
-			totalAlong += alongX ? res.w : res.h;
+			let cx = alongX ? cursor : originX;
+			let cy = alongX ? originY : cursor;
+			let res = layoutBox(child, t, cx, cy, null, null, depth + 1);
+			let mainDelta = alongX ? res.w : res.h;
+			let crossDelta = alongX ? res.h : res.w;
+			childPositions.push({ mainDelta, crossDelta, pos: cursor });
+			cursor += mainDelta;
+			if (crossDelta > crossMax) crossMax = crossDelta;
+			mass += res.mass;
+			momentX += res.momentX;
+			momentY += res.momentY;
 		}
-		// Aktive Indizes + Summe.
-		let activeIdxs = [];
+		// Gesamtbreite des Packs und aktive Breite.
+		let totalAlong = cursor - origin;
 		let activeAlong = 0;
-		for (let i = 0; i < childSizes.length; i++) {
-			if (childSizes[i] > 0) {
-				activeIdxs.push(i);
-				activeAlong += childSizes[i];
-			}
-		}
-		let nActive = activeIdxs.length;
+		for (let cp of childPositions) if (cp.mainDelta > 0) activeAlong += cp.mainDelta;
 		let gap = totalAlong - activeAlong;
-		let step = gap > 0 && nActive > 1 ? gap / (nActive + 1) : 0;
-		// Pass 2: neue Positionen berechnen + rendern.
-		let lastActiveEnd = origin;
-		for (let i = 0; i < piece.children.length; i++) {
+		let shift = gap > 0 ? gap / 2 : 0;
+		// Pass 2: mit Verschiebung rendern.
+		cursor = origin;
+		for (let i = 0; i < childPositions.length; i++) {
 			let child = piece.children[i];
-			let mainDelta = childSizes[i];
-			let pos;
-			if (mainDelta > 0) {
-				// Neue Position mit gleichmäßig verteilten Lücken.
-				pos = origin + step;
-				for (let j = 0; j < nActive; j++) {
-					if (activeIdxs[j] >= i) break;
-					pos += childSizes[activeIdxs[j]];
-					pos += step;
-				}
-				lastActiveEnd = pos + mainDelta;
-			} else {
-				pos = cursor;
-			}
+			let cp = childPositions[i];
+			let pos = cp.pos + shift;
 			let cx = alongX ? pos : originX;
 			let cy = alongX ? originY : pos;
 			let res = layoutBox(child, t, cx, cy, out, stats, depth + 1);
-			mainDelta = alongX ? res.w : res.h;
+			let mainDelta = alongX ? res.w : res.h;
 			let crossDelta = alongX ? res.h : res.w;
 			cursor += mainDelta;
 			if (crossDelta > crossMax) crossMax = crossDelta;
@@ -157,7 +146,7 @@ export function layoutBox(piece, t, originX, originY, out, stats, depth = 0) {
 			momentX += res.momentX;
 			momentY += res.momentY;
 		}
-		let mainSize = lastActiveEnd - origin;
+		let mainSize = cursor - origin;
 		let w = alongX ? mainSize : crossMax;
 		let h = alongX ? crossMax : mainSize;
 		return { w, h, mass, momentX, momentY };
