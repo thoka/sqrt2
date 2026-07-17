@@ -11,6 +11,7 @@ import {
 	layoutVisible,
 	computeZoomFrame,
 	findRect,
+	commonAncestor,
 } from '../../src/lib/recursive-layout.js';
 
 function build(depth, cellMode = 'morph', compactionParams) {
@@ -354,6 +355,49 @@ test('Teil D: findRect liefert die Herkunfts-Position eines noch nicht geschnitt
 	let r = findRect(sim.bank_pieces[0], parent.born_time, parent.id);
 	assert.ok(r, 'Parent muss bei seinem eigenen born_time noch als Ganzes auffindbar sein');
 	assert.ok(Math.abs(r.w - parent.w) < 1e-9 && Math.abs(r.h - parent.h) < 1e-9);
+});
+
+// --------------------------------------------------------------------------
+// Debug-Overlay: tiefster gemeinsamer Elternrest (LCA) der gezeichneten Reste.
+// --------------------------------------------------------------------------
+test('commonAncestor: leere/eine Menge', () => {
+	const { sim } = build(4);
+	const byId = new Map(sim.bank_pieces.map((p) => [p.id, p]));
+	assert.equal(commonAncestor([], byId), null);
+	assert.equal(commonAncestor(null, byId), null);
+	const p = sim.bank_pieces[5];
+	assert.equal(commonAncestor([p], byId).id, p.id, 'einziges Stück ist sein eigener LCA');
+});
+
+test('commonAncestor: LCA zweier Geschwister ist ihr Elternrest', () => {
+	const { sim } = build(4);
+	const byId = new Map(sim.bank_pieces.map((p) => [p.id, p]));
+	// Ein geteiltes Stück mit >= 2 Kindern suchen.
+	const parent = sim.bank_pieces.find((p) => p.children && p.children.length >= 2);
+	assert.ok(parent, 'es muss ein geteiltes Stück geben');
+	const [a, b] = parent.children;
+	const lca = commonAncestor([byId.get(a.id), byId.get(b.id)], byId);
+	assert.equal(lca.id, parent.id);
+	assert.equal(lca.k, parent.k, 'Exponent des LCA = k des Elternrestes');
+});
+
+test('commonAncestor: LCA über verschiedene Tiefen läuft korrekt hoch', () => {
+	const { sim } = build(5);
+	const byId = new Map(sim.bank_pieces.map((p) => [p.id, p]));
+	// Ein Blatt tief unten und die Wurzel -> LCA muss die Wurzel (k=0) sein.
+	const deep = sim.bank_pieces.reduce((m, p) => (p.k > m.k ? p : m), sim.bank_pieces[0]);
+	const root = sim.bank_pieces[0];
+	const lca = commonAncestor([deep, root], byId);
+	assert.equal(lca.id, root.id);
+	assert.equal(lca.k, 0);
+});
+
+test('commonAncestor: LCA aller Stücke ist die Wurzel (k=0)', () => {
+	const { sim } = build(4);
+	const byId = new Map(sim.bank_pieces.map((p) => [p.id, p]));
+	const lca = commonAncestor(sim.bank_pieces, byId);
+	assert.equal(lca.k, 0);
+	assert.equal(lca.parent_id, null);
 });
 
 test('Teil D: computeZoomFrame bei t=0 (volles Quadrat) liefert z=1, zentriert', () => {

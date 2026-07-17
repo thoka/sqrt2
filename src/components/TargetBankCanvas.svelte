@@ -21,7 +21,7 @@
 	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
 	import { applyCompactionFit } from '../lib/bank-core.js';
-	import { layoutCentered, findRect } from '../lib/recursive-layout.js';
+	import { layoutCentered, findRect, commonAncestor } from '../lib/recursive-layout.js';
 	import { configStore, playbackStore, compiledStore } from '../lib/stores.js';
 	import {
 		setDebugCanvas,
@@ -379,6 +379,11 @@
 		// wird (derselbe project()-Aufruf, derselbe Sichtbarkeits-Schwellwert).
 		const drawn = debugOn ? {} : null;
 		const drawnDetail = debugOn ? [] : null;
+		// Debug: tiefster gemeinsamer Elternrest (LCA) ALLER gerade
+		// gezeichneten Rest-Stücke - dessen Exponent (k) wird unten als
+		// Overlay eingeblendet. Wir sammeln die gezeichneten Blätter und
+		// reduzieren sie paarweise über die Baum-Struktur (parent_id).
+		const drawnPieces = debugOn ? [] : null;
 
 		for (let r of bank_out) {
 			// PERFORMANCE-FIX (REST-PRECISION-PLAN, Stand 2026-07-17): Nebeneffekt
@@ -408,11 +413,13 @@
 					cut: r.piece.cut_time,
 					born: r.piece.born_time,
 				});
+				drawnPieces.push(r.piece);
 			}
 		}
 		if (debugOn) {
 			setDebugBankDrawnRest(drawn);
 			setDebugBankDrawnDetail(drawnDetail);
+			drawCommonAncestorExponent(ctx, drawnPieces, 50 + BANK_X_OFFSET * V_SCALE_BANK * scale + 8);
 		}
 
 		for (let p of render_pipeline) {
@@ -530,6 +537,26 @@
 		autoZoomMarker.style.display = 'block';
 		autoZoomMarker.style.left = autoZoomTAB * 100 + '%';
 		autoZoomNote.style.display = isActive ? 'block' : 'none';
+	}
+
+	// Debug-Overlay: Exponent (k) des tiefsten gemeinsamen Elternrestes der
+	// aktuell gezeichneten Reste. Wird über dem Bank-Bereich eingeblendet.
+	function drawCommonAncestorExponent(ctx, pieces, bankScreenX) {
+		let lca = commonAncestor(pieces, new Map(bank_pieces.map((p) => [p.id, p])));
+		let label = lca ? `gem. Elternrest: k = ${lca.k}` : 'gem. Elternrest: –';
+		ctx.save();
+		ctx.setTransform(1, 0, 0, 1, 0, 0);
+		let fontPx = 14 * RENDER_SCALE;
+		ctx.font = `${fontPx}px monospace`;
+		ctx.textBaseline = 'top';
+		let x = Number.isFinite(bankScreenX) ? bankScreenX : 60 * RENDER_SCALE;
+		let y = 12 * RENDER_SCALE;
+		let w = ctx.measureText(label).width;
+		ctx.fillStyle = 'rgba(0,0,0,0.6)';
+		ctx.fillRect(x - 4, y - 3, w + 8, fontPx + 6);
+		ctx.fillStyle = '#ffd166';
+		ctx.fillText(label, x, y);
+		ctx.restore();
 	}
 
 	function formatZoomFactor(f) {

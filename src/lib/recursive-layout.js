@@ -274,3 +274,29 @@ export function findRect(root, t, pieceId) {
 	layoutCentered(root, t, out);
 	return out.find((r) => r.piece.id === pieceId) || null;
 }
+
+// Tiefster gemeinsamer Elternrest (LCA) einer Menge von Bank-Stücken.
+// `pieces`: die Blätter (jedes mit id/parent_id/k), `byId`: id -> piece
+// (Map über alle bank_pieces). Reduziert die Blätter paarweise über die
+// Baum-Struktur (parent_id) - da k (= Schnitt-/Rekursionstiefe) exakt der
+// Baumtiefe entspricht, werden beide Kandidaten erst auf gleiche Tiefe
+// gehoben und dann gemeinsam hochgelaufen. Rückgabe: das LCA-piece oder
+// null (leere Menge oder keine gemeinsame Wurzel). Der Exponent des
+// Rückgabewerts ist `.k`.
+export function commonAncestor(pieces, byId) {
+	if (!pieces || pieces.length === 0) return null;
+	function lca(a, b) {
+		while (a && b && a.id !== b.id) {
+			if (a.k > b.k) a = byId.get(a.parent_id);
+			else if (b.k > a.k) b = byId.get(b.parent_id);
+			else {
+				a = byId.get(a.parent_id);
+				b = byId.get(b.parent_id);
+			}
+		}
+		return a && b && a.id === b.id ? a : null;
+	}
+	let acc = pieces[0];
+	for (let i = 1; i < pieces.length && acc; i++) acc = lca(acc, pieces[i]);
+	return acc;
+}
