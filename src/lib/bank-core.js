@@ -72,6 +72,11 @@ function createBankSimulation(BASE, N_MAX, squareSplit, compactionParams) {
 			id: global_id++,
 			parent_id: null,
 			k: 0,
+			// k_v/k_h (REST-PRECISION-PLAN): exakte Integer-Schnittzaehler pro
+			// Achse (k_v+k_h===k immer) - Grundlage der Schnittrichtungs-
+			// Entscheidung unten, siehe Kommentar dort.
+			k_v: 0,
+			k_h: 0,
 			x: 0,
 			y: 0,
 			localOffsetX: 0,
@@ -191,12 +196,28 @@ function createBankSimulation(BASE, N_MAX, squareSplit, compactionParams) {
 
 		best_parent.cut_time = tick;
 
-		const EPS = 1e-9;
+		// Schnittrichtung: EXAKTER Integer-Vergleich der Schnittzaehler
+		// (k_v/k_h) statt eines Float-Vergleichs von w/h mit fixem EPS. Bug
+		// (Gespraechsverlauf, REST-PRECISION-PLAN): die alte Fassung verglich
+		// `best_parent.w > best_parent.h + EPS` mit EPS=1e-9 - das kippt,
+		// sobald w/h selbst in die Groessenordnung von EPS sinken (ab etwa
+		// k=9). Ab dort faellt der Vergleich faelschlich in den "ist ein
+		// Quadrat"-Zweig, obwohl das Stueck klar ein Streifen ist (z.B.
+		// 1:10) - die dann FREI gewaehlte Richtung kann dieselbe (kurze)
+		// Achse ERNEUT schneiden statt die lange, und der Fehler kompoundiert
+		// ueber weitere Tiefen (nachgewiesen: 10:1 wurde zu 1000:1 und bei
+		// tieferen Stuecken zu 10^22:1 - Seitenverhaeltnisse, die es laut
+		// Konstruktion (nur 1:1 oder 1:BASE) gar nicht geben darf). w/h
+		// selbst sind als reine Divisionsketten bei jeder hier relevanten
+		// Tiefe numerisch exakt (kein Praezisionsproblem) - das Problem war
+		// ausschliesslich die Vergleichsschwelle. k_v/k_h sind exakte
+		// Integer (kein Epsilon noetig, funktioniert bei JEDER Tiefe gleich
+		// zuverlaessig).
 		let is_vert_cut;
-		if (best_parent.w > best_parent.h + EPS) is_vert_cut = true;
-		else if (best_parent.h > best_parent.w + EPS) is_vert_cut = false;
+		if (best_parent.k_v < best_parent.k_h) is_vert_cut = true;
+		else if (best_parent.k_h < best_parent.k_v) is_vert_cut = false;
 		else {
-			// Exaktes Quadrat: echte freie Wahl, keine Groessenauswirkung.
+			// Exaktes Quadrat (k_v === k_h): echte freie Wahl, keine Groessenauswirkung.
 			if (squareSplit === 'fixed') is_vert_cut = true;
 			else is_vert_cut = (best_parent.k / 2) % 2 === 0;
 		}
@@ -220,6 +241,8 @@ function createBankSimulation(BASE, N_MAX, squareSplit, compactionParams) {
 				id: global_id++,
 				parent_id: best_parent.id,
 				k: best_parent.k + 1,
+				k_v: best_parent.k_v + (is_vert_cut ? 1 : 0),
+				k_h: best_parent.k_h + (is_vert_cut ? 0 : 1),
 				x: best_parent.x + (is_vert_cut ? i * cw : 0),
 				y: best_parent.y + (is_vert_cut ? 0 : i * ch),
 				localOffsetX,
