@@ -102,7 +102,7 @@ test('Sichtbarkeit im kompaktierten Raum: alle sichtbaren Stücke in [0,1] (Teil
 		const t = r.GLOBAL_BANK_ZOOM_TIMES[i];
 		const s = r.GLOBAL_BANK_ZOOM[i];
 		if (!isFinite(s.z) || s.z <= 0) continue;
-		const vis = bp.filter((p) => t >= p.born_time && t < p.cut_time && t < p.taken_time);
+		const vis = bp.filter((p) => t >= p.born_time && t < p.cut_time && t <= p.taken_time);
 		if (vis.length === 0) continue;
 		// Anker = schwerste Gruppe (max w*h, wie im Compiler)
 		let anchor = null,
@@ -161,7 +161,7 @@ test('Kompaktierung bricht nie zusammen: z/endlich, Rest-Fläche >0 (Teil C, Tie
 		for (let i = 0; i < r.GLOBAL_BANK_ZOOM_TIMES.length; i++) {
 			const t = r.GLOBAL_BANK_ZOOM_TIMES[i];
 			const s = r.GLOBAL_BANK_ZOOM[i];
-			const vis = bp.filter((p) => t >= p.born_time && t < p.cut_time && t < p.taken_time);
+			const vis = bp.filter((p) => t >= p.born_time && t < p.cut_time && t <= p.taken_time);
 			if (vis.length === 0) continue;
 			totalChecks++;
 			if (!isFinite(s.z) || s.z <= 0 || !isFinite(s.cx) || !isFinite(s.offsetX)) {
@@ -217,7 +217,7 @@ test('Größte Reste im Zoom-Rahmen: k-größte Stücke landen innerhalb [0,1] (
 		const t = r.GLOBAL_BANK_ZOOM_TIMES[i];
 		const s = r.GLOBAL_BANK_ZOOM[i];
 		if (!isFinite(s.z) || s.z <= 0) continue;
-		const vis = bp.filter((p) => t >= p.born_time && t < p.cut_time && t < p.taken_time);
+		const vis = bp.filter((p) => t >= p.born_time && t < p.cut_time && t <= p.taken_time);
 		if (vis.length === 0) continue;
 		// Anker = schwerste Gruppe (max w*h), wie im Compiler
 		let anchor = null,
@@ -289,7 +289,7 @@ test('Renderer-Pfad (compactionFit): project() liefert finite, sichtbare Koordin
 			Number.isFinite(fit.z) && fit.z > 0,
 			`fit.z muss positiv sein, war ${fit.z} bei t=${t}`,
 		);
-		const vis = bp.filter((p) => t >= p.born_time && t < p.cut_time && t < p.taken_time);
+		const vis = bp.filter((p) => t >= p.born_time && t < p.cut_time && t <= p.taken_time);
 		for (const p of vis) {
 			const logical = lookup(p, t);
 			if (!logical) continue;
@@ -336,7 +336,7 @@ test('Renderer-Pfad vollständig: Canvas-Koordinaten sind finite, positive Pixel
 		const t = times[i];
 		const fit = fitSpline.at(t);
 		if (!fit || !Number.isFinite(fit.z)) continue;
-		const vis = bp.filter((p) => t >= p.born_time && t < p.cut_time && t < p.taken_time);
+		const vis = bp.filter((p) => t >= p.born_time && t < p.cut_time && t <= p.taken_time);
 		for (const p of vis) {
 			const logical = lookup(p, t);
 			if (!logical) continue;

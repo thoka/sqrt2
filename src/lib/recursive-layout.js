@@ -30,22 +30,29 @@
 //                                              entnommenen Blatts (siehe
 //                                              leafEffectiveSize()).
 // ============================================================================
-import { smoothstep } from './smoothing.js';
 
-// Blatt-Exit, 3 Phasen (User-Vorgabe, siehe REST-PRECISION-PLAN Teil D):
-//   [taken_time, taken_time+delaySnapshot)  - designte Größe bleibt stehen
-//                                              (Lücke sichtbar, keine
-//                                              Kompaktierung).
-//   [taken_time+delaySnapshot, te)          - C¹-Ease designte Größe -> 0
-//                                              (smoothstep, Nullsteigung an
-//                                              beiden Enden).
-//   t >= te                                 - 0 (wird vom Aufrufer schon vor
-//                                              dem Aufruf dieser Funktion
-//                                              geprunt, siehe layoutBox()).
-// Ein Stück, das NIE entnommen wurde (taken_time=Infinity), bleibt für immer
-// bei designter Größe - das IST der sichtbare Rest.
+// Blatt-Exit (User-Invariante, siehe REST-PRECISION-PLAN Teil D + DEBUG-
+// INSPECT-SPEC.md "Nächster Schritt" Punkt 3): sichtbarer Rest endet HART bei
+// taken_time - kein Ease-Out mehr (ein früherer Versuch mit sanftem
+// Ausblenden bis `te` brachte laut Debug-Kanal-Messung keine Verbesserung der
+// Bank/Rest-Drift, die Diskrepanz sitzt in der Compiler-Zeitgebung, nicht in
+// diesem Layout). Ein Stück, das NIE entnommen wurde (taken_time=Infinity),
+// bleibt für immer bei designter Größe - das IST der sichtbare Rest.
+// GRENZE INKLUSIV (`t <= taken_time`, nicht `<`): ein entnommenes Blatt ist
+// bei GENAU taken_time noch in Design-Größe sichtbar (siehe Kommentar oben
+// an bankOriginState() in TargetBankCanvas.svelte: `flightQueryTime` fragt
+// für gewöhnliche Blätter exakt taken_time ab, in der Annahme, das Stück
+// dort noch zu finden). Bei striktem `<` verschwindet das Stück eine
+// Instanz VOR seiner eigenen Abflug-Abfrage - findRect()/bankOriginState()
+// finden es dann NIE, und die Flug-Animation startet ersatzweise bei (0,0)
+// statt an der tatsächlich gerenderten Position (gefunden im Gespräch: mit
+// striktem `<` fliegen ALLE gewöhnlichen Blätter vom Ursprung los). Alle
+// Rest-Widget-/Zahlentafel-Filter (`t < p.taken_time`) müssen dieselbe
+// inklusive Grenze verwenden, sonst bricht das Testkriterium "Bank-Zähler
+// == Bank-Visualisierung" exakt in diesem einen Zeitpunkt (z.B. per
+// Tick-Sprung erreichbar, siehe ControlPanel.svelte tickToTime()).
 function leafEffectiveSize(piece, t) {
-	if (!isFinite(piece.taken_time) || t < piece.taken_time) {
+	if (!isFinite(piece.taken_time) || t <= piece.taken_time) {
 		return { w: piece.w, h: piece.h };
 	}
 	return { w: 0, h: 0 };
@@ -61,25 +68,22 @@ function leafEffectiveSize(piece, t) {
 // `stats`, wenn übergeben, zählt besuchte Knoten (stats.visited++) und
 // sammelt optional deren id in stats.ids (falls als Set übergeben) - für den
 // Pruning-Korrektheits-/Performance-Test (siehe recursive-layout.test.js).
-// `hideFading` (default false): wenn true, werden Blätter in der Ease-Phase
-// (siehe leafEffectiveSize() - NACH der Hold-Phase, während sie Richtung 0
-// schrumpfen) NICHT in `out` aufgenommen - sie tragen weiterhin ihre
-// (schrumpfende) Größe zur Positionierung der Geschwister bei (Kompaktierung
-// bleibt wirksam), werden aber selbst nicht mehr gezeichnet. Gefunden im
-// Gespräch: eine sichtbar schrumpfende Box wirkte wie ein Kompaktierungs-
-// Fehler ("Teile fliegen/kompaktieren zu früh") - das eigentliche Schließen
-// der Lücke (Nachbarn rücken nach) bleibt davon unberührt, nur das
-// verblassende Stück selbst verschwindet jetzt sofort nach der Hold-Phase
-// statt sichtbar zu schrumpfen. findRect() (unten) nutzt bewusst NICHT
-// dieses Flag (Default false) - eine Herkunfts-Positions-Abfrage muss ein
-// Stück unabhängig von seiner Sichtbarkeits-Phase finden können.
-export function layoutBox(piece, t, originX, originY, out, stats, hideFading = false) {
+export function layoutBox(piece, t, originX, originY, out, stats) {
 	if (stats) {
 		stats.visited = (stats.visited || 0) + 1;
 		if (stats.ids) stats.ids.add(piece.id);
 	}
 
-	if (t < piece.born_time || t >= piece.te) {
+	// GRENZE INKLUSIV (`t > te`, nicht `>=`): `te` ist stets >= taken_time
+	// (te = taken_time + delaySnapshot + transitionTicks, siehe bank-core.js).
+	// Fallen beide durch eine tick->time-Plateau (mehrere Ticks auf denselben
+	// Zeitpunkt gemappt, siehe buildTickTimeMapping) exakt zusammen (te ===
+	// taken_time), muss dieser äußere Bulk-Prune-Check bei GENAU diesem
+	// Zeitpunkt NOCH NICHT greifen - sonst prunt er das Blatt, BEVOR
+	// leafEffectiveSize() seine eigene (jetzt inklusive) taken_time-Grenze
+	// überhaupt auswerten kann (gefunden im Gespräch: brach die "fliegt exakt
+	// bei der gerenderten Rest-Position los"-Garantie für genau diesen Fall).
+	if (t < piece.born_time || t > piece.te) {
 		return { w: 0, h: 0, mass: 0, momentX: 0, momentY: 0 };
 	}
 
@@ -112,7 +116,7 @@ export function layoutBox(piece, t, originX, originY, out, stats, hideFading = f
 	for (let child of piece.children) {
 		let cx = alongX ? cursor : originX;
 		let cy = alongX ? originY : cursor;
-		let res = layoutBox(child, t, cx, cy, out, stats, hideFading);
+		let res = layoutBox(child, t, cx, cy, out, stats);
 		let mainDelta = alongX ? res.w : res.h;
 		let crossDelta = alongX ? res.h : res.w;
 		cursor += mainDelta;
@@ -152,9 +156,9 @@ export function computeZoomFrame(frame, margin = 0.05) {
 // Komfort-Wrapper: ein Aufruf liefert alle sichtbaren Rects (Rendering) UND
 // den daraus abgeleiteten Zoom-Rahmen (Kamera) - eine einzige Traversierung,
 // kein doppeltes Layout.
-export function layoutVisible(root, t, margin = 0.05, stats, hideFading = false) {
+export function layoutVisible(root, t, margin = 0.05, stats) {
 	let rects = [];
-	let frame = layoutBox(root, t, 0, 0, rects, stats, hideFading);
+	let frame = layoutBox(root, t, 0, 0, rects, stats);
 	return { rects, frame, zoom: computeZoomFrame(frame, margin) };
 }
 

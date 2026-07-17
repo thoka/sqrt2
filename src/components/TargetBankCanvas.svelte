@@ -30,6 +30,7 @@
 		setDebugBankTime,
 		setDebugBankDrawnRest,
 		setDebugBankDrawnDetail,
+		isDebugEnabled,
 	} from '../lib/debugAgent.js';
 
 	const COLORS = [
@@ -252,7 +253,7 @@
 		// selbst bleiben exakt/ungedämpft.
 		let bank_out = [];
 		let bank_frame = bank_root
-			? layoutBox(bank_root, u_time, 0, 0, bank_out, undefined, true)
+			? layoutBox(bank_root, u_time, 0, 0, bank_out)
 			: { w: 0, h: 0, mass: 0, momentX: 0, momentY: 0 };
 		let teilDCamera = GLOBAL_TEIL_D_ZOOM_SPLINE
 			? GLOBAL_TEIL_D_ZOOM_SPLINE.at(u_time)
@@ -264,26 +265,13 @@
 			}) + '%';
 
 		// Debug-Telemetrie: Bank-Zoom-Transform fuer den Inspect-Kanal melden.
+		// Die Bank-Drawn-Reste selbst werden NICHT hier in einem eigenen
+		// project()-Pass ermittelt (das verdoppelte die teure Projektion für
+		// JEDES sichtbare Stück in JEDEM Frame, auch ohne ?debug=1 - Regression,
+		// siehe DEBUG-INSPECT-SPEC.md) - stattdessen unten als Nebeneffekt der
+		// ohnehin laufenden Render-Schleife, NUR wenn isDebugEnabled().
 		setDebugBankTransform(teilDCamera.z, teilDCamera.cx, teilDCamera.cy);
-
-		// Debug: welche Rest-Stuecke (k -> Anzahl) zeichnet die Bank gerade?
-		const drawn = {};
-		const drawnDetail = [];
-		for (const r of bank_out) {
-			const k = r.piece ? r.piece.k : null;
-			if (k == null) continue;
-			const px = project(0, 0, 0, 0, false, r);
-			if (px[2] < 0.2 && px[3] < 0.2) continue;
-			drawn[k] = (drawn[k] || 0) + 1;
-			drawnDetail.push({
-				k,
-				taken: r.piece.taken_time,
-				cut: r.piece.cut_time,
-				born: r.piece.born_time,
-			});
-		}
-		setDebugBankDrawnRest(drawn);
-		setDebugBankDrawnDetail(drawnDetail);
+		const debugOn = isDebugEnabled();
 
 		ctx.save();
 		ctx.translate(50, H - 50);
@@ -380,6 +368,13 @@
 		const edgeFilter = EDGE_BLUR_PX > 0 ? `blur(${EDGE_BLUR_PX}px)` : 'none';
 		gridPath.rect(base_x, base_y, base_w, base_h);
 
+		// Debug: welche Rest-Stuecke (k -> Anzahl) zeichnet die Bank gerade?
+		// Nebeneffekt DIESER Schleife (kein zweiter Durchlauf über bank_out) -
+		// dadurch per Konstruktion identisch zu dem, was tatsächlich gezeichnet
+		// wird (derselbe project()-Aufruf, derselbe Sichtbarkeits-Schwellwert).
+		const drawn = debugOn ? {} : null;
+		const drawnDetail = debugOn ? [] : null;
+
 		for (let r of bank_out) {
 			// PERFORMANCE-FIX (REST-PRECISION-PLAN, Stand 2026-07-17): Nebeneffekt
 			// dieser ohnehin schon laufenden Schleife (besucht jedes aktive Stück
@@ -399,6 +394,20 @@
 			ctx.fillStyle = COLORS[r.piece.k % COLORS.length];
 			ctx.fillRect(px, py, pw, ph);
 			gridPath.rect(px, py, pw, ph);
+			if (debugOn) {
+				const k = r.piece.k;
+				drawn[k] = (drawn[k] || 0) + 1;
+				drawnDetail.push({
+					k,
+					taken: r.piece.taken_time,
+					cut: r.piece.cut_time,
+					born: r.piece.born_time,
+				});
+			}
+		}
+		if (debugOn) {
+			setDebugBankDrawnRest(drawn);
+			setDebugBankDrawnDetail(drawnDetail);
 		}
 
 		for (let p of render_pipeline) {

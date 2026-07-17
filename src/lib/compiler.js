@@ -210,6 +210,21 @@ export function compileSystemData(config) {
 			// vollständig animiert/verifiziert - absichtlich noch nicht
 			// weiter gefixt, siehe Gesprächsverlauf.
 			let group = events.slice(idx, idx + e.count);
+			// BUG GEFUNDEN (im Gespräch, "Teile fliegen exakt bei den gerenderten
+			// Reststücken los"-Test): `t_cut = global_time - 0.5` zog die Zeit
+			// RETROAKTIV vor den bereits vergebenen Zeitpunkt des VORHERIGEN
+			// Events zurück, wenn dieses (der count===1-Zweig) global_time zuvor
+			// nur um 0.15 erhöht hatte (kein SHELL_GAP, da S unverändert) - der
+			// Puffer von 0.5 war größer als der vorherige Vorschub. Das brach die
+			// von buildTickTimeMapping() geforderte Monotonie (Kommentar weiter
+			// oben) UND ließ piece.te (aus einem SPÄTEREN Tick der Gruppe
+			// abgeleitet) auf einen Zeitpunkt VOR piece.taken_time des VORHERIGEN,
+			// eigenständigen Stücks fallen - layoutBox() pruned ein Stück dann,
+			// bevor es überhaupt als genommen gilt (`t>=te` vor `t<=taken_time`
+			// erreicht). Fix: ERST global_time um denselben Betrag vorziehen, der
+			// gleich wieder abgezogen wird - t_cut landet dadurch garantiert auf
+			// dem alten (bereits monoton fortgeschrittenen) global_time, nie davor.
+			global_time += 0.5;
 			let t_cut = global_time - 0.5;
 			let t_fly = global_time;
 			let t_fuse = global_time + 1.0;
@@ -245,12 +260,30 @@ export function compileSystemData(config) {
 	// CUT_BORN_LEAD-Versatz wird in finalizeCompiled() angewandt (benötigt
 	// die Closure von buildTickTimeMapping). Hier nur die Tick-Paare + die
 	// rohen taken_time/cut_time/born_time (noch in Tick-Einheiten) mitführen.
-	let raw_bank_pieces = bank_pieces.map((p) => ({
-		...p,
-		taken_time: p.taken_time,
-		cut_time: p.cut_time,
-		born_time: p.born_time,
-	}));
+	let raw_bank_pieces = bank_pieces.map((p) => ({ ...p }));
+
+	// BUG GEFUNDEN (im Gespräch, Bank/Rest-Divergenz-Diagnose): `{...p}` ist
+	// nur ein FLACHER Kopie - `children` bleibt dieselbe Array-Referenz und
+	// zeigt weiter auf die ALTEN (Vor-Map-)Stück-Objekte, NICHT auf die
+	// gerade frisch erzeugten `raw_bank_pieces`-Objekte. finalizeCompiled()
+	// konvertiert weiter unten taken_time/cut_time/born_time/te NUR auf den
+	// TOP-LEVEL-Array-Elementen (`for (let p of bank_pieces) p.taken_time =
+	// ...`) - jeder Konsument, der stattdessen über `piece.children`
+	// traversiert (layoutBox() in recursive-layout.js, also die BANK-
+	// Visualisierung), sah dadurch NIE die konvertierten Zeiten, sondern
+	// permanent die rohen Tick-Werte, während jeder Konsument, der
+	// bank_pieces FLACH iteriert (restByK der Rest-Widgets rechts) die
+	// korrekt konvertierten Werte sah. Das ist die tatsächliche Ursache der
+	// in DEBUG-INSPECT-SPEC.md dokumentierten Bank/Rest-Divergenz - keine
+	// Zeit-Drift zwischen zwei Uhren, sondern zwei verschiedene Objektgraphen
+	// für dieselben logischen Stücke. render_pipeline-Einträge (`bp: e.piece`
+	// weiter oben) verweisen ebenso auf die ALTEN Objekte und brauchen
+	// denselben Fix. Beide werden hier auf EINEN konsistenten Objektgraphen
+	// umgehängt (dieselben Objekte wie im Flach-Array), bevor irgendetwas
+	// per postMessage/structuredClone den Worker verlässt.
+	let byId = new Map(raw_bank_pieces.map((p) => [p.id, p]));
+	for (let p of raw_bank_pieces) p.children = p.children.map((c) => byId.get(c.id));
+	for (let entry of render_pipeline) entry.bp = byId.get(entry.bp.id);
 
 	// Auto-Zoom-Checkpoints (rein numerisch): pro Schale S der Exponent.
 	let auto_zoom_checkpoints = [];
@@ -458,7 +491,7 @@ export function finalizeCompiled(data) {
 		let t = eventTimes[i];
 		let area = 0;
 		let visibleNow = bank_pieces.filter(
-			(p) => t >= p.born_time && t < p.cut_time && t < p.taken_time,
+			(p) => t >= p.born_time && t < p.cut_time && t <= p.taken_time,
 		);
 		if (visibleNow.length === 0) {
 			bank_zoom_states[i] = { z: 1, cx: 0.5, cy: 0.5, offsetX: 0, offsetY: 0, area: 1 };
@@ -685,12 +718,14 @@ export function computeLiveL(compiled, time, BASE) {
 	let N_l = GLOBAL_L_PREFIX[Step];
 
 	// R exakt: Summe über sichtbare Bank-Stücke, Nenner AREA_SCALE.
-	// Sichtbar: born_time <= t < cut_time UND t < taken_time (noch nicht
-	// ins Ziel entnommen). Partitioniert das Einheitsquadrat ohne Überlapp.
+	// Sichtbar: born_time <= t < cut_time UND t <= taken_time (bei GENAU
+	// taken_time ist das Stück noch in Design-Größe sichtbar, siehe
+	// leafEffectiveSize() in recursive-layout.js). Partitioniert das
+	// Einheitsquadrat ohne Überlapp.
 	const BASE_BIG = BigInt(BASE_OUT);
 	let N_R = 0n;
 	for (let p of bank_pieces) {
-		if (time >= p.born_time && time < p.cut_time && time < p.taken_time) {
+		if (time >= p.born_time && time < p.cut_time && time <= p.taken_time) {
 			N_R += AREA_SCALE / BASE_BIG ** BigInt(p.k);
 		}
 	}

@@ -203,42 +203,29 @@ test('Teil D (dokumentiert, offener Punkt): an born_time (ts) springt die Größ
 });
 
 // --------------------------------------------------------------------------
-// hideFading (Gesprächsverlauf, Fix nach Review): eine sichtbar schrumpfende
-// Box in der Ease-Phase wirkte wie ein Kompaktierungs-Fehler ("Teile
-// kompaktieren zu früh weg") - hideFading=true lässt ein Blatt in der
-// Ease-Phase aus `out` heraus, ohne die Größen-Beiträge zur Positionierung
-// der Geschwister zu verändern (Kompaktierung selbst bleibt unangetastet).
+// Blatt-Exit ist ein harter Cutoff (kein Ease-Out mehr, siehe
+// leafEffectiveSize()): ein entnommenes Blatt bleibt bis EINSCHLIESSLICH
+// taken_time in voller Design-Größe sichtbar und ist unmittelbar DANACH
+// (t > taken_time) vollständig verschwunden - kein hideFading-Parameter mehr
+// nötig, da es keine Zwischenphase (schrumpfende Größe) mehr gibt, die
+// wahlweise aus `out` ausgeblendet werden müsste.
 // --------------------------------------------------------------------------
-test('Teil D: hideFading blendet ein Blatt in der Ease-Phase aus `out` aus, ohne seine Größe für die Geschwister-Kompaktierung zu verändern', () => {
-	const { sim } = build(6, 'morph', { transitionTicks: 5 });
-	let leaf = sim.bank_pieces.find(
-		(p) => p.children.length === 0 && isFinite(p.taken_time) && p.transitionSnapshot > 0,
-	);
+test('Teil D: Blatt bleibt bis einschließlich taken_time in voller Design-Größe sichtbar, danach sofort verschwunden', () => {
+	const { sim } = build(6, 'morph');
+	let leaf = sim.bank_pieces.find((p) => p.children.length === 0 && isFinite(p.taken_time));
 	assert.ok(leaf);
-	let holdEnd = leaf.taken_time + leaf.delaySnapshot;
-	let tFading = (holdEnd + leaf.te) / 2; // Mitte der Ease-Phase - definitiv am Schrumpfen.
 
-	// Hold-Phase (t < holdEnd): wird IMMER gezeichnet, unabhängig von hideFading.
-	let outHoldDefault = [];
-	layoutBox(leaf, leaf.taken_time, 0, 0, outHoldDefault, undefined, false);
-	let outHoldHidden = [];
-	layoutBox(leaf, leaf.taken_time, 0, 0, outHoldHidden, undefined, true);
-	assert.equal(outHoldDefault.length, 1);
-	assert.equal(outHoldHidden.length, 1);
+	let outAt = [];
+	let sizeAt = layoutBox(leaf, leaf.taken_time, 0, 0, outAt);
+	assert.equal(outAt.length, 1, 'bei GENAU taken_time noch sichtbar');
+	assert.equal(sizeAt.w, leaf.w);
+	assert.equal(sizeAt.h, leaf.h);
 
-	// Ease-Phase (t in (holdEnd, te)): mit hideFading=false weiterhin
-	// gezeichnet (Rückwärtskompatibilität/findRect-Verhalten), mit
-	// hideFading=true NICHT mehr - aber die zurückgegebene Größe (für die
-	// Kompaktierung der Geschwister) bleibt in BEIDEN Fällen identisch.
-	let outFadingDefault = [];
-	let sizeDefault = layoutBox(leaf, tFading, 0, 0, outFadingDefault, undefined, false);
-	let outFadingHidden = [];
-	let sizeHidden = layoutBox(leaf, tFading, 0, 0, outFadingHidden, undefined, true);
-	assert.equal(outFadingDefault.length, 1, 'Default (hideFading=false) zeichnet weiterhin');
-	assert.equal(outFadingHidden.length, 0, 'hideFading=true blendet die Ease-Phase aus');
-	assert.equal(sizeDefault.w, sizeHidden.w, 'Größen-Beitrag für Geschwister bleibt gleich');
-	assert.equal(sizeDefault.h, sizeHidden.h);
-	assert.ok(sizeHidden.w > 0 && sizeHidden.w < leaf.w, 'tatsächlich mitten im Schrumpfen');
+	let outAfter = [];
+	let sizeAfter = layoutBox(leaf, leaf.taken_time + 1e-6, 0, 0, outAfter);
+	assert.equal(outAfter.length, 0, 'unmittelbar danach vollständig verschwunden (kein Ease-Out)');
+	assert.equal(sizeAfter.w, 0);
+	assert.equal(sizeAfter.h, 0);
 });
 
 // --------------------------------------------------------------------------
@@ -322,8 +309,16 @@ test('Teil D: Moment/Masse-Schwerpunkt ändert sich stetig über t (keine Sprün
 	// Bei 4000 Stichproben über die gesamte Laufzeit darf kein einzelner
 	// Schritt einen GROSSEN Sprung zeigen (harte C⁰-Verletzung) - ein loser,
 	// aber aussagekräftiger Schwellwert (deutlich über normalem Rauschen,
-	// deutlich unter einem "Anker-Wechsel-Sprung" wie in Teil C).
-	assert.ok(maxJump < 0.05, `größter Einzelschritt-Sprung im Schwerpunkt: ${maxJump}`);
+	// deutlich unter einem "Anker-Wechsel-Sprung" wie in Teil C). Schwelle
+	// höher als früher (0.05 -> 0.15): der harte Blatt-Exit-Cutoff (siehe
+	// leafEffectiveSize(), kein Ease-Out mehr) lässt ein entnommenes Stück
+	// INSTANT auf Größe 0 springen statt weich zu schrumpfen - der dadurch
+	// mögliche Einzelschritt-Sprung im Schwerpunkt ist entsprechend größer,
+	// aber weiterhin durch den Massenanteil EINES Stücks begrenzt (kein
+	// unbegrenzter Anker-Wechsel-Sprung). Die C¹-Kamera-Garantie kommt wie
+	// oben beschrieben aus dem nachgeschalteten buildDampedFilter, nicht aus
+	// dieser rohen Geometrie.
+	assert.ok(maxJump < 0.15, `größter Einzelschritt-Sprung im Schwerpunkt: ${maxJump}`);
 });
 
 // --------------------------------------------------------------------------

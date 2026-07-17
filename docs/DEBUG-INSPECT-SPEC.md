@@ -110,64 +110,80 @@ Hooks (aus `TargetBankCanvas.svelte`), die den Agent füttern:
 
 ---
 
-## 2. Root-Cause der Drift (lokalisiert, Fix OFFEN)
+## 2. Root-Cause der Drift (GEFUNDEN + GEFIXT, Stand 2026-07-17)
 
-### Was synchron ist
+**Die ursprüngliche Hypothese unten (Spuren 1/2/4) war falsch.** Es ist
+**keine Zeit-Drift zwischen zwei Uhren** - `time === uTimeBank` galt schon
+vorher exakt (`driftT=0.000`). Die tatsächliche Ursache: **zwei
+verschiedene, nicht mehr identische Objektgraphen für dieselben logischen
+Stücke.**
 
-Bei `time=1.0, tick=1` (Anker "Teil 1 entnommen"): Zahlentafel `l=0,R=1`,
-`restByK={0:1}`, Bank zeichnet `{0:1}` — **synchron**. Auch im laufenden
-Zustand: `time == uTimeBank` exakt (`driftT=0.000`), FPS hoch.
+### Der eigentliche Bug: `compileSystemData()`s Flach-Kopie brach `children`
 
-### Was auseinanderläuft
+```js
+let raw_bank_pieces = bank_pieces.map((p) => ({ ...p }));
+```
 
-`debug-mode-test` zeigt: Bank (`bankSig`) und Rest-Anzeige (`restSig`)
-wechseln ihre Modi an **unterschiedlichen Zeitpunkten** und in
-**unterschiedliche Modi** (bei `t=6`: Bank `{1:5,2:8}` vs Rest `{1:3,2:2}`).
-Bei fortgeschrittener Zeit zeigt die Zahlentafel bereits `l≈1.414`
-(weit fortgeschritten), während die Rest-Stücke noch eine frühe Verteilung
-zeigen.
+`{...p}` ist nur eine FLACHE Kopie - `children` blieb dieselbe
+Array-Referenz und zeigte weiter auf die ALTEN (Vor-Map-)Objekte, nicht auf
+die neu erzeugten `raw_bank_pieces`-Elemente. `finalizeCompiled()` konvertiert
+`taken_time`/`cut_time`/`born_time`/`te` von Tick- zu Zeit-Einheiten aber NUR
+auf den TOP-LEVEL-Array-Elementen (`for (let p of bank_pieces) p.taken_time =
+...`). Ergebnis:
 
-### Spuren (unbestätigt, richtungsweisend)
+- Jeder Konsument, der `piece.children` traversiert (`layoutBox()` in
+  `recursive-layout.js`, also die **Bank-Visualisierung**), sah dauerhaft die
+  ALTEN, nie konvertierten Roh-Tick-Werte.
+- Jeder Konsument, der `bank_pieces` FLACH iteriert (`restByK` der
+  **Rest-Widgets** rechts, `computeLiveL`s `N_R`-Summe), sah die korrekt
+  konvertierten Zeit-Werte.
 
-1. **Schalen- vs Tick-Basis (User-Hypothese):** `computeLiveL`
-   (compiler.js:677) bestimmt `Step` über `GLOBAL_SHELL_START[S]` — den
-   **Schalen-Anchor** (Render-Loop-Schalenwechsel). Die Rest-Stücke nutzen
-   aber die **tick-genauen** `born/cut/taken_time`. `shellGaps` zeigt:
-   `GLOBAL_SHELL_START[S]` liegt **vor** dem ersten `born_time` der Schale
-   (Lücke wächst mit S: S=1→-0.1, S=3→+4.45, S=7→+11.45, S=9→+13.85).
-   → Zahlentafel springt zu früh auf die neue Schale.
-2. **`CUT_BORN_LEAD` (compiler.js:358):** `born_time`/`cut_time` werden um
-   `0.1` nach *vorn* gezogen (`- CUT_BORN_LEAD`), `taken_time` **nicht**.
-   Das macht die Sichtbarkeits-Spanne `[born,taken)` asymmetrisch länger.
-3. **`leafEffectiveSize` (recursive-layout.js):** zeichnete Blätter bis
-   `te` (Hold+Ease). User-Regel: sichtbarer Rest endet hart bei `taken_time`
-   (born..taken = Hold/sichtbar; taken..taken+delay = Hold/nicht-sichtbar;
-   taken+delay..te = Ease). Erster Fix-Versuch (Größe 0 ab `taken_time`)
-   brachte **keine** Besserung → die Diskrepanz sitzt nicht (nur) in
-   `layoutBox`, sondern in der Compiler-Zeitgebung (siehe 1+2).
-4. **`tickTimePairs`** (compiler.js:196/214/220) mappen Einzel-Stücke
-   `tick→t_fly`, Zerschneiden-Gruppen `tick→t_cut` — inkonsistent.
+Live verifiziert per Debug-Kanal (CDP, echter Chrome, Play/Pause-Zyklus):
+`bankSig`/`restSig` liefen an derselben `time` auseinander (z.B. Bank
+`{1:6,2:9}` vs Rest `{1:5,2:7}`), obwohl `playback.time === uTimeBank` exakt.
+`render_pipeline[].bp` (Herkunft: `e.piece`/`g.piece` aus den rohen
+`events`) hatte dasselbe Problem.
 
-### Invariante des Users (Massstab für den Fix)
+**Fix** (`compiler.js`, `compileSystemData()`): nach der Flach-Kopie einen
+`id -> neues Objekt`-Map bauen und `children` sowie `render_pipeline[].bp`
+explizit auf die NEUEN Objekte umhängen, bevor irgendetwas postMessage/
+structuredClone verlässt - EIN konsistenter Objektgraph, egal ob man ihn
+flach (`bank_pieces`) oder über `children` erreicht.
 
-- `tick=T` = Zeitpunkt, wo das Stück mit diesem Tick **wegfliegt/verschwindet**.
-- Tauschen/Zerschneiden muss **vorher** passiert sein.
-- **Bank-Zähler und Rest-Anzeige müssen immer synchron sein** (dieselbe
-  Zeitbasis). Das rekursive Layout (Bank) muss sich dem **bewährten alten
-  Rest-Modell** anpassen, nicht umgekehrt.
+### Drei zusätzliche Grenzfall-Bugs (gefunden über einen neuen Regressionstest)
 
-### Nächster Schritt (Fix, noch nicht geschehen)
+Nutzer-Auftrag: "Teile fliegen exakt bei den gerenderten Reststücken los"
+als Test verifizieren (`tests/unit/compiler.test.js`, prüft
+`findRect(bank_root, bp.flightQueryTime, bp.id)` für JEDEN
+`render_pipeline`-Eintrag gegen die tatsächliche Design-Größe). Deckte drei
+weitere, vom Objektgraph-Bug UNABHÄNGIGE Grenzfälle auf:
 
-1. `debug-mode-test.mjs` mit reduzierter Schrittzahl (200 / upper=60) laufen
-   lassen → exakte Modus-Wechsel-Zeitpunkte Bank vs Rest.
-2. Prüfen, ob `computeLiveL` wirklich über `GLOBAL_SHELL_START` (Schalen)
-   statt tick-genauer Stückzeiten läuft.
-3. Compiler so korrigieren, dass Rest-Anzeige + Zahlentafel **dieselbe
-   tick-korrekte Zeitbasis** wie die Bank nutzen: `CUT_BORN_LEAD` entfernen
-   bzw. konsistent auf alle drei Zeiten anwenden; `tickTimePairs` konsistent
-   mappen; `GLOBAL_SHELL_START[S]` ggf. auf die Zeit des ersten Stücks der
-   Schale setzen (statt Render-Loop-Schalenwechsel).
-4. Danach `pnpm check` + `pnpm test` + `pnpm test:e2e`, dann committen.
+1. **`taken_time`-Grenze war exklusiv** (`t < taken_time`), sollte aber
+   inklusiv sein (`t <= taken_time`) - ein entnommenes Blatt ist bei GENAU
+   `taken_time` noch in Design-Größe sichtbar (Kommentar an
+   `flightQueryTime` sagt das explizit). Gefixt in `recursive-layout.js`
+   (`leafEffectiveSize`) UND allen Rest-Zähler-Stellen
+   (`RestCounterBars.svelte`, `RestCounterGrid.svelte`, `debugAgent.js` ×3,
+   `compiler.js` ×2) - sonst würde ein exakter Tick-Sprung (z.B. per
+   `ControlPanel.svelte`s `tickToTime()`) die Bank/Rest-Übereinstimmung
+   genau an diesem einen Zeitpunkt brechen.
+2. **`t_cut = global_time - 0.5` konnte retroaktiv vor den bereits
+   vergebenen Zeitpunkt des VORHERIGEN Events zurückfallen**, wenn dieses
+   zuvor nur um `0.15` (kein Schalenwechsel) statt einem vollen `SHELL_GAP`
+   erhöht hatte - brach die von `buildTickTimeMapping()` geforderte
+   Monotonie. Fix: `global_time` VOR der Subtraktion um denselben Betrag
+   vorziehen (`compiler.js`, Zerschneiden-Gruppen-Zweig).
+3. **`te`-Pruning war exklusiv** (`t >= te`), obwohl `te >= taken_time`
+   immer gilt - fielen beide durch eine Tick-Zeit-Plateau exakt zusammen
+   (`te === taken_time`), prunte der äußere Bulk-Check das Blatt, BEVOR
+   `leafEffectiveSize()` seine eigene (jetzt inklusive) Grenze auswerten
+   konnte. Fix: `t > te` statt `t >= te` in `layoutBox()`.
+
+### Offener Rest (NICHT gefixt, siehe Abschnitt 5)
+
+`findRect()` findet ein Stück mit `cut_time === born_time` (im selben
+Tick geboren UND sofort weitergeschnitten, nur im `Z`-Modus/Zerschneiden-
+Gruppen) nie als sich selbst - siehe Abschnitt 5.
 
 ---
 
@@ -190,3 +206,69 @@ zeigen.
   `localhost:9222` — kein Netzwerk-Zugriff von außen.
 - Kein Schreibzugriff des Peers auf Host-Stores (nur `page.evaluate` lesend).
 - Mischt sich nicht in `config`/`playback`-Sync.
+
+---
+
+## 5. Offener Rest: `findRect()` findet instantan gespaltene Stücke nicht
+
+**Nicht gefixt** (Stand 2026-07-17) - eigener, von Abschnitt 2 unabhängiger
+Bug, gefunden über den neuen Test
+`tests/unit/compiler.test.js`: "Teile fliegen exakt bei den gerenderten
+Reststücken los".
+
+### Symptom
+
+Für ein Stück mit Kindern (`children.length > 0`) ist `flightQueryTime =
+born_time` - die Annahme: das Stück ist ab `born_time` für ein positives
+Zeitfenster "als Ganzes" sichtbar, bevor es (später) geschnitten wird
+(`cut_time > born_time`). Bricht diese Annahme (`cut_time === born_time`
+exakt - das Stück wird im selben Tick geboren UND sofort weitergeschnitten),
+findet `findRect(bank_root, flightQueryTime, id)` das Stück NIE als sich
+selbst: bei `t = born_time = cut_time` ist `isActive = children.length>0 &&
+t>=cut_time` bereits `true` - `layoutBox()` deszendiert direkt in die
+Kinder, das Stück selbst landet nie in `out`.
+
+Betrifft nur `transformMode: 'Z'` (Zerschneiden-Gruppen) - `S`-Modus ist bei
+allen getesteten Tiefen (3/6/8/16) bugfrei. Messung (`compileSystem()` +
+`findRect()` für jeden `render_pipeline`-Eintrag):
+
+| depth | mode Z: fails/total |
+|---|---|
+| 3 | 2/594 |
+| 6 | 10/1575 |
+| 8 | 64/4589 |
+| 16 | 302/20075 (~1.5%) |
+
+Alle Fehlschläge derselbe Ursache/Stück-Form (`cut_time === born_time`).
+
+### Sichtbare Konsequenz (nicht verifiziert, aber naheliegend)
+
+`bankOriginState()` (TargetBankCanvas.svelte) cached `flightOrigin = false`
+bei einem Fehlschlag, `project()` liefert dann `[0,0,0,0]` für den
+Startpunkt - ein betroffenes `Z_source`-Flug-Ereignis würde ausgehend vom
+Ursprung (0,0) statt von seiner tatsächlichen Bank-Position starten
+(sichtbarer Sprung/"Herausschießen aus der Ecke").
+
+### Warum noch nicht gefixt
+
+Kein einfacher Grenzfall-Fix wie die drei in Abschnitt 2 (Off-by-eine-
+Instanz) - hier gibt es architektonisch KEIN gültiges `t`, an dem das Stück
+je "als Ganzes" sichtbar war (das Zeitfenster ist leer, nicht nur ein
+einzelner Randpunkt). Mögliche Ansätze (keiner umgesetzt/geprüft):
+
+1. `flightQueryTime` für diesen Fall auf den `born_time` des EIGENEN
+   Vorfahren zurückfallen lassen (rekursiv, bis ein Vorfahre mit
+   `cut_time > born_time` gefunden ist).
+2. `findRect()`/`bankOriginState()` bei Fehlschlag automatisch beim
+   Elternstück nachfragen, statt (0,0) zurückzugeben.
+3. Root-Cause in `bank-core.js` klären: WARUM entsteht ein Stück mit
+   `cut_time === born_time` überhaupt (sofortiges Weiterschneiden im selben
+   Tick) - ggf. dort vermeidbar statt nachträglich zu kompensieren.
+
+### Nächster Schritt
+
+Eine der drei Optionen oben wählen (Rücksprache mit User empfohlen, da
+Option 3 ggf. das Simulationsverhalten selbst ändert), dann
+`tests/unit/compiler.test.js`s "Teile fliegen exakt..."-Test muss für ALLE
+`transformMode`/`depth`-Kombinationen grün werden (aktuell: `Z`-Modus bei
+jeder getesteten Tiefe noch rot, `S`-Modus bereits grün).

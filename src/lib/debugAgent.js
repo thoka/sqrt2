@@ -16,6 +16,16 @@ let rollingFps = 0;
 let bankTransform = { zoom: 1, x: 0, y: 0 };
 let canvasEl = null;
 
+// Ob der Debug-Kanal aktiv ist (?debug=1). Der Renderer (TargetBankCanvas)
+// fragt das ab, um die teure Bank-Drawn-Telemetrie (zweiter project()-Pass
+// über alle sichtbaren Stücke) NUR bei aktivem Debug-Kanal zu berechnen -
+// sonst kostet sie in JEDEM Frame Rechenzeit, auch ohne ?debug=1 (Regression,
+// gefunden im Gespräch: massiv verlangsamte Visualisierung).
+let debugEnabled = false;
+export function isDebugEnabled() {
+	return debugEnabled;
+}
+
 export function setDebugFrame(dt) {
 	lastDt = dt;
 	frameNo++;
@@ -134,7 +144,7 @@ function buildSnapshot() {
 								p.born_time != null &&
 								playback.time >= p.born_time &&
 								playback.time < (p.cut_time ?? Infinity) &&
-								playback.time < (p.taken_time ?? Infinity),
+								playback.time <= (p.taken_time ?? Infinity),
 						)
 						.map((p) => ({
 							k: p.k,
@@ -159,7 +169,7 @@ function buildRestByK(pieces, t) {
 	const byK = {};
 	for (const p of pieces) {
 		if (p.born_time == null || p.cut_time == null) continue;
-		if (t >= p.born_time && t < p.cut_time && t < (p.taken_time ?? Infinity)) {
+		if (t >= p.born_time && t < p.cut_time && t <= (p.taken_time ?? Infinity)) {
 			byK[p.k] = (byK[p.k] || 0) + 1;
 		}
 	}
@@ -203,7 +213,7 @@ function buildHud(compiled, time) {
 	let N_R = 0n;
 	if (bank_pieces) {
 		for (let p of bank_pieces) {
-			if (time >= p.born_time && time < p.cut_time && time < (p.taken_time ?? Infinity)) {
+			if (time >= p.born_time && time < p.cut_time && time <= (p.taken_time ?? Infinity)) {
 				N_R += AREA_SCALE / BASE_BIG ** BigInt(p.k);
 			}
 		}
@@ -231,6 +241,7 @@ function maybeSendWs() {
 export function initDebugAgent() {
 	const params = new URLSearchParams(location.search);
 	const enabled = params.has('debug');
+	debugEnabled = enabled;
 	const wsEnabled = enabled && (params.has('ws') || import.meta.env.DEBUG_WS);
 	if (!enabled) return;
 
