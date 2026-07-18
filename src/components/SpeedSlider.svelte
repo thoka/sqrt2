@@ -49,16 +49,24 @@
 		</div>
 	</label>
 {:else}
-	<input
-		type="range"
-		class="compact-slider"
-		title="Geschwindigkeit"
-		min="0"
-		max="1"
-		step="0.001"
-		bind:value={speedPos}
-		oninput={onSpeedInput}
-	/>
+	<div class="compact-speed">
+		<input
+			type="range"
+			class="compact-slider"
+			title="Geschwindigkeit"
+			min="0"
+			max="1"
+			step="0.001"
+			bind:value={speedPos}
+			oninput={onSpeedInput}
+		/>
+		<span class="compact-speed-readout"
+			>{$configStore.playSpeed.toLocaleString('de-DE', {
+				minimumFractionDigits: 2,
+				maximumFractionDigits: 2,
+			})}×</span
+		>
+	</div>
 {/if}
 
 <style>
@@ -109,5 +117,19 @@
 		border: none;
 		background: #3b82f6;
 		cursor: pointer;
+	}
+	.compact-speed {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.compact-speed-readout {
+		color: #3b82f6;
+		font-weight: bold;
+		font-size: 0.85em;
+		flex-shrink: 0;
+		white-space: nowrap;
+		min-width: 3.4em;
+		text-align: left;
 	}
 </style>
