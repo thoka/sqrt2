@@ -26,6 +26,15 @@
   - AGENTS.md GOTCHA #2 dokumentiert: `compiledStore` hat KEIN `depth`-Feld, `configStore.depth` (Alias N_MAX) nutzen
   - Prüfen ob `RestCounterBars.test.js` / `RestCounterGrid.test.js` das als Testfall abdecken
 
+## Offen (Performance-Untersuchung)
+
+- [ ] **Layout-/Compiler-Messungen für Basis=2 und bis Iterationsstufe 40
+      wiederholen** - bisher nur Basis 10 / Tiefe ≤ 20 gemessen. Kann die
+      Einschätzung in `COMPILER-LAYERING-PLAN.md` E/F verschieben (kleinere
+      Basis = tiefere/schmalere Bäume; Tiefe 40 = O(TOTAL_STEPS²) voll
+      spürbar). Details + Reproduktion: `COMPILER-LAYERING-PLAN.md` Abschnitt
+      "TODO: Messungen für Basis=2 ...", Skript `scripts/measure-layout-cache.mjs`.
+
 ## Nächster logischer Schritt (Phase 6 - Politur)
 
 - Widget-Auswahl-UI (bereits als `displayStore`-Select in `<ControlPanel>` vorhanden)

@@ -290,3 +290,29 @@ als Recherche-Richtungen festgehalten (noch NICHT geplant/umgesetzt):
 sich träge an". 3 ist eine billige Ergänzung, die 2 zusätzlich rechtfertigt.
 Alle drei setzen sinnvoll erst NACH A-C dieses Plans auf (Split + Cache +
 inkrementelle Tiefe als Fundament).
+
+## TODO: Messungen für Basis=2 und bis Iterationsstufe 40 wiederholen
+
+Die Messungen in Abschnitt E (und die Compiler-Einschätzung in F) beruhen
+bisher NUR auf **Basis 10, Tiefe ≤ 20**. Beide Parameter können die
+Einschätzung verschieben - offen zu prüfen:
+
+- **Basis = 2 wiederholen.** Kleinere Basis = weniger Kinder pro Schnitt
+  (2 statt 10), dafür deutlich TIEFERE Bäume bei gleicher Ziffernzahl. Das
+  ändert das Verhältnis visited/needed (Abschnitt E) potenziell stark: der
+  Rekursionspfad wird länger, die Verzweigung schmaler - der Cache-Faktor
+  könnte anders ausfallen, ebenso das Pruning-Verhalten.
+- **Bis Iterationsstufe 40 messen** (statt bei 20 aufhören). Das O(TOTAL_STEPS²)-
+  Wachstum des Compilers (Abschnitt A / `ASYNC-COMPILE-PLAN.md`) macht sich
+  erst bei sehr hoher Tiefe voll bemerkbar; auch die absolute
+  Layout-Knotenzahl (Abschnitt E, "absolute Ersparnis klein") kann bei
+  Tiefe 40 in einen Bereich kommen, in dem der Render-Cache doch relevant
+  wird. Vorsicht beim Skript-Lauf: Laufzeit/Speicher steigen stark - ggf.
+  `framesPerTickApprox` senken und Tiefe 40 separat/einzeln messen (der
+  bestehende Lauf lief bei Basis 10 schon bei Tiefe 20 in Timeouts, siehe
+  `scripts/measure-layout-cache.mjs`).
+
+Reproduktion: `scripts/measure-layout-cache.mjs` um `BASE = 2` und die
+Tiefen-Reihe bis 40 erweitern; die Compiler-Wandzeit (nicht nur Knotenzahl)
+separat für Basis 2 / Tiefe 40 messen. Danach die Tabellen und die
+Priorisierung in E/F ggf. neu bewerten.
