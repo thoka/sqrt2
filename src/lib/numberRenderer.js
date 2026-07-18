@@ -2,17 +2,15 @@
 // NUMBER-RENDERER.JS - eigene Zahlendarstellung (statt MathJax)
 // ============================================================================
 // HUD/Flug-Stottern-Ursache war MathJax' pro-Frame `typesetPromise`
-// (teuer, blockiert den Main-Thread, siehe INTERFACE-TODO.md
-// "Eigener Renderer für Zahlendarstellung"). Diese Bibliothek rendert
-// l / l² / R in Basis-B-Notation als schlichtes, monospace-
-// ausgerichtetes HTML - KEINE externe Bibliothek, KEIN pro-Frame-Typeset.
+// (teuer, blockiert den Main-Thread) - und nach dessen Entfernung das
+// stuendige DOM-`innerHTML`-Umschreiben inkl. erzwungenem Reflow
+// (`scrollWidth`/`clientWidth` in updateNumberPanelScale). Beides ist weg:
+// die Zahlentafel (l / l² / R) wird JETZT direkt auf dem BANK-CANVAS
+// gemalt (ctx.fillText), siehe TargetBankCanvas.svelte renderFrame().
 //
-// Eingabe: bereits formatierte BigInt-String in Basis B (wie bisher aus
-// computeLiveL uebernommen: Ganzzahl- und Nachkommateil durch '.'
-// getrennt, fuehrende Nullen im Nachkommateil erhalten, haengende
-// Nullen bereits abgeschnitten). Ausgabe: HTML, das l/l²/R UNTEREINANDER
-// mit LINKSBUENDIGEM Label und dezimalpunkt-ALIGNTER Ziffernspalte
-// darstellt.
+// Dieses Modul liefert NUR die reine BigInt->String-Formatierung
+// (Basis-B-Notation, Punkt-Format, Trailing-Zero-Trim) - keine DOM-,
+// keine Canvas-Abhaengigkeit, daher isoliert testbar.
 
 // Spaltet "12.3" -> { int: "12", frac: "3" }. Ohne Punkt -> frac="".
 export function splitBaseNumber(s) {
@@ -21,33 +19,42 @@ export function splitBaseNumber(s) {
 	return { int: s.slice(0, dot), frac: s.slice(dot + 1) };
 }
 
-// HTML-escapen (die BigInt-Strings enthalten nur [0-9A-Z.], aber
-// Verteidigung gegen zukuenftige Label-Einspeisung).
-function esc(s) {
-	return s.replace(/[&<>]/g, (c) => (c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'));
-}
+// Formatiert die exakten BigInt-Werte aus computeLiveL() in Basis-B-
+// Notation: l = N_l/GRID (N_MAX Stellen), l² = N_l²/GRID²,
+// R = N_R/AREA_SCALE (K_MAX Stellen). Liefert die drei bereits
+// punkt-formatierten + trailing-Zero-getrimmten Strings.
+// (Mathe exakt aus der Simulation, siehe docs/REST-PRECISION-PLAN.)
+export function formatLiveNumbers(N_l, N_R, GRID, AREA_SCALE, BASE) {
+	let m = GRID.toString(BASE).length - 1; // = N_MAX
+	let kmax = AREA_SCALE.toString(BASE).length - 1; // = K_MAX
 
-// Eine Zeile (Label + Zahl) als Grid-Zeile. int/frac werden in
-// SPANs mit KLASSEN gepackt, damit CSS die Ausrichtung uebernimmt
-// (int rechtsbuendig, frac linksbuendig -> Dezimalpunkte aller
-// Zeilen stehen exakt untereinander).
-function rowHTML(label, valueStr) {
-	let { int, frac } = splitBaseNumber(valueStr);
-	let fracHTML = frac ? `<span class="np-frac">.${esc(frac)}</span>` : '';
-	return `<div class="np-row"><span class="np-label">${esc(label)}</span><span class="np-int">${esc(int)}</span>${fracHTML}</div>`;
-}
+	// Seitenlaenge P = N_l / GRID
+	let P_str = N_l.toString(BASE).toUpperCase();
+	if (m > 0) P_str = '0'.repeat(Math.max(0, m + 1 - P_str.length)) + P_str;
+	if (m > 0) P_str = P_str.slice(0, P_str.length - m) + '.' + P_str.slice(P_str.length - m);
 
-// Komplettes Panel-HTML fuer l / l² / R.
-// `verbose`: true zeigt Wort-Praefixe ("Länge ", "Fläche ", "Rest ").
-export function buildNumberPanelHTML(P_str, P2_str, rem_str, BASE, verbose) {
-	let lengthLabel = verbose ? 'Länge ' : 'l';
-	let areaLabel = verbose ? 'Fläche ' : 'l²';
-	let restLabel = verbose ? 'Rest ' : 'R';
-	let baseTag = `<sub>${BASE}</sub>`;
-	return (
-		rowHTML(lengthLabel, P_str) +
-		rowHTML(areaLabel, P2_str) +
-		rowHTML(restLabel, rem_str) +
-		`<span class="np-base">${baseTag}</span>`
-	);
+	// Flaeche P^2 = N_l^2 / GRID^2
+	let P2 = N_l * N_l;
+	let P2_str = P2.toString(BASE).toUpperCase();
+	if (m > 0) {
+		let digits = 2 * m;
+		P2_str = '0'.repeat(Math.max(0, digits + 1 - P2_str.length)) + P2_str;
+		P2_str = P2_str.slice(0, P2_str.length - digits) + '.' + P2_str.slice(P2_str.length - digits);
+	}
+
+	// Rest R = N_R / AREA_SCALE (= 2 - l², aber hier direkt gezaehlt)
+	let rem_str = N_R.toString(BASE).toUpperCase();
+	if (kmax > 0) {
+		rem_str = '0'.repeat(Math.max(0, kmax + 1 - rem_str.length)) + rem_str;
+		rem_str = rem_str.slice(0, rem_str.length - kmax) + '.' + rem_str.slice(rem_str.length - kmax);
+	}
+
+	// Haengende Nullen abschneiden: die letzte Ziffer soll nie eine 0 sein
+	// (z.B. 1.410 -> 1.41, 1.40 -> 1.4). Betrifft l, l² und R.
+	const trimTrailing = (s) => (s.includes('.') ? s.replace(/\.?0+$/, '') : s);
+	P_str = trimTrailing(P_str);
+	P2_str = trimTrailing(P2_str);
+	rem_str = trimTrailing(rem_str);
+
+	return { P_str, P2_str, rem_str };
 }

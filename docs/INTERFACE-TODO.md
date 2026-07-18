@@ -310,33 +310,39 @@ Animation** grundsaetzlich falsch:
 - Die Zahlentafel zeigt ohnehin nur 3 kurze Zeilen (l, l², R) in
   Basis-Darstellung - das braucht KEINEN vollwertigen Math-Typesetter.
 
-### Eigener Renderer fuer die Zahlendarstellung (UMGESETZT)
+### Eigener Renderer fuer die Zahlendarstellung (UMGESETZT + auf Canvas verlagert)
 MathJax durch einen leichtgewichtigen, **eigenen** Renderer ersetzt
-(`src/lib/numberRenderer.js` + `buildNumberPanelHTML`, CSS in
-`src/app.css` `.np-row`/`.np-int`/`.np-frac`/`.np-base`).
+(`src/lib/numberRenderer.js` + `formatLiveNumbers` + `splitBaseNumber`).
+Die Zahlentafel (l/l²/R) wird JETZT **direkt auf dem Bank-Canvas gemalt**
+(`TargetBankCanvas.svelte` `renderFrame` -> `computeLiveL(compiledRef,
+u_time, BASE)` + `formatLiveNumbers(...)` + `ctx.fillText`, oben rechts,
+fix in Geraetepixeln, `setTransform(1,0,0,1,0,0)`), nicht mehr ins DOM
+geschrieben.
 
 Anforderungen (aus dem alten TODO), alle erfuellt:
-- Rendert l / l² / R direkt als schlichtes, vorab aufgebautes DOM
-  (Grid: Label | int rechtsbuendig | frac linksbuendig) - KEIN
-  MathJax, KEINE pro-Frame Typeset-Neuberechnung. Dezimalpunkte
-  ALLER Zeilen stehen exakt untereinander.
+- KEIN MathJax, KEINE pro-Frame Typeset-Neuberechnung. Dezimalpunkte
+  ALLER Zeilen stehen exakt untereinander (reines `fillText`, drei
+  rechtsbuendige Zeilen).
 - Uebenimmt die exakte BigInt-Darstellung aus `computeLiveL` (P_str /
   P2_str / rem_str inkl. Basis-Punkt-Formatierung + Trailing-Zero-Trim
   aus `App.svelte` `updateHUD`) - nur die *Darstellungsschicht*
   getauscht, nicht die Mathematik.
-- `updateHUD()` bleibt die logische Stelle; der `MathJax.typesetPromise`-
-  Pfad ist entfernt, stattd `buildNumberPanelHTML(...).innerHTML` +
-  `updateNumberPanelScale` (Responsize-Fit wie zuvor). Hash-Vergleich
-  (`current_hud_hash`) verhindert unnoetiges Neu-Schreiben.
+- DOM-Zwischenschicht entfernt: das stuendige `innerHTML`-Umschreiben in
+ kl. `#numberPanel` INKL. erzwungenem Reflow (`updateNumberPanelScale`
+  las scrollWidth/clientWidth) verursachte nach dem MathJax-Entzug NEUE
+  Ruckler. Canvas-Paint hat keinen Reflow, kein `innerHTML`. `App.svelte`
+  `updateHUD`/`updateNumberPanelScale` + das `#numberPanel`-Markup und die
+  `.np-*`-CSS-Regeln sind entfernt; `compiledRef` wird in
+  `TargetBankCanvas.applyConfig` aus dem `compiledStore` uebernommen.
 - `index.html`: MathJax-`<script>` (cdn.jsdelivr) + `window.MathJax`-
   Chtml-Config entfernt. Keine externe Bibliothek mehr.
-- `hudUpdateEnabled`-Schalter (nur Diagnose) entfaellt nicht zwingend,
-  bleibt aber als nuetzliches Wartungs-Werkzeug erhalten; der
-  `bankRenderEnabled`-Schalter bleibt.
+- `hudUpdateEnabled`-Schalter (nur Diagnose) bleibt als nuetzliches
+  Wartungs-Werkzeug erhalten (nun ohne Funktion in der Zahlentafel);
+  der `bankRenderEnabled`-Schalter bleibt.
 
 Verifikation:
 - Unit-Test `tests/unit/numberRenderer.test.js` (5 Tests): splitBaseNumber
-  + buildNumberPanelHTML (l/l²/R, verbose Praefixe, Basis>10
+  + formatLiveNumbers (l/l²/R, Trailing-Zero-Trim, Basis>10
   Buchstaben-Ziffern, ganzzahlig, KEIN MathJax-Markup).
 - `pnpm test:e2e` sqrt2-Suite (8/8): Canvas + HUD mount, l/l²/R
   werden wie zuvor in der gewaehlten Basis dargestellt.

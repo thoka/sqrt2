@@ -23,6 +23,8 @@
 	import { applyCompactionFit } from '../lib/bank-core.js';
 	import { layoutCentered, findRect } from '../lib/recursive-layout.js';
 	import { configStore, playbackStore, compiledStore } from '../lib/stores.js';
+	import { computeLiveL } from '../lib/compiler.js';
+	import { formatLiveNumbers } from '../lib/numberRenderer.js';
 	import {
 		setDebugCanvas,
 		setDebugFrame,
@@ -81,6 +83,10 @@
 	let animPause = 0;
 	let u_time = 0.0;
 	let u_mode_AB = 0.0;
+	// Vollstaendiger kompilierter Zustand (fuer computeLiveL der
+	// Canvas-gezeichneten Zahlentafel l/l²/R) - nur in applyConfig
+	// frisch gesetzt, NICHT pro Frame neu geholt.
+	let compiledRef = null;
 	let AUTO_ZOOM_MIN_PX = 0;
 	let RENDER_SCALE = 1;
 	let EDGE_BLUR_PX = 0;
@@ -122,6 +128,7 @@
 			bankRenderEnabled = c.bankRenderEnabled;
 
 			let compiled = get(compiledStore);
+			compiledRef = compiled;
 			if (!compiled) {
 				// Asynchroner Compile (compileOrchestrator) noch nicht fertig:
 				// config-Felder sind gesetzt, aber die kompilierten Daten
@@ -518,6 +525,37 @@
 			ctx.strokeStyle = 'rgba(0,0,0,0.9)';
 			ctx.lineWidth = LINE_WIDTH_PX;
 			ctx.stroke(gridPath);
+			ctx.restore();
+		}
+
+		// === Zahlentafel l / l² / R AUF DEM CANVAS (statt DOM) ===
+		// Frueher DOM-#numberPanel: pro Ziffernwechsel innerHTML +
+		// updateNumberPanelScale() (scrollWidth/clientWidth -> erzwungener
+		// Reflow) -> neue Ruckler. JETZT direkt gemalt: exakte
+		// BigInt-Werte aus computeLiveL (Mathe unveraendert), nur die
+		// Darstellungsschicht ist Canvas statt DOM. Kein Reflow, kein
+		// innerHTML. Position: oben rechts, fix in Geraetepixeln.
+		if (compiledRef && compiledRef.axes) {
+			let { N_l, N_R, GRID, AREA_SCALE } = computeLiveL(compiledRef, u_time, BASE);
+			let { P_str, P2_str, rem_str } = formatLiveNumbers(N_l, N_R, GRID, AREA_SCALE, BASE);
+			ctx.save();
+			ctx.setTransform(1, 0, 0, 1, 0, 0);
+			let padX = 24;
+			let padY = 28;
+			let lineH = Math.round(canvasEl.height * 0.032) + 8;
+			let fontSize = Math.round(lineH * 0.8);
+			ctx.font = `${fontSize}px ui-monospace, monospace`;
+			ctx.textAlign = 'right';
+			ctx.textBaseline = 'alphabetic';
+			ctx.fillStyle = 'rgba(148,163,184,0.95)';
+			let x = canvasEl.width - padX;
+			let y = padY;
+			let baseTag = `  ${BASE}`;
+			ctx.fillText(`l   = ${P_str}${baseTag}`, x, y);
+			y += lineH;
+			ctx.fillText(`l²  = ${P2_str}${baseTag}`, x, y);
+			y += lineH;
+			ctx.fillText(`R   = ${rem_str}${baseTag}`, x, y);
 			ctx.restore();
 		}
 
