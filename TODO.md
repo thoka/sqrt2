@@ -4,21 +4,26 @@ Offene Punkte, nach Relevanz sortiert. Erledigtes wird durchgestrichen
 (`~~`). Jede Stufe bekommt eigene Tests (Unit und/oder e2e) — siehe
 `AGENTS.md` ("Tests für alle Stufen"). Vor Commit: `pnpm format` + `pnpm check`.
 
----
+## Skalierung
+- [x] Weiße Quadrate am Anfang müssen exakt gleich groß sein und vertikal gleich ausgerichtet sein.
+- [x] Test dafür erstellen (`tests/unit/zoom-start-equal.test.js`)
 
-## Pflicht (nächste Stufen)
+## Flug-Animation
+- [ ] Die Flug-Animation soll ab einer bestimmten Geschwindigkeit ausgeschaltet werden.
+- [ ] Diese Geschwindigkeit (Vorgabe 3) soll einstellbar sein in den Animations-Optionen.
+- [ ] Kein Recompile bei Ändeerungen.
 
-- [ ] **TODO.md anlegen** — diese Datei (erledigt beim Anlegen).
-- [ ] **README.md auf Stand bringen**: `sqrt2.html` ist nicht mehr Haupttool
-      (Svelte-Dev-Server / `dist/`), Phase 5 (Fernsteuerung) ist **umgesetzt**,
-      embedded Relay einbauen. Verweis auf `docs/DEPLOYMENT.md`.
-- [ ] **Phase 6 „Politur"**: Widget-Auswahl-UI im `ControlPanel` (nicht nur
-      `restwidget`-URL-Param) — z.B. sanfter Umschalt-Dialog für
-      Rest-Bars/Grid. Tests: Svelte-Component-Test.
-- [x] **`bank-core.js` → `src/lib/` migriert** (ES-Modul-Struktur, von
-       `TargetBankCanvas` importiert statt global). Tests nachgeführt.
-- [x] `smoothing.js` → `src/lib/` migriert
-      Import-Pfade in `TargetBankCanvas.svelte` anpassen.
+## Tastensteuerung
+
+- [ ] Space: start / stop
+- [ ] left: tick zurück
+- [ ] right: tick vorwärts
+- [ ] pg-up: schale vorwärts
+- [ ] pg-down: schale zurück
+
+## Intro-Screen
+- [ ] Anzeige eines Intro-Screens für kurze Zeit beim Start. Ausschalten bei Play.
+- [ ] Hinweis auf Einstellungen oben rechts
 
 ## Fernsteuerung / Connection (Nachpflege)
 
@@ -37,11 +42,6 @@ Offene Punkte, nach Relevanz sortiert. Erledigtes wird durchgestrichen
 
 ## CODE-QUALITÄT / REFACTOR
 
-- [ ] **Ungenutzte `GLOBAL_*` in `TargetBankCanvas.svelte`** aufräumen
-      (nur ESLint-Warnungen, AGENTS.md „Stolpersteine").
-- [ ] **Toter Code in `sqrt2.html`**: ausgelagerter alter SYSTEM-C-Renderblock
-      (AGENTS.md) entfernen oder als Referenz extrahieren.
-- [ ] **`p.html`** (verworfenes Prototyp) — löschen oder nach `docs/`-Archiv.
 - [ ] **`selection_strategy_prototype.html`** — in `src/` / `docs/` ordnen,
       da kein Haupt-Tool mehr.
 
@@ -57,9 +57,6 @@ Offene Punkte, nach Relevanz sortiert. Erledigtes wird durchgestrichen
 
 ## NICHT ZWINGEND (später)
 
-- [ ] **Tiefe-Standardwert** Haupttool (`3`) vs Test-Tool (`10`) synchronisieren
-      (offene Entscheidung, README §10).
-- [ ] **Z/R-Modi neu (C¹)**: Alpha-Rampen auf Smoothstep statt linear (§7).
 - [ ] **Admin-konfigurierbare Steuerungs-Komplexität** (welche Regler sichtbar)
       — baut auf Store-Architektur auf.
 - [ ] **Persistente Token-Store** (RAM-only bewusst einfach) — nur bei Bedarf.

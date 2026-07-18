@@ -249,9 +249,19 @@ export function computeZoomFrame(frame, margin = 0.05, boundX = 0, boundY = 0) {
 	// AKTIVEN Grenze statt zum reinen Div-durch-Null-Schutz - der Zoom bleibt
 	// dann weit hinter dem noetigen Wert zurueck, der Rest verschwindet fast
 	// vollstaendig (Symptom: "ab einem Tick nichts mehr sichtbar").
-	let halfW = Math.max(cx - boundX, boundX + w - cx) * (1 + margin);
-	let halfH = Math.max(cy - boundY, boundY + h - cy) * (1 + margin);
-	let z = Math.min(0.5 / halfW, 0.5 / halfH);
+	// Zoom-Faktor OHNE Puffer: ein Stück, das den gesamten Bank-Raum
+	// [0,1] ausfüllt (z.B. das Wurzel-Stück bei t=0), ergibt z_exact = 1.
+	let halfW0 = Math.max(cx - boundX, boundX + w - cx);
+	let halfH0 = Math.max(cy - boundY, boundY + h - cy);
+	let zExact = Math.min(0.5 / halfW0, 0.5 / halfH0);
+	// Der optische Puffer (`margin`) wird NUR beim Hineinzoomen (z_exact
+	// > 1) angewandt: er verkleinert die Ansicht leicht, damit um eine
+	// kleine, scharf herangezoomte Gruppe Luft bleibt. Füllt das Stück
+	// den Raum bereits voll aus (z_exact = 1), gibt es keinen Puffer nach
+	// außen - der Zoom bleibt exakt 1, sonst würde das rechte weiße
+	// Rest-Quadrat am Anfang auf ~0.95 verkleinert und wäre kleiner als das
+	// Ziel-Quadrat (Symptom: "Rand"/"Rest kleiner als Ziel am Anfang").
+	let z = zExact > 1 ? zExact / (1 + margin) : zExact;
 	return { z, cx, cy, offsetX: 0.5 - cx * z, offsetY: 0.5 - cy * z };
 }
 
