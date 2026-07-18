@@ -332,6 +332,18 @@
 		</div>
 
 		<label class="control-group" style="margin-top:6px;"
+			>Flug-Morph: Drehung
+			<input
+				type="range"
+				min="0"
+				max="1"
+				step="0.01"
+				value={$configStore.morphRotWeight}
+				oninput={onInputFloat('morphRotWeight', 0.5)}
+			/>
+			<span class="zoom-readout">{Math.round($configStore.morphRotWeight * 100)} %</span>
+		</label>
+		<label class="control-group" style="margin-top:6px;"
 			>Auto-Zoom: Mindestpixelgröße
 			<input type="range" min="0" max="1" step="0.001" value={minPxPos} oninput={onMinPxInput} />
 			<span class="zoom-readout"
