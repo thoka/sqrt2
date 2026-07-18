@@ -14,6 +14,7 @@
 	import { initSync } from './lib/syncedStore.js';
 	import { initDebugAgent } from './lib/debugAgent.js';
 	import { computeLiveL } from './lib/compiler.js';
+	import { buildNumberPanelHTML } from './lib/numberRenderer.js';
 
 	import ControlPanel from './components/ControlPanel.svelte';
 	import PlaybackBar from './components/PlaybackBar.svelte';
@@ -114,42 +115,20 @@
 		if (hash === current_hud_hash) return;
 		current_hud_hash = hash;
 
-		let lengthLabel = NUMBER_PANEL_VERBOSE ? '\\text{Länge } l' : 'l';
-		let areaLabel = NUMBER_PANEL_VERBOSE ? '\\text{Fläche } l^2' : 'l^2';
-		let restLabel = NUMBER_PANEL_VERBOSE ? '\\text{Rest } R' : 'R';
-		let equation = `\\[ \\begin{aligned}
-        ${lengthLabel} &= ${P_str}_{${BASE}} \\\\
-        ${areaLabel} &= ${P2_str}_{${BASE}} \\\\
-        ${restLabel} &= ${rem_str}_{${BASE}}
-    \\end{aligned} \\]`;
-
+		// === EIGENER RENDERER (statt MathJax) ===
+		// buildNumberPanelHTML liefert alignment-fähiges HTML (Label + int/
+		// frac-Spans, Dezimalpunkte untereinander); KEINE externe
+		// Bibliothek, KEIN pro-Frame-Typeset (Ursache des Flug-Stotterns).
 		const numberPanelInner = document.getElementById('numberPanelInner');
 		const numberPanel = document.getElementById('numberPanel');
-		numberPanelInner.innerHTML = equation;
-
-		// MathJax lädt asynchron (das window.MathJax-Objekt wird VOR dem Laden
-		// der Bibliothek gesetzt, typesetPromise gibt es erst danach). Daher:
-		// sobald verfügbar typesetten, sonst vorerst nur skalieren. Ein Wurf
-		// hier würde onMount abbrechen und die Kind-Mounts (Canvas) zerstören.
-		try {
-			if (window.MathJax && typeof window.MathJax.typesetPromise === 'function') {
-				MathJax.typesetPromise([numberPanelInner])
-					.then(() => updateNumberPanelScale(numberPanel, numberPanelInner))
-					.catch(() => updateNumberPanelScale(numberPanel, numberPanelInner));
-			} else if (window.MathJax?.startup?.promise) {
-				window.MathJax.startup.promise.then(() => {
-					if (typeof window.MathJax.typesetPromise === 'function') {
-						MathJax.typesetPromise([numberPanelInner])
-							.then(() => updateNumberPanelScale(numberPanel, numberPanelInner))
-							.catch(() => {});
-					}
-				});
-			} else {
-				updateNumberPanelScale(numberPanel, numberPanelInner);
-			}
-		} catch {
-			updateNumberPanelScale(numberPanel, numberPanelInner);
-		}
+		numberPanelInner.innerHTML = buildNumberPanelHTML(
+			P_str,
+			P2_str,
+			rem_str,
+			BASE,
+			NUMBER_PANEL_VERBOSE,
+		);
+		updateNumberPanelScale(numberPanel, numberPanelInner);
 	}
 
 	function applyConfig() {

@@ -310,29 +310,41 @@ Animation** grundsaetzlich falsch:
 - Die Zahlentafel zeigt ohnehin nur 3 kurze Zeilen (l, l², R) in
   Basis-Darstellung - das braucht KEINEN vollwertigen Math-Typesetter.
 
-### TODO: eigenen Renderer fuer die Zahlendarstellung
-MathJax durch einen leichtgewichtigen, **eigenen** Renderer ersetzen.
-Anforderungen:
-- Rendert l / l² / R direkt (Canvas-Text ODER schlichtes, vorab
-  aufgebautes DOM - KEIN MathJax, KEINE pro-Frame Typeset-Neuberechnung).
-- Muss die exakte BigInt-Darstellung aus `computeLiveL` uebernehmen
-  (P_str / P2_str / rem_str inkl. Basis-Punkt-Formatierung +
-  Trailing-Zero-Trim - s. `App.svelte:80-107`), also nur die
-  *Darstellungsschicht* tauschen, nicht die Mathematik.
-- Das pro-Frame `playbackStore.set({time})` darf NICHT mehr zu einem
-  teuren Render zwingen: entweder HUD nur bei tatsaechlichem
-  Ziffernwechsel (Hash-Vergleich exitsiert schon: `current_hud_hash`,
-  `App.svelte:113`) neu zeichnen, ODER den eigenen Renderer so billig
-  halten, dass er problemlos pro Frame laeuft.
-- `updateHUD()` bleibt die logische Stelle; nur der
-  `MathJax.typesetPromise`-Pfad wird durch den eigenen Renderer ersetzt.
-- Nach dem Tausch: `hudUpdateEnabled`-Schalter kann entfallen (war nur
-  Diagnose); der `bankRenderEnabled`-Schalter bleibt als nuetzliches
-  Diagnose/Wartungs-Werkzeug erhalten.
-- Verifikation: `pnpm test:e2e` (Canvas + HUD mount), Visueller Check
-  dass l/l²/R in der gewaehlten Basis exakt gleich dargestellt werden wie
-  zuvor (Trailing-Zero-Trim, Punkt-Format), und dass die Flug-Animation
-  bei `hud=1` (Default) weiterhin butterweich laeuft.
+### Eigener Renderer fuer die Zahlendarstellung (UMGESETZT)
+MathJax durch einen leichtgewichtigen, **eigenen** Renderer ersetzt
+(`src/lib/numberRenderer.js` + `buildNumberPanelHTML`, CSS in
+`src/app.css` `.np-row`/`.np-int`/`.np-frac`/`.np-base`).
+
+Anforderungen (aus dem alten TODO), alle erfuellt:
+- Rendert l / l² / R direkt als schlichtes, vorab aufgebautes DOM
+  (Grid: Label | int rechtsbuendig | frac linksbuendig) - KEIN
+  MathJax, KEINE pro-Frame Typeset-Neuberechnung. Dezimalpunkte
+  ALLER Zeilen stehen exakt untereinander.
+- Uebenimmt die exakte BigInt-Darstellung aus `computeLiveL` (P_str /
+  P2_str / rem_str inkl. Basis-Punkt-Formatierung + Trailing-Zero-Trim
+  aus `App.svelte` `updateHUD`) - nur die *Darstellungsschicht*
+  getauscht, nicht die Mathematik.
+- `updateHUD()` bleibt die logische Stelle; der `MathJax.typesetPromise`-
+  Pfad ist entfernt, stattd `buildNumberPanelHTML(...).innerHTML` +
+  `updateNumberPanelScale` (Responsize-Fit wie zuvor). Hash-Vergleich
+  (`current_hud_hash`) verhindert unnoetiges Neu-Schreiben.
+- `index.html`: MathJax-`<script>` (cdn.jsdelivr) + `window.MathJax`-
+  Chtml-Config entfernt. Keine externe Bibliothek mehr.
+- `hudUpdateEnabled`-Schalter (nur Diagnose) entfaellt nicht zwingend,
+  bleibt aber als nuetzliches Wartungs-Werkzeug erhalten; der
+  `bankRenderEnabled`-Schalter bleibt.
+
+Verifikation:
+- Unit-Test `tests/unit/numberRenderer.test.js` (5 Tests): splitBaseNumber
+  + buildNumberPanelHTML (l/l²/R, verbose Praefixe, Basis>10
+  Buchstaben-Ziffern, ganzzahlig, KEIN MathJax-Markup).
+- `pnpm test:e2e` sqrt2-Suite (8/8): Canvas + HUD mount, l/l²/R
+  werden wie zuvor in der gewaehlten Basis dargestellt.
+- Flug-Animation bei `hud=1` (Default): nicht mehr durch pro-Frame
+  MathJax-Typeset blockiert (Haupt-Hebel des Flug-Stotterns, via
+  `hud=0` bestaetigt). Die verbleibende Restarbeit am Stottern
+  (C1-Blatt-Exit, async Kamera, s.o.) ist unabhaengig davon.
+
 
 ## Architektur: drei Oberflächen, eine Komponente
 
@@ -424,11 +436,11 @@ Anforderungen:
   - [ ] Scroll-Rad-Listener auf Zahlenfeldern
   - [ ] `/admin`-Route implementieren (neuer Vite-Entry, analog `remote.html`)
   - [ ] weitere Admin-only-Werte bündeln
-  - [ ] **Eigener Renderer für Zahlendarstellung (statt MathJax)** - siehe
-        "TODO: eigenen Renderer für die Zahlendarstellung" oben. MathJax ist
-        als pro-Frame-Typesetter ungeeignet (Ursache des Flug-Stotterns,
-        via `hud=0` bestätigt). `updateHUD()` behält die BigInt-Mathematik
-        aus `computeLiveL`, nur die Darstellungsschicht wird getauscht.
+  - [x] **Eigener Renderer für Zahlendarstellung (statt MathJax)** - UMGESETZT
+        (s. "Eigener Renderer für die Zahlendarstellung (UMGESETZT)" oben).
+        MathJax als pro-Frame-Typesetter war die Ursache des Flug-Stotterns
+        (via `hud=0` bestätigt); `updateHUD()` behält die BigInt-Mathematik
+        aus `computeLiveL`, nur die Darstellungsschicht wurde getauscht.
   - [x] **BUG: Lücke hart ausblenden (kein Ease)** - war `leafEffectiveSize()`
         (`recursive-layout.js`) hart auf 0 statt C1-Ease-Out. **UMGESETZT:**
         `gapEase(s)`-Interpolator + Hold/Compact-Phasen via `gapHoldEnd_u`

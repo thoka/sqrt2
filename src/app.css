@@ -35,6 +35,33 @@ canvas {
 	display: inline-block;
 	transform-origin: left top;
 }
+/* Eigener Zahl-Renderer (statt MathJax): jede Zeile = Grid mit
+   Label (links) | Ganzzahlteil (rechtsbündig) | Nachkommateil
+   (linksbündig). Dadurch stehen die Dezimalpunkte ALLER Zeilen
+   exakt untereinander, ohne externe Typeset-Bibliothek. */
+.np-row {
+	display: grid;
+	grid-template-columns: auto auto auto;
+	column-gap: 0.4ch;
+	align-items: baseline;
+	font-family: monospace;
+}
+.np-label {
+	white-space: nowrap;
+}
+.np-int {
+	text-align: right;
+}
+.np-frac {
+	text-align: left;
+	white-space: pre;
+}
+.np-base {
+	display: inline-block;
+	margin-left: 0.6ch;
+	font-size: 0.7em;
+	vertical-align: sub;
+}
 #bankPanel {
 	position: fixed;
 	top: 0;
