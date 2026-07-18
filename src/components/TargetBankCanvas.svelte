@@ -243,6 +243,13 @@
 		const renderAreaWidth = rightEdgeStart - 40;
 		const scale = Math.min(renderAreaWidth / LOGICAL_MAX_W, (H - 100) / LOGICAL_MAX_H);
 
+		// Zahlentafel startet RECHTS vom Ziel-Quadrat: das Ziel liegt im
+		// logischen Bereich x in [0, SQRT2] (links im Spielfeld), daher
+		// rechte Kante = 40(CSS) + scale*SQRT2, umgerechnet in
+		// Geraetepixel. (bankPanel ist das FERNSTE Rechts - dort darf die
+		// Tafel NICHT beginnen.)
+		hudX0 = (40 + scale * SQRT2) * RENDER_SCALE + 28;
+
 		let autoZoomTargetExp = getSmoothedAutoZoomExp(u_time);
 		let autoZoomTAB = computeAutoZoomTAB(AUTO_ZOOM_MIN_PX, scale, autoZoomTargetExp);
 
@@ -585,6 +592,8 @@
 	// Pro Frame wird nur das Bitmap via drawImage aufgelegt.
 	let hudOffscreen = null;
 	let hudOffCtx = null;
+	// Start-X der Zahlentafel (rechts vom Ziel-Quadrat), in Geraetepixeln.
+	let hudX0 = 24;
 	// Gecachter Zustand: zuletzt gemalener Hash + Canvas-Masse + ob an.
 	let hudCache = { hash: '', w: 0, h: 0, on: false };
 
@@ -610,16 +619,19 @@
 		// Exakte BigInt-Werte aus der Simulation (Mathe unveraendert).
 		let { N_l, N_R, GRID, AREA_SCALE } = computeLiveL(compiledRef, u_time, BASE);
 		let { P_str, P2_str, rem_str } = formatLiveNumbers(N_l, N_R, GRID, AREA_SCALE, BASE);
-		let baseTag = `  ${BASE}`;
-		let lines = [
-			`l   = ${P_str}${baseTag}`,
-			`l²  = ${P2_str}${baseTag}`,
-			`R   = ${rem_str}${baseTag}`,
+		// Jede Zeile: [Label, Wert, Basis-Subscript]. Die Basis wird als
+		// tiefgestellte, kleinere Zahl NACH dem Wert gemalt (kein Inline).
+		let rows = [
+			['l   = ', P_str, BASE],
+			['l²  = ', P2_str, BASE],
+			['R   = ', rem_str, BASE],
 		];
 		let hash = P_str + '|' + P2_str + '|' + rem_str + '|' + BASE;
 
 		let W = canvasEl.width;
 		let H = canvasEl.height;
+		// Start X: rechts vom Ziel-Quadrat (von renderFrame gesetzt).
+		let x0 = hudX0;
 		// Nur neu bemaden, wenn sich Werte ODER Groesse geaendert haben.
 		if (hash !== hudCache.hash || W !== hudCache.w || H !== hudCache.h || !hudCache.on) {
 			ensureHudOffscreen(W, H);
@@ -631,27 +643,41 @@
 			let padY = 28;
 			let lineH = Math.round(H * 0.032) + 8;
 
-			// Schriftgroesse startet bei ~0.8*lineH, wird aber automatisch
-			// verkleinert, falls die laengste Zeile die verfuegbare Breite
-			// (W - 2*padX) ueberschreitet.
+			// EINE Schriftgroesse fuer die GANZE Anzeige: startet bei
+			// ~0.8*lineH und wird nur verkleinert, falls die laengste
+			// Zeile (Wert + Luecke + Basis-Subscript) die verfuegbare
+			// Breite (von x0 bis W - padX) ueberschreitet.
 			let fontSize = Math.round(lineH * 0.8);
+			let subFont = Math.round(fontSize * 0.7);
 			let fontFor = (s) => `${s}px ui-monospace, monospace`;
-			let avail = W - 2 * padX;
+			let avail = W - padX - x0;
 			c.font = fontFor(fontSize);
 			let longest = 0;
-			for (const t of lines) longest = Math.max(longest, c.measureText(t).width);
+			for (const [lab, val, base] of rows) {
+				let wval = c.measureText(lab + val).width;
+				let wbase = c.measureText(String(base)).width * (subFont / fontSize);
+				longest = Math.max(longest, wval + 6 + wbase);
+			}
 			if (longest > avail && longest > 0) {
-				fontSize = Math.max(10, Math.floor((fontSize * avail) / longest));
+				let factor = avail / longest;
+				fontSize = Math.max(10, Math.floor(fontSize * factor));
+				subFont = Math.round(fontSize * 0.7);
 				c.font = fontFor(fontSize);
 			}
 
 			c.textAlign = 'left';
 			c.textBaseline = 'alphabetic';
 			c.fillStyle = 'rgba(148,163,184,0.95)';
-			let x = padX;
+			let x = x0;
 			let y = padY + fontSize;
-			for (const t of lines) {
-				c.fillText(t, x, y);
+			for (const [lab, val, base] of rows) {
+				c.font = fontFor(fontSize);
+				c.fillText(lab + val, x, y);
+				// Basis als Subscript: eine Stufe kleinere Schrift,
+				// leicht abgesenkt, direkt NACH dem Wert.
+				let wval = c.measureText(lab + val).width;
+				c.font = fontFor(subFont);
+				c.fillText(String(base), x + wval + 6, y + fontSize - subFont);
 				y += lineH;
 			}
 			hudCache = { hash, w: W, h: H, on: true };
