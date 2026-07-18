@@ -87,6 +87,7 @@
 	// Canvas-gezeichneten Zahlentafel l/l²/R) - nur in applyConfig
 	// frisch gesetzt, NICHT pro Frame neu geholt.
 	let compiledRef = null;
+
 	let AUTO_ZOOM_MIN_PX = 0;
 	let RENDER_SCALE = 1;
 	let EDGE_BLUR_PX = 0;
@@ -535,32 +536,20 @@
 		// Reflow) -> neue Ruckler. JETZT direkt gemalt: exakte
 		// BigInt-Werte aus computeLiveL (Mathe unveraendert), nur die
 		// Darstellungsschicht ist Canvas statt DOM. Kein Reflow, kein
-		// innerHTML. Position: oben rechts, fix in Geraetepixeln.
+		// innerHTML.
+		// Performance: das Canvas wird pro Frame voll geloescht, die
+		// Zahlentafel muesste also eigentlich jeden Frame neu gezeichnet
+		// werden - das (inkl. dem teuren computeLiveL/BigInt) war die
+		// Performance-Regression. Daher: die drei Zeilen werden NUR neu
+		// berechnet + auf ein OFFSCREEN-Canvas gemalt, wenn sich die
+		// angezeigten Werte (Hash ueber l/l²/R/Basis) ODER die
+		// Canvas-Groesse aendern. Pro Frame wird nur das gecachte
+		// Bitmap via drawImage aufgelegt (sehr guenstig).
 		// Schalter "Zahlendarstellung" (hudUpdateEnabled) schaltet die
 		// Anzeige weiterhin ab - wie vor dem Canvas-Umbau.
-		if (get(configStore).hudUpdateEnabled && compiledRef && compiledRef.axes) {
-			let { N_l, N_R, GRID, AREA_SCALE } = computeLiveL(compiledRef, u_time, BASE);
-			let { P_str, P2_str, rem_str } = formatLiveNumbers(N_l, N_R, GRID, AREA_SCALE, BASE);
-			ctx.save();
-			ctx.setTransform(1, 0, 0, 1, 0, 0);
-			let padX = 24;
-			let padY = 28;
-			let lineH = Math.round(canvasEl.height * 0.032) + 8;
-			let fontSize = Math.round(lineH * 0.8);
-			ctx.font = `${fontSize}px ui-monospace, monospace`;
-			ctx.textAlign = 'right';
-			ctx.textBaseline = 'alphabetic';
-			ctx.fillStyle = 'rgba(148,163,184,0.95)';
-			let x = canvasEl.width - padX;
-			let y = padY;
-			let baseTag = `  ${BASE}`;
-			ctx.fillText(`l   = ${P_str}${baseTag}`, x, y);
-			y += lineH;
-			ctx.fillText(`l²  = ${P2_str}${baseTag}`, x, y);
-			y += lineH;
-			ctx.fillText(`R   = ${rem_str}${baseTag}`, x, y);
-			ctx.restore();
-		}
+		// Layout: linksbuendig oben, Schrift automatisch verkleinert,
+		// falls die laengste Zeile die verfuegbare Breite ueberschreitet.
+		renderHud(ctx);
 
 		ctx.restore();
 	}
@@ -588,6 +577,91 @@
 			);
 		if (f < 1000) return Math.round(f).toLocaleString('de-DE') + '×';
 		return f.toExponential(1).replace('.', ',').replace('e+', ' × 10^') + '×';
+	}
+
+	// === Zahlentafel-Rendering (l/l²/R auf Canvas, gecacht) ===
+	// Offscreen-Canvas fuer die Zahlentafel: wird NUR neu bemalt, wenn
+	// sich die angezeigten Werte (Hash) oder die Canvas-Groesse aendert.
+	// Pro Frame wird nur das Bitmap via drawImage aufgelegt.
+	let hudOffscreen = null;
+	let hudOffCtx = null;
+	// Gecachter Zustand: zuletzt gemalener Hash + Canvas-Masse + ob an.
+	let hudCache = { hash: '', w: 0, h: 0, on: false };
+
+	function ensureHudOffscreen(w, h) {
+		if (!hudOffscreen) {
+			hudOffscreen = document.createElement('canvas');
+			hudOffCtx = hudOffscreen.getContext('2d');
+		}
+		if (hudOffscreen.width !== w || hudOffscreen.height !== h) {
+			hudOffscreen.width = w;
+			hudOffscreen.height = h;
+		}
+	}
+
+	function renderHud(ctx) {
+		const enabled = get(configStore).hudUpdateEnabled;
+		const ready = compiledRef && compiledRef.axes;
+		// Anzeige aus: gecachten Zustand zuruecksetzen, nichts malen.
+		if (!enabled || !ready) {
+			hudCache = { hash: '', w: 0, h: 0, on: false };
+			return;
+		}
+		// Exakte BigInt-Werte aus der Simulation (Mathe unveraendert).
+		let { N_l, N_R, GRID, AREA_SCALE } = computeLiveL(compiledRef, u_time, BASE);
+		let { P_str, P2_str, rem_str } = formatLiveNumbers(N_l, N_R, GRID, AREA_SCALE, BASE);
+		let baseTag = `  ${BASE}`;
+		let lines = [
+			`l   = ${P_str}${baseTag}`,
+			`l²  = ${P2_str}${baseTag}`,
+			`R   = ${rem_str}${baseTag}`,
+		];
+		let hash = P_str + '|' + P2_str + '|' + rem_str + '|' + BASE;
+
+		let W = canvasEl.width;
+		let H = canvasEl.height;
+		// Nur neu bemaden, wenn sich Werte ODER Groesse geaendert haben.
+		if (hash !== hudCache.hash || W !== hudCache.w || H !== hudCache.h || !hudCache.on) {
+			ensureHudOffscreen(W, H);
+			let c = hudOffCtx;
+			c.clearRect(0, 0, W, H);
+			c.setTransform(1, 0, 0, 1, 0, 0);
+
+			let padX = 24;
+			let padY = 28;
+			let lineH = Math.round(H * 0.032) + 8;
+
+			// Schriftgroesse startet bei ~0.8*lineH, wird aber automatisch
+			// verkleinert, falls die laengste Zeile die verfuegbare Breite
+			// (W - 2*padX) ueberschreitet.
+			let fontSize = Math.round(lineH * 0.8);
+			let fontFor = (s) => `${s}px ui-monospace, monospace`;
+			let avail = W - 2 * padX;
+			c.font = fontFor(fontSize);
+			let longest = 0;
+			for (const t of lines) longest = Math.max(longest, c.measureText(t).width);
+			if (longest > avail && longest > 0) {
+				fontSize = Math.max(10, Math.floor((fontSize * avail) / longest));
+				c.font = fontFor(fontSize);
+			}
+
+			c.textAlign = 'left';
+			c.textBaseline = 'alphabetic';
+			c.fillStyle = 'rgba(148,163,184,0.95)';
+			let x = padX;
+			let y = padY + fontSize;
+			for (const t of lines) {
+				c.fillText(t, x, y);
+				y += lineH;
+			}
+			hudCache = { hash, w: W, h: H, on: true };
+		}
+		// Gecachtes Bitmap pro Frame auflegen (günstig, kein Reflow/
+		// keine BigInt-Berechnung pro Frame).
+		ctx.save();
+		ctx.setTransform(1, 0, 0, 1, 0, 0);
+		ctx.drawImage(hudOffscreen, 0, 0);
+		ctx.restore();
 	}
 
 	function resizeCanvas() {

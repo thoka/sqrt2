@@ -314,10 +314,21 @@ Animation** grundsaetzlich falsch:
 MathJax durch einen leichtgewichtigen, **eigenen** Renderer ersetzt
 (`src/lib/numberRenderer.js` + `formatLiveNumbers` + `splitBaseNumber`).
 Die Zahlentafel (l/l²/R) wird JETZT **direkt auf dem Bank-Canvas gemalt**
-(`TargetBankCanvas.svelte` `renderFrame` -> `computeLiveL(compiledRef,
-u_time, BASE)` + `formatLiveNumbers(...)` + `ctx.fillText`, oben rechts,
-fix in Geraetepixeln, `setTransform(1,0,0,1,0,0)`), nicht mehr ins DOM
-geschrieben.
+(`TargetBankCanvas.svelte` `renderFrame` -> `renderHud()`), nicht mehr ins
+DOM geschrieben. Layout: **linksbuendig oben**, Schriftgroesse wird
+**automatisch verkleinert**, falls die laengste Zeile die verfuegbare
+Breite ueberschreitet.
+
+Performance: das Canvas wird pro Frame voll geloescht, die Zahlentafel
+muesste also eigentlich jeden Frame neu gezeichnet werden - das (inkl. dem
+teuren `computeLiveL`/BigInt) WAR die Performance-Regression (massiv
+langsamer). Daher wird die Zahlentafel nur NEU berechnet + auf ein
+**Offscreen-Canvas** gemalt, wenn sich die angezeigten Werte (Hash ueber
+l/l²/R/Basis) ODER die Canvas-Groesse aendern. Pro Frame wird nur das
+gecachte Bitmap via `drawImage` aufgelegt (sehr guenstig, kein Reflow,
+keine BigInt-Berechnung pro Frame). Der Schalter "Zahlendarstellung"
+(`hudUpdateEnabled`) schaltet die Anzeige weiterhin ab (Cache wird
+zurueckgesetzt).
 
 Anforderungen (aus dem alten TODO), alle erfuellt:
 - KEIN MathJax, KEINE pro-Frame Typeset-Neuberechnung. Dezimalpunkte
