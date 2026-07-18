@@ -146,6 +146,15 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
   schon im Original-Code reproduzierbar, NICHT durch eigene Änderungen
   verursacht. Bei `node --test tests/unit/*.test.js` diese Datei ausschließen
   (oder die Matrix deckeln), sonst blockiert die ganze Suite.
+- **Compiler-Wandzeit Basis 10 (gemessen, Stand 2026-07-18):** `buildSystem`
+  ist O(TOTAL_STEPS²) — Basis 10 wird ab Tiefe ~20 im Sekundenbereich
+  unbenutzbar (Tiefe 20 ≈ 37 s, 22 ≈ 59 s, superlinear), Tiefe 40 praktisch
+  nicht messbar. Basis 2 schafft Tiefe 40 in ~200 ms (Knotenzahl ~1600).
+  Ursache: `isolationScore()` in `bank-core.js` ist O(Knoten) pro Entnahme.
+  Belegt den Compiler-Handlungsbedarf (Split/Cache/inkrementelle Tiefe,
+  siehe `docs/COMPILER-LAYERING-PLAN.md` A–C + E.2). Bei Basis-10-Tests
+  **vorsichtig einzeln mit hartem `timeout`** herantasten, nicht voll
+  benchmarken.
 
 ## Migration
 
