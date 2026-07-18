@@ -224,6 +224,44 @@ die sichtbaren großen/frühen Blätter sind behoben.
 - `diag-camera.mjs`: `eventTimes` innerhalb eines Blatt-Exit-Fensters
   enthalten jetzt die Fenstergrenzen.
 
+## Bug (NEU, nach dem C1-Blatt-Exit): Restteil waehrend der Ease-out-Phase noch gezeichnet
+
+Symptom (User): "Restteil wird waehrend der-Ease-out-Phase angezeigt.
+Die Luecke muss sichtbar sein, das Teil wird dann aber nicht mehr
+gezeichnet." - das Blatt wurde im Rect-Layout noch als schrumpfendes
+Rechteck GEZEICHNET (ueber die ganze Compact-Phase [gapHoldEnd_u, te]
+hinweg), obwohl die Rest-Zaehlung (`computeLiveL`, Filter `t <=
+taken_time`) es schon ab `taken_time` ausgeblendet hatte -> Blatt und
+Rest-Zaehler waren asynchron, und das Teil war sichtbar, wo es nicht
+mehr sein sollte.
+
+### Fix (UMGESETZT)
+In `layoutBox` (`recursive-layout.js`) wird die effektive Slot-Groesse
+(`leafEffectiveSize`) UNVERAENDERT weitergereicht (treibt Parent-Cursor
++ Masse, damit die Luecke sichtbar BLEIBT und sich ueber
+[gapHoldEnd_u, te] C1 schliesst - das ist das gewuenschte "Luecke
+sichtbar"). ABER das `out.push` (das tatsaechliche ZEICHNEN) ist jetzt
+auf `t <= taken_time` (inklusive Grenze, wichtig fuer `flightQueryTime`)
+begrenzt: ab `t > taken_time` wird das Stueck NICHT mehr gezeichnet.
+Damit sind Blatt-Zeichnung und Rest-Zaehlung exakt synchron bei
+`taken_time`, und die Luecke (reservierter Slot) schliesst sich weich
+C1, waehrend das Teil selbst nicht mehr gezeichnet wird.
+
+### Verifikation
+- `recursive-layout.test.js`: die drei Blatt-Exit-Tests wurden auf das
+  neue Modell umgeschrieben - sie pruefen jetzt die RESERVIERTE
+  Slot-Groesse (via `layoutBox`-Rueckgabe) statt der gezeichneten Rect:
+  voll bis `taken_time` (und dort noch gezeichnet), danach Slot voll in
+  der Hold-Phase (Luecke sichtbar, Teil nicht gezeichnet), C1 -> 0 bei
+  `te`.
+- `pnpm test:e2e`: die 2 Kriterium-6/10-Fails unter VOLL-SUITE-Last
+  sind praeexistend (Ressourcen-Konkurrenz bei 16 schweren Tests,
+  bestehen unabhaengig von diesem Change auch auf dem Vorgaenger-Commit
+  `b1f3412`; in Isolation gruen).
+- `diag-notdrawn.mjs` / `diag-slot.mjs`: Blatt nur bei `taken_time`
+  gezeichnet; Masse/Slot bleibt ueber die Exit-Phase reserviert und
+  schrumpft C1.
+
 ## Flug-Stottern: Korrelation mit HUD-Update (neue Hypothese)
 
 Der Haupt-Hebel fuer das **Flug**-Stottern ist NICHT der Blatt-Exit

@@ -181,9 +181,11 @@ test('Teil D: C¹-Ease an gapHoldEnd_u und an te (numerische Ableitung)', () => 
 	assert.ok(leaf, 'entnommenes Blatt mit transitionSnapshot');
 
 	function widthAt(t) {
-		let out = [];
-		layoutBox(leaf, t, 0, 0, out);
-		return out.length ? out[0].w : 0;
+		// RESERVIERTE Slot-Größe (treibt Parent-Cursor + Masse), NICHT
+		// die gezeichnete Rect (das Blatt wird ab t > taken_time nicht
+		// mehr gezeichnet, siehe layoutBox). Die Slot-Größe bleibt exakt
+		// das C1-Ease-Verhalten.
+		return layoutBox(leaf, t, 0, 0).w;
 	}
 
 	const EPS = 1e-4;
@@ -226,13 +228,14 @@ test('Teil D (dokumentiert, offener Punkt): an born_time (ts) springt die Größ
 
 // --------------------------------------------------------------------------
 // Blatt-Exit (BUG-FIX, siehe docs/INTERFACE-TODO.md "BUG: Lücke hart
-// ausblenden"): ein entnommenes Blatt bleibt bis EINSCHLIESSLICH
-// taken_time in voller Design-Größe sichtbar (inklusive Grenze, wichtig
-// für flightQueryTime). DANACH (t > taken_time) schrumpft es NICHT
-// hart auf 0, sondern geht C1 (smoothstep) über die Compact-Phase
-// [gapHoldEnd_u, te] auf 0 - die Lücke verschwindet WEICH.
+// ausblenden" + "Restteil waehrend Ease-out angezeigt"): ein entnommenes
+// Blatt wird bis EINSCHLIESSLICH taken_time gezeichnet (inklusive Grenze,
+// wichtig für flightQueryTime). DANACH (t > taken_time) wird es NICHT
+// mehr gezeichnet ("das Teil wird nicht mehr gezeichnet") - die Luecke
+// (reservierte Slot-Groesse) bleibt aber sichtbar und schliesst sich
+// WEICH C1 ueber die Compact-Phase [gapHoldEnd_u, te].
 // --------------------------------------------------------------------------
-test('Teil D: Blatt bleibt bis einschließlich taken_time voll, danach C1 weich auf 0 (kein harter Cutoff)', () => {
+test('Teil D: Blatt gezeichnet bis einschließlich taken_time, danach nur noch reservierte Slot-Größe (C1, kein harter Cutoff)', () => {
 	const { root, pieces } = compiledRoot({
 		base: 2,
 		depth: 8,
@@ -251,40 +254,37 @@ test('Teil D: Blatt bleibt bis einschließlich taken_time voll, danach C1 weich 
 	let leaf = pieces.find((p) => p.children.length === 0 && isFinite(p.taken_time));
 	assert.ok(leaf, 'es muss ein entnommenes Blatt geben');
 
-	// bei GENAU taken_time: volle Design-Größe (inklusive Grenze)
+	// bei GENAU taken_time: volle Design-Größe, NOCH gezeichnet (inklusive Grenze)
 	let outAt = [];
 	let sizeAt = layoutBox(leaf, leaf.taken_time, 0, 0, outAt);
-	assert.equal(outAt.length, 1, 'bei GENAU taken_time noch sichtbar');
+	assert.equal(outAt.length, 1, 'bei GENAU taken_time noch gezeichnet');
 	assert.ok(Math.abs(sizeAt.w - leaf.w) < 1e-9 && Math.abs(sizeAt.h - leaf.h) < 1e-9);
 
-	// unmittelbar danach (noch in der Hold-Phase): IMMER NOCH volle Größe,
-	// NICHT hart auf 0 gesprungen.
+	// unmittelbar danach (noch in der Hold-Phase): NICHT mehr gezeichnet,
+	// aber die reservierte Slot-Größe bleibt voll (Luecke sichtbar).
 	let holdT = (leaf.taken_time + leaf.gapHoldEnd_u) / 2;
 	let outHold = [];
 	let sizeHold = layoutBox(leaf, holdT, 0, 0, outHold);
-	assert.equal(outHold.length, 1, 'in der Hold-Phase noch sichtbar');
+	assert.equal(outHold.length, 0, 'ab t > taken_time nicht mehr gezeichnet');
 	assert.ok(
 		Math.abs(sizeHold.w - leaf.w) < 1e-9 && Math.abs(sizeHold.h - leaf.h) < 1e-9,
-		'Hold-Phase: volle Größe',
+		'Hold-Phase: reservierte Slot-Größe voll (Luecke sichtbar)',
 	);
 
-	// bei te (exakt): vollständig verschwunden
-	let outTe = [];
-	layoutBox(leaf, leaf.te, 0, 0, outTe);
-	assert.equal(outTe.length, 0, 'bei te vollständig verschwunden');
+	// bei te (exakt): Slot vollständig geschlossen (Größe 0)
+	let sizeTe = layoutBox(leaf, leaf.te, 0, 0).w;
+	assert.ok(sizeTe < 1e-9, 'bei te Slot-Größe 0 (Luecke geschlossen)');
 
-	// C1: feines Sampling über [gapHoldEnd_u, te] darf keinen harten
-	// Einzelsprung zeigen (Schritt << Blatt-Eigenfläche).
+	// C1: feines Sampling der reservierten Slot-Größe über [gapHoldEnd_u, te]
+	// darf keinen harten Einzelsprung zeigen (Schritt << Blatt-Eigenfläche).
 	let prev = null;
 	let maxStep = 0;
 	const M = 4000;
 	for (let i = 0; i <= M; i++) {
 		let t = leaf.gapHoldEnd_u + (leaf.te - leaf.gapHoldEnd_u) * (i / M);
-		let out = [];
-		let s = layoutBox(leaf, t, 0, 0, out);
-		let area = out.length ? out[0].w * out[0].h : 0;
-		if (prev !== null) maxStep = Math.max(maxStep, Math.abs(area - prev));
-		prev = area;
+		let s = layoutBox(leaf, t, 0, 0).w * layoutBox(leaf, t, 0, 0).h;
+		if (prev !== null) maxStep = Math.max(maxStep, Math.abs(s - prev));
+		prev = s;
 	}
 	assert.ok(maxStep < leaf.w * leaf.h * 0.05, `C1-kleiner Schritt: ${maxStep.toExponential(2)}`);
 });
@@ -478,16 +478,23 @@ test('BUG-FIX: entnommenes Blatt bleibt voll bis gapHoldEnd_u, dann C1 -> 0 bei 
 	let leaf = pieces.find((p) => p.children.length === 0 && isFinite(p.taken_time));
 	assert.ok(leaf, 'es muss ein entnommenes Blatt geben');
 	let rTaken = findRect(root, leaf.taken_time, leaf.id);
-	let rHold = findRect(root, leaf.gapHoldEnd_u, leaf.id);
+	// bei gapHoldEnd_u (Hold-Phase) wird das Blatt NICHT mehr gezeichnet,
+	// aber die reservierte Slot-Größe bleibt voll (Luecke sichtbar).
+	let sizeHold = layoutBox(leaf, leaf.gapHoldEnd_u, 0, 0).w;
 	let rTe = findRect(root, leaf.te, leaf.id);
-	// volle Design-Größe bei taken_time UND bei gapHoldEnd_u (Hold-Phase)
+	// volle Design-Größe bei taken_time (noch gezeichnet)
 	assert.ok(
 		Math.abs(rTaken.w - leaf.w) < 1e-9 && Math.abs(rTaken.h - leaf.h) < 1e-9,
 		'volle Größe bei taken_time',
 	);
+	// reservierte Slot-Größe bei gapHoldEnd_u voll (Blatt selbst nicht gezeichnet)
 	assert.ok(
-		Math.abs(rHold.w - leaf.w) < 1e-9 && Math.abs(rHold.h - leaf.h) < 1e-9,
-		'volle Größe bei gapHoldEnd_u (Hold-Phase)',
+		Math.abs(sizeHold - leaf.w) < 1e-9,
+		'reservierte Slot-Größe voll bei gapHoldEnd_u (Luecke sichtbar, Teil nicht gezeichnet)',
+	);
+	assert.ok(
+		findRect(root, leaf.gapHoldEnd_u, leaf.id) === null,
+		'ab t>taken_time nicht mehr gezeichnet',
 	);
 	// bei te (exakt) ist das Stück verschwunden
 	assert.ok(rTe === null || rTe.w * rTe.h < 1e-9, 'bei te unsichtbar (0)');
@@ -511,17 +518,17 @@ test('BUG-FIX: Blatt-Exit ist C1 (kein harter Sprung) über [taken_time, te]', (
 	});
 	let leaf = pieces.find((p) => p.children.length === 0 && isFinite(p.taken_time));
 	assert.ok(leaf, 'es muss ein entnommenes Blatt geben');
-	// feines Sampling der Blatt-Fläche über die Exit-Phase, max Schritt muss
-	// winzig sein (C1), nicht der flare C0-Sprung auf 0.
+	// feines Sampling der RESERVIERTEN Slot-Fläche über die Exit-Phase
+	// (das Blatt selbst wird ab t>taken_time nicht mehr gezeichnet, siehe
+	// layoutBox) - die Slot-Größe muss C1 schrumpfen, kein flare C0-Sprung.
 	let prev = null;
 	let maxStep = 0;
 	const M = 8000;
-	const a = leaf.taken_time;
+	const a = leaf.gapHoldEnd_u;
 	const b = leaf.te;
 	for (let i = 0; i <= M; i++) {
 		let t = a + (b - a) * (i / M);
-		let r = findRect(root, t, leaf.id);
-		let area = r ? r.w * r.h : 0;
+		let area = layoutBox(leaf, t, 0, 0).w * layoutBox(leaf, t, 0, 0).h;
 		if (prev !== null) maxStep = Math.max(maxStep, Math.abs(area - prev));
 		prev = area;
 	}
@@ -529,6 +536,6 @@ test('BUG-FIX: Blatt-Exit ist C1 (kein harter Sprung) über [taken_time, te]', (
 	// Sprung erzeugen würde), dafür groß genug über Rauschen.
 	assert.ok(
 		maxStep < leaf.w * leaf.h * 0.05,
-		`max Blatt-Flächen-Schritt über Exit-Phase C1-klein: ${maxStep.toExponential(2)} (Blattfläche ${leaf.w * leaf.h})`,
+		`max Slot-Flächen-Schritt über Exit-Phase C1-klein: ${maxStep.toExponential(2)} (Blattfläche ${leaf.w * leaf.h})`,
 	);
 });

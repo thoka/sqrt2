@@ -127,10 +127,19 @@ export function layoutBox(piece, t, originX, originY, out, stats, depth = 0) {
 		let { w, h } = leafEffectiveSize(piece, t);
 		if (w <= 0 || h <= 0) return { w: 0, h: 0, mass: 0, momentX: 0, momentY: 0 };
 		let mass = w * h;
-		// leafEffectiveSize liefert ab taken_time bereits Groesse 0 (sichtbarer
-		// Rest endet bei taken_time, synchron zum alten Rest-Modell). Die
-		// Bank zeichnet das Stueck also ab taken_time nicht mehr.
-		if (out) out.push({ piece, x: originX, y: originY, w, h });
+		// TEIL D (REST-PRECISION-PLAN): Reservierte Slot-Groesse (w/h) wird
+		// IMMER geliefert (treibt den Parent-Cursor + Masse), damit die Luecke
+		// sichtbar BLEIBT und sich ueber [gapHoldEnd_u, te] C1 schliesst
+		// (Nachbarn ruecken weich nach - kein C0-Ruckeln). ABER: das Stueck
+		// SELBST wird nur bis taken_time gezeichnet (inklusive Grenze, siehe
+		// unten) - ab t > taken_time ist es "entnommen", die Rest-Zaehlung
+		// (computeLiveL, Filter `t <= taken_time`) hat es dann schon
+		// ausgeblendet. Also: Luecke sichtbar, Teil nicht mehr gezeichnet.
+		// INKLUSIVE Grenze `t <= taken_time` (nicht `<`): bei GENAU
+		// taken_time muss das Stueck noch gezeichnet werden - flightQueryTime
+		// fragt gewoehnliche Blaetter exakt taken_time ab (bankOriginState()),
+		// sonst startet die Flug-Animation bei (0,0).
+		if (out && t <= piece.taken_time) out.push({ piece, x: originX, y: originY, w, h });
 		return { w, h, mass, momentX: mass * (originX + w / 2), momentY: mass * (originY + h / 2) };
 	}
 
