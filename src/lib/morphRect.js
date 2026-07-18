@@ -31,8 +31,7 @@ export function morphRect(sw, sh, ew, eh, t, rotWeight) {
 	let ts = t;
 	if (!(ts > 0)) ts = 0;
 	if (ts > 1) ts = 1;
-	// smoothstep für weiches Ein/Aus (C1, passt zur Zeit-Glättung)
-	ts = ts * ts * (3 - 2 * ts);
+	// KEIN interner smoothstep - der Render-Pfad (fly_t) glättet bereits.
 
 	const A0 = sw * sh;
 	const A1 = ew * eh;
@@ -62,11 +61,13 @@ export function morphRect(sw, sh, ew, eh, t, rotWeight) {
 	const ph = Math.sqrt(Math.max(1e-12, A / rMix));
 	const pw = A / ph;
 
-	// Drehwinkel nur, wenn rho > 0; kürzester Weg (max ±90°)
+	// Drehwinkel nur, wenn rho > 0; transient (0 bei Start/Ankommen,
+	// Peak bei Mitte) - das Stück kommt achsen-aligned am Ziel an.
 	let rot = 0;
 	if (rho > 1e-9) {
-		const dir = rtRot >= rs ? 1 : -1; // Vorzeichen des kürzesten Wegs
-		rot = (Math.PI / 2) * rho * dir * ts; // ts bereits smoothstep
+		const dir = rtRot >= rs ? 1 : -1;
+		// 4*sin(pi*t) ist 0 bei t=0 und t=1, Peak 1 bei t=0.5
+		rot = (Math.PI / 2) * rho * dir * 4 * ts * (1 - ts);
 	}
 	return { pw, ph, rot, rho };
 }
