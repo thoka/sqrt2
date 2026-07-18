@@ -31,13 +31,24 @@
 //                                              leafEffectiveSize()).
 // ============================================================================
 
-// Blatt-Exit (User-Invariante, siehe REST-PRECISION-PLAN Teil D + DEBUG-
-// INSPECT-SPEC.md "Nächster Schritt" Punkt 3): sichtbarer Rest endet HART bei
-// taken_time - kein Ease-Out mehr (ein früherer Versuch mit sanftem
-// Ausblenden bis `te` brachte laut Debug-Kanal-Messung keine Verbesserung der
-// Bank/Rest-Drift, die Diskrepanz sitzt in der Compiler-Zeitgebung, nicht in
-// diesem Layout). Ein Stück, das NIE entnommen wurde (taken_time=Infinity),
-// bleibt für immer bei designter Größe - das IST der sichtbare Rest.
+// Blatt-Exit (siehe docs/INTERFACE-TODO.md "BUG: Lücke hart ausblenden"):
+// die Sichtbarkeit wird bei taken_time AUSGESCHALTET, ABER die Lücke (das
+// Rechteck) soll WEICH VERSCHWINDEN - ein C1-Ease-Out, KEIN harter C0-
+// Sprung (das wäre ein echter Bug und nicht spezifikationsgemäß). ZWEI
+// Phasen, abgeleitet aus den Stück-Feldern (beide in u_time, s.
+// finalizeCompiled() in compiler.js):
+//   Hold   : t <= taken_time              -> volle Design-Größe
+//             taken_time < t <= gapHoldEnd_u -> volle Größe (Lücke bleibt)
+//   Compact: gapHoldEnd_u < t < te        -> C1-Ease volle Größe -> 0
+//             t >= te                        -> 0 (unsichtbar)
+// Die Phasengrenzen: taken_time (u_time) und te = taken_time + gapHoldTicks
+// + transitionTicks (u_time). gapHoldEnd_u = taken_time + gapHoldTicks
+// (u_time) ist der Knoten zwischen Hold und Compact - in finalizeCompiled()
+// aus dem Tick-Raum berechnet und am Stück als `gapHoldEnd_u` abgelegt.
+// C1-Stetigkeit: die Compact-Phase nutzt smoothstep s*s*(3-2s) (Ableitung
+// 0 an BEIDEN Enden), daher kein Kink bei gapHoldEnd_u (volle Größe,
+// Steigung 0) UND kein Kink bei te (0, Steigung 0). Damit ist die ganze
+// Exit-Kurve C1 - entspricht CLAUDE.md "stetige Ableitung".
 // GRENZE INKLUSIV (`t <= taken_time`, nicht `<`): ein entnommenes Blatt ist
 // bei GENAU taken_time noch in Design-Größe sichtbar (siehe Kommentar oben
 // an bankOriginState() in TargetBankCanvas.svelte: `flightQueryTime` fragt
@@ -51,11 +62,39 @@
 // inklusive Grenze verwenden, sonst bricht das Testkriterium "Bank-Zähler
 // == Bank-Visualisierung" exakt in diesem einen Zeitpunkt (z.B. per
 // Tick-Sprung erreichbar, siehe ControlPanel.svelte tickToTime()).
+
+// EINMAL definierter Interpolator für den Lücke->0-Übergang:
+// Eingabe s = normierter Fortschritt DURCH die Compact-Phase
+// (s=0 bei Compact-Beginn/gapHoldEnd_u, s=1 bei te), Ausgabe der
+// ease-Faktor. Reine smoothstep (C1, Ableitung 0 an BEIDEN Enden ->
+// keine Kinks bei gapHoldEnd_u noch bei te). Die Phasengrenzen
+// (taken_time, gapHoldEnd_u, te) werden draußen frei skaliert/verschoben
+// (s. leafEffectiveSize) - der Interpolator SELBST wird nicht neu
+// berechnet, nur seine (skalierte) Eingabe s.
+export function gapEase(s) {
+	if (s <= 0) return 0;
+	if (s >= 1) return 1;
+	return s * s * (3.0 - 2.0 * s);
+}
+
 function leafEffectiveSize(piece, t) {
 	if (!isFinite(piece.taken_time) || t <= piece.taken_time) {
 		return { w: piece.w, h: piece.h };
 	}
-	return { w: 0, h: 0 };
+	// Nie entnommen (gapHoldEnd_u/te = Infinity) -> bleibt für immer sichtbar.
+	if (!isFinite(piece.gapHoldEnd_u) || !isFinite(piece.te)) {
+		return { w: piece.w, h: piece.h };
+	}
+	// Hold-Phase: Lücke bleibt bei voller Größe.
+	if (t <= piece.gapHoldEnd_u) return { w: piece.w, h: piece.h };
+	// Compact-Phase: C1-Ease volle Größe -> 0 (smoothstep, keine Kinks).
+	// Eingabe an den Interpolator ist der SKALIERTE Fortschritt
+	// s = (t - gapHoldEnd_u) / (te - gapHoldEnd_u) ∈ [0,1].
+	if (t >= piece.te) return { w: 0, h: 0 };
+	let span = piece.te - piece.gapHoldEnd_u;
+	let s = span > 1e-12 ? (t - piece.gapHoldEnd_u) / span : 1;
+	let k = 1.0 - gapEase(s);
+	return { w: piece.w * k, h: piece.h * k };
 }
 
 // Top-down-Rekursion: der Abstieg IST der Walk (siehe Datei-Kopfkommentar).
@@ -71,7 +110,7 @@ export function layoutBox(piece, t, originX, originY, out, stats, depth = 0) {
 	}
 
 	// GRENZE INKLUSIV (`t > te`, nicht `>=`): `te` ist stets >= taken_time
-	// (te = taken_time + delaySnapshot + transitionTicks, siehe bank-core.js).
+	// (te = taken_time + gapHoldTicks + transitionTicks, siehe bank-core.js).
 	// Fallen beide durch eine tick->time-Plateau (mehrere Ticks auf denselben
 	// Zeitpunkt gemappt, siehe buildTickTimeMapping) exakt zusammen (te ===
 	// taken_time), muss dieser äußere Bulk-Prune-Check bei GENAU diesem

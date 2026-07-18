@@ -391,6 +391,9 @@ export function finalizeCompiled(data) {
 	const CUT_BORN_LEAD = 0.1;
 	let ttm = buildTickTimeMapping(tickTimePairs);
 	for (let p of bank_pieces) {
+		// Roh-Tick von taken_time fangen, BEVOR die Umrechnung ihn
+		// überschreibt - brauchen ihn für gapHoldEnd_u (s.u.).
+		let takenTick = p.taken_time;
 		p.taken_time = isFinite(p.taken_time) ? ttm.tickToTime(p.taken_time) : Infinity;
 		p.cut_time = isFinite(p.cut_time) ? ttm.tickToTime(p.cut_time) - CUT_BORN_LEAD : Infinity;
 		p.born_time = p.born_time === 0 ? 0 : ttm.tickToTime(p.born_time) - CUT_BORN_LEAD;
@@ -400,6 +403,19 @@ export function finalizeCompiled(data) {
 		// Render-Pfad ausgewertet wird (kein separates Zeit-Mapping nötig,
 		// siehe REST-PRECISION-PLAN Teil D "Zeitachse").
 		p.te = isFinite(p.te) ? ttm.tickToTime(p.te) : Infinity;
+		// BUG-FIX (s. docs/INTERFACE-TODO.md "hartes Ausblenden"): die Lücke
+		// soll nicht hart bei taken_time auf 0 springen, sondern C1-ausblenden.
+		// ZWEI Phasen (beide in Tick-Raum, s. bank-core.js gapCloseDelayTicks/
+		// transitionTicks):
+		//   Hold : [taken_time, taken_time + gapHoldTicks]  -> volle Größe
+		//   Compact: [taken_time + gapHoldTicks, te]            -> C1 -> 0
+		// gapHoldEnd_u ist der u_time-Knoten zwischen den beiden Phasen
+		// (abgeleitet, KEIN neuer Config-Parameter). Bei nie-entnommenen
+		// Stücken (taken_time=Infinity / gapHoldTicks=null) bleibt er Infinity.
+		p.gapHoldEnd_u =
+			isFinite(takenTick) && p.gapHoldTicks != null
+				? ttm.tickToTime(takenTick + p.gapHoldTicks)
+				: Infinity;
 		// PERFORMANCE-FIX (REST-PRECISION-PLAN, Stand 2026-07-17): additiv, der
 		// Zeitpunkt, an dem TargetBankCanvas.svelte die Herkunfts-Position
 		// dieses Stücks für die Flug-Animation einfrieren soll - EINMAL hier

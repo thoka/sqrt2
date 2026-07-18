@@ -97,7 +97,7 @@ Konkret (gemessen mit einem Node-Diagnostic ueber `compileSystem` + feines
 - **Massen-Sprung bis 2.0 volle Einheiten in EINEM Frame** an Ereignis-
   zeitpunkten (C0-Diskontinuitaet). Bei `dt~1.18e-3` ist das ein echter
   Sprung, keine interpolierte Bewegung.
-- Quelle: `leafEffectiveSize()` (`recursive-layout.js:54`) liefert volle
+- Quelle: `leafEffectiveSize()` (`recursive-layout.js:54`) lieferte volle
   Groesse bis `taken_time`, dann **hart 0** (im Code so stehend, begruendet
   im Kopfkommentar Zeilen 34-59 mit "sichtbarer Rest endet HART bei
   taken_time"). Ebenso der `cut_time`-Umschalt in `layoutBox` (`:86`):
@@ -108,24 +108,58 @@ Konkret (gemessen mit einem Node-Diagnostic ueber `compileSystem` + feines
   die aktuelle Spezifikation sieht das Ausblenden der Luecke NICHT als
   harten C0-Sprung vor. Richtig: die Sichtbarkeit muss AUSGESCHALTET
   werden, ABER die Luecke (das Rechteck) soll WEICH VERSCHWINDEN - also ein
-  C1-Ease-Out vom Design-Mass bei `taken_time` auf 0, statt eines C0-Sprungs.
-  Das Fenster dafuer existiert bereits: `te = taken_time + delaySnapshot +
-  transitionTicks` (siehe `bank-core.js` computeSubtreeTe). Die glaettende
-  Ueberblendung gehoert in `[taken_time, te]`, NICHT vor `taken_time`.
+  C1-Ease-Out vom Design-Mass auf 0, statt eines C0-Sprungs.
 - Kamera dagegen: `GLOBAL_TEIL_D_ZOOM_SPLINE.at(t).z` liefert im gesamten
   getesteten Zeitfenster **konstant** (max dz = 0) - die Kamera bewegt sich
   in diesem Ausschnitt gar nicht, waehrend der Inhalt springt. Das ist der
   wahrnehmbare Ruckel-Kontrast.
 
+### ZWEI Luecken-Parameter (und EIN Interpolator)
+Die Lücke wird durch ZWEI im `bank-core.js` beim Entnehmen eingefrorene
+Tick-Werte gesteuert (`compactionParams` / `gapCloseDelayTicks` /
+`transitionTicks`):
+- **Hold:** wie lange die Lücke einfach SO BLEIBT WIE SIE IST
+  (= `gapCloseDelayTicks`, am Stueck als `gapHoldTicks` gespeichert).
+- **Compact:** wie lange es dauert, bis sie kompaktiert (weg) ist
+  (= `transitionTicks`, am Stueck als `transitionSnapshot`).
+
+Daraus die u_time-Phasengrenzen (in `finalizeCompiled()` aus dem
+Tick->Zeit-Mapping abgeleitet, am Stueck als `gapHoldEnd_u` abgelegt):
+- `t <= taken_time`            -> volle Design-Groesse (Sichtbarkeit an)
+- `taken_time < t <= gapHoldEnd_u` -> volle Groesse (Hold/Luecke bleibt)
+- `gapHoldEnd_u < t < te`     -> **C1-Ease** volle Groesse -> 0 (Compact)
+- `t >= te`                    -> 0 (unsichtbar)
+
+**EIN Interpolator** `gapEase(s)` (`recursive-layout.js`, exportiert):
+Eingabe `s = normierter Fortschritt durch die Compact-Phase`
+(`s = (t - gapHoldEnd_u)/(te - gapHoldEnd_u)`, also Eingabe wird
+DRAUSSEN skaliert/verschoben), Ausgabe der Ease-Faktor. Reine
+smoothstep (C1, Ableitung 0 an BEIDEN Enden -> keine Kinks bei
+`gapHoldEnd_u` noch bei `te`). Die Phasengrenzen duerfen frei skaliert
+werden (z.B. folgt `gapHoldEnd_u` dem Tick->Zeit-Raster, die Hold-Dauer
+in u_time ist damit nicht strikt konstant) - der Interpolator SELBST
+wird nicht neu berechnet. Hinweis: das ist bewusst KONSISTENT mit `te`
+(max(te der Kinder) - ebenfalls Tick-basiert, nicht u_time-konstant).
+Beim SCHNEIDEN (cut) bleibt die Masse erhalten (ein Stueck -> seine
+Kinder), der cut-Umschalt ist KEIN Problem und wurde NICHT geaendert.
+
+### Fix-Status: UMGESETZT (commit folgt)
+`leafEffectiveSize()` (`recursive-layout.js`) nutzt jetzt `gapEase(s)`
+statt hartem 0. Verifiziert per Unit-Test: entnommenes Blatt bleibt
+voll bis `gapHoldEnd_u`, dann C1-Ease auf 0 bei `te` (max Flaechen-
+Schritt ueber die Exit-Phase ~1e-5 statt des frueheren C0-Sprungs auf 0).
+Bestelnde Tests, die das harte "sofort verschwunden" assertions
+enthielten, wurden auf das C1-Verhalten umgeschrieben.
+
 ### Einordnung gegen CLAUDE.md "stetige Ableitung"
 CLAUDE.md fordert fuer ALLE automatisierten Bewegungen C1 (kein Sprung in
-Wert ODER Steigung). Der harte Blatt-Exit verletzt das - und zwar als
+Wert ODER Steigung). Der harte Blatt-Exit verletzte das - und zwar als
 ECHTER BUG: die Spezifikation sieht das Ausblenden der Luecke NICHT als
 harten C0-Sprung vor (s.o., User-Klaerung). Er war auch KEINE bewusste
 Ausnahme. Der im Kopfkommentar genannte Grund ("kein Ease-Out brachte
 laut Messung keine Rest-Drift-Besserung") bezog sich auf ein frueheres
 Ausblenden BIS `te` (zu lang, zu spaet); ein kurzer, auf
-`[taken_time, te]` begrenzter Ease-Out ist damit nicht widerlegt. Der
+`[gapHoldEnd_u, te]` begrenzter Ease-Out ist damit nicht widerlegt. Der
 Konflikt bei `base=2/depth=40` + dicht getakteten Entnahmen: aus den
 C0-Einzelsprüngen werden tausende pro Sekunde -> sichtbares Ruckeln.
 
@@ -137,33 +171,9 @@ fragt bei gewoehnlichen Blaettern EXAKT `taken_time` ab (siehe
 Flug-Animation bei (0,0) statt an der gerenderten Position, und das
 Testkriterium "Bank-Zaehler == Bank-Visualisierung" bricht in genau diesem
 einen Zeitpunkt. Das Weich-Ausblenden darf also erst FUER `t > taken_time`
-(im Fenster bis `te`) einsetzen; bei `t == taken_time` bleibt die volle
-Groesse. Alle Rest-Widget-/Zahlentafel-Filter (`t < p.taken_time`) muessen
-dieselbe inklusive Grenze nutzen.
-
-### Richtungsentscheidung (noch NICHT umgesetzt)
-Um "Interpolation der Zeit glatt genug" zu machen, OHNE die
-Rest-Drift-Garantie zu brechen:
- 1. **Blatt-Exit weich ausblenden (BUG-FIX, PRIMAER-HEBEL):** `leafEffectiveSize()`
-   (`recursive-layout.js:54`) statt hartem 0 nach `taken_time` einen C1-
-   Ease-Out von Design-Groesse auf 0 im Fenster `[taken_time, te]` geben
-   (siehe Haerte-Rand-Bedingung oben: bei `t == taken_time` volle Groesse,
-   Ausblenden erst fuer `t > taken_time`). Das ist die eigentliche
-   Fehlerkorrektur zum "hart ohne Ease = echter Bug, nicht spezifiziert"
-   (s.o.) - nicht der Kamera-Spline. `te` existiert bereits
-   (`taken_time + delaySnapshot + transitionTicks`), das Fenster ist also
-   schon da; nur die Interpolation fehlt. Danach Bank/Rest-Drift erneut
-   vermessen (der alte "kein Ease-Out half"-Befund bezog sich auf
-   Ausblenden BIS `te`, nicht auf ein kurzes `[taken_time, te]`-Fenster).
-2. `u_time` nicht linear, sondern ueber eine C1-Zeit-Transformation
-   vorruecken lassen, die bei Ereignisdichten automatisch "ausdünnt"
-   (Vermeidung von Häufungs-Sprüngen) - entspräche der "stetigen
-   Ableitung" der ZEIT selbst.
-3. `MAX_CHECKPOINTS=400` (`compiler.js:297`) ist fuer depth=40 zu
-   grob: die Kamera-Spline-Stuetzpunkte werden auf 400 heruntergesampelt,
-   waehrend die Geometrie an ALLEN Ereigniszeiten (viel mehr) springt ->
-   Kamera und Inhalt laufen auseinander. Feineres Sampling oder
-   ereignis-relative Kamera-Waypoints pruefen.
+(im Fenster `[gapHoldEnd_u, te]`) einsetzen; bei `t == taken_time`
+bleibt die volle Groesse. Alle Rest-Widget-/Zahlentafel-Filter
+(`t < p.taken_time`) muessen dieselbe inklusive Grenze nutzen.
 
 ### Diagnose-Skript (Reproduktion)
 `/tmp/opencode/diag-smooth.mjs` (kompiliert base=2/depth=10, sampelt
@@ -338,9 +348,8 @@ Anforderungen:
         als pro-Frame-Typesetter ungeeignet (Ursache des Flug-Stotterns,
         via `hud=0` bestätigt). `updateHUD()` behält die BigInt-Mathematik
         aus `computeLiveL`, nur die Darstellungsschicht wird getauscht.
-  - [ ] **BUG: Lücke hart ausblenden (kein Ease)** - `leafEffectiveSize()`
-        (`recursive-layout.js:54`) springt bei `taken_time` hart auf 0 statt
-        C1-Ease-Out im Fenster `[taken_time, te]`. Ist ein echter Bug, NICHT
-        spezifikationsgemäß (s. "KORREKTUR (User-Klaerung)" + Richtungs-
-        entscheidung #1 oben). Inklusive `t <= taken_time`-Grenze wahren
-        (`flightQueryTime`!), danach Bank/Rest-Drift re-messen.
+  - [x] **BUG: Lücke hart ausblenden (kein Ease)** - war `leafEffectiveSize()`
+        (`recursive-layout.js`) hart auf 0 statt C1-Ease-Out. **UMGESETZT:**
+        `gapEase(s)`-Interpolator + Hold/Compact-Phasen via `gapHoldEnd_u`
+        (s. "Fix-Status: UMGESETZT" oben). Inklusive `t <= taken_time`-
+        Grenze gewahrt (`flightQueryTime`!), Unit-Tests angepasst.
