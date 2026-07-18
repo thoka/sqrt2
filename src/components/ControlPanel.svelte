@@ -64,11 +64,14 @@
 	}
 
 	// Logarithmischer Schieberegler fuer die Auto-Zoom-Mindestpixelgroesse
-	// (autoZoomMinPx): Bereich 0.01 .. 100 px. Position t in [0,1]
+	// (autoZoomMinPx): Bereich 0.001 .. 100 px. Position t in [0,1]
 	// <-> Wert v = MINPX_LO * (MINPX_HI/MINPX_LO)^t.
-	const MINPX_LO = 0.01;
+	// Ganz nach links (v < 1.5 * MINPX_LO) wird effektiv auf 0 gesetzt,
+	// was den Auto-Zoom deaktiviert (AUTO_ZOOM_MIN_PX <= 0 im Canvas).
+	const MINPX_LO = 0.001;
 	const MINPX_HI = 100;
 	const MINPX_SPAN = Math.log(MINPX_HI / MINPX_LO);
+	const MINPX_EFF_ZERO = 1.5 * MINPX_LO;
 	let minPxPos = $state(0.5);
 	$effect(() => {
 		const v = $configStore.autoZoomMinPx;
@@ -78,6 +81,7 @@
 	function onMinPxInput(e) {
 		let t = parseFloat(e.target.value);
 		let v = MINPX_LO * Math.exp(t * MINPX_SPAN);
+		if (v < MINPX_EFF_ZERO) v = 0;
 		configStore.update((c) => ({ ...c, autoZoomMinPx: v }));
 	}
 	function onChangeChecked(field) {
