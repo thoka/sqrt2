@@ -26,7 +26,7 @@
 	import { computeLiveL } from '../lib/compiler.js';
 	import { formatLiveNumbers } from '../lib/numberRenderer.js';
 	import { clampDt } from '../lib/timeStep.js';
-	import { morphRect } from '../lib/morphRect.js';
+	import { morphRect, computeRotation, rotationAngle } from '../lib/morphRect.js';
 	import {
 		setDebugCanvas,
 		setDebugFrame,
@@ -520,11 +520,19 @@
 				ph = start_h * (1 - fly_t) + end_h * fly_t;
 				rot = 0;
 			} else {
-				let m = morphRect(start_w, start_h, end_w, end_h, fly_t, MORPH_ROT_WEIGHT);
+				// Rotation aus LOGISCHEN Dimensionen (zoom-unabhängig),
+				// Form aus SCREEN-SPACE Dimensionen.
+				let cr = computeRotation(
+					origin?.rect?.w ?? start_w,
+					origin?.rect?.h ?? start_h,
+					target_w,
+					target_h,
+					MORPH_ROT_WEIGHT,
+				);
+				let m = morphRect(start_w, start_h, end_w, end_h, fly_t, cr.rho, cr.dir);
 				pw = m.pw;
 				ph = m.ph;
-				// Morph-Drehung additiv zur evtl. vorhandenen Makro-Rotation.
-				rot = m.rot + (p.rot || 0) * fly_t;
+				rot = rotationAngle(cr, fly_t) + (p.rot || 0) * fly_t;
 			}
 
 			// Einheitlicher Zeichenpfad fuer alle Flug-Typen: zentriert +

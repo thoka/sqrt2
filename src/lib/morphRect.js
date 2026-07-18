@@ -8,6 +8,10 @@
 //   - optional eine 90°-DREHUNG eingemischt (statt/zu-samt Streckung),
 //     damit Format-Wechsel wie 1:b -> b:1 ohne Verzerrung gelöst werden.
 //
+// WICHTIG: rho/rot werden aus den LOGISCHEN Dimensionen berechnet
+// (zoom-unabhängig), pw/ph aus den Screen-Space Dimensionen.
+// Sonst ändert sich der Rotationswinkel mit dem Zoom.
+//
 // Alles ist eine reine Funktion (kein DOM/Store) - Unit-getestet.
 
 function logRatio(w, h) {
@@ -15,17 +19,35 @@ function logRatio(w, h) {
 	return Math.log(w / h);
 }
 
-// morphRect: liefert die gezeichnette Form (pw, ph) und den Drehwinkel
-// (in Radian) eines fliegenden Stücks zum Phasenparameter t in [0,1].
+// computeRotation: berechnet rho und rot aus logischen Dimensionen.
+// Wird vom Render-Pfad aufgerufen, bevor morphRect die Screen-Space
+// Form berechnet.
+export function computeRotation(logSw, logSh, logEw, logEh, rotWeight) {
+	const rs = logRatio(logSw, logSh);
+	const rt = logRatio(logEw, logEh);
+	const rtRot = logRatio(logEh, logEw);
+	const e_s = Math.abs(rs - rt);
+	const e_r = Math.abs(rs - rtRot);
+	const g = Math.max(0, e_s - e_r);
+	let rho = 0;
+	if (e_s > 1e-9) rho = Math.min(1, Math.max(0, (rotWeight * g) / e_s));
+	const dir = rtRot >= rs ? 1 : -1;
+	return { rho, dir, rs, rt, rtRot };
+}
+
+// morphRect: liefert die gezeichnete Form (pw, ph) eines fliegenden
+// Stücks zum Phasenparameter t in [0,1].
 //
-//   sw, sh : Start-Breite/-Höhe (Bank-Herkunft)
-//   ew, eh : Ziel-Breite/-Höhe (Zell-Ziel)
+//   sw, sh : Screen-Space Start-Breite/-Höhe
+//   ew, eh : Screen-Space Ziel-Breite/-Höhe
 //   t      : geglätteter Phasenparameter [0,1] (smoothstep bereits draußen)
-//   rotWeight : 0..1 - wie stark Drehung der Streckung vorgezogen wird
+//   rho    : effektiver Dreh-Anteil 0..1 (aus computeRotation)
+//   dir    : Drehrichtung +1/-1 (aus computeRotation)
+//   rotWeight : 0..1 (nur für rTarget-Mischung, NICHT für rho-Berechnung)
 //
 // Invariante: pw * ph == A(t) exakt (Fläche folgt glatt A0->A1, kein
 // Pulsieren). Bei A0 == A1 ist die Fläche exakt konstant.
-export function morphRect(sw, sh, ew, eh, t, rotWeight) {
+export function morphRect(sw, sh, ew, eh, t, rho, dir) {
 	// t in [0,1] klemmen (t=0 und t=1 müssen erhalten bleiben - daher
 	// KEIN clampDt aus timeStep, das dt=0 auf maxDt umdeutet).
 	let ts = t;
@@ -36,24 +58,13 @@ export function morphRect(sw, sh, ew, eh, t, rotWeight) {
 	const A0 = sw * sh;
 	const A1 = ew * eh;
 
-	const rs = logRatio(sw, sh); // Start-Seitenverhältnis (log)
-	const rt = logRatio(ew, eh); // Ziel-Seitenverhältnis (log)
-	const rtRot = logRatio(eh, ew); // Ziel-Seitenverhältnis bei 90° Drehung (log)
-
-	// Verzerrung (Seitenverhältnis-Differenz im log-Raum)
-	const e_s = Math.abs(rs - rt); // reine Streckung
-	const e_r = Math.abs(rs - rtRot); // 90°-Dreh-Ziel
-	const g = Math.max(0, e_s - e_r); // wieviel Verzerrung Drehung spart
-
-	// Effektiver Dreh-Anteil 0..1. Bei Quadrat-Start (rs==0, also e_s==e_r,
-	// g==0) wird nicht gedreht - Drehung sinnfrei bei sw==sh.
-	let rho = 0;
-	if (e_s > 1e-9) rho = Math.min(1, Math.max(0, (rotWeight * g) / e_s));
+	const rs = logRatio(sw, sh); // Start-Seitenverhältnis (log, screen)
+	const rt = logRatio(ew, eh); // Ziel-Seitenverhältnis (log, screen)
+	const rtRot = logRatio(eh, ew);
 
 	// Ziel-Seitenverhältnis: bei reiner Drehung bleibt die Form konstant
 	// (rtRot = gedrehte Ziel-Proportion), bei reiner Streckung wird zum
 	// Ziel gemorpht (rt). rho mischt linear dazwischen.
-	// Bei rho=1: Dimensionen = Startform, Canvas-Rotation übernimmt visuell.
 	const rTarget = rho * rtRot + (1 - rho) * rt;
 	// Fläche folgt glatt A0 -> A1
 	const A = A0 * (1 - ts) + A1 * ts;
@@ -63,12 +74,12 @@ export function morphRect(sw, sh, ew, eh, t, rotWeight) {
 	const ph = Math.sqrt(Math.max(1e-12, A / rMix));
 	const pw = A / ph;
 
-	// Drehwinkel: 0 bei Start -> ±90° beim Ankommen (monoton).
-	// Der Render-Pfad glättet fly_textern via smoothstep.
-	let rot = 0;
-	if (rho > 1e-9) {
-		const dir = rtRot >= rs ? 1 : -1;
-		rot = (Math.PI / 2) * rho * dir * ts;
-	}
-	return { pw, ph, rot, rho };
+	return { pw, ph };
+}
+
+// Rotationswinkel berechnen (aus logischen Dimensionen, zoom-unabhängig).
+// Aufruf im Render-Pfad: rot = rotationAngle(cr, ts)
+export function rotationAngle(cr, ts) {
+	if (cr.rho < 1e-9) return 0;
+	return (Math.PI / 2) * cr.rho * cr.dir * ts;
 }
