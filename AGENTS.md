@@ -114,7 +114,18 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
    `k`/Tiefe? (2) gibt es eine exakte, tiefenunabhängige Alternative
    (Integer-Zähler wie `k_v`/`k_h`, oder ist der Floor durch einen
    vorhandenen Guard ohnehin überflüssig)? Reine Divisionsketten (`w`/`h`
-   selbst) sind NICHT betroffen (präzise bis `k≈300` bei Basis 10).
+    selbst) sind NICHT betroffen (präzise bis `k≈300` bei Basis 10).
+10. **Recompile nur bei compile-relevanten Feldern:** `compileOrchestrator.js`
+    hat auf JEDE `configStore`-Änderung einen frischen Compile-Job
+    gestartet (`runJob`). Reine Laufzeit-Felder (`playSpeed`,
+    `autoZoomMinPx`, `lineWidth`, `pauseDuration`, `modeAB`) dürfen
+    KEINEN teuren Recompile auslösen. Fix: `compileOrchestrator`
+    vergleicht einen `compileRelevantKey` (base/depth/transformMode/
+    bankZoomThresholdPowers/zoomSpeedCoef/compactionEnabled/
+    compactionTransitionTicks) und startet den Job nur bei Änderung
+    eines dieser Felder. Beim Hinzufügen eines neuen config-Felds, das
+    den Compile beeinflusst: es in `compileRelevantKey` eintragen,
+    sonst wird es ignoriert (stiller Fehler).
 
 ## Stolpersteine (nur diese Sandbox)
 

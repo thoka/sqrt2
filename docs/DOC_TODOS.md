@@ -17,10 +17,10 @@
 
 ## Offen (Code-Hygiene, nicht dokumentiert)
 
-- [ ] **CODE: Toter Code in `sqrt2.html` entfernen** (Zeilen ~493–1000, ~930–976)
-  - SYSTEM-C-Renderblock: `renderFrame()`, `resizeCanvas()`, `getBankTransform()`, `getSmoothedAutoZoomExp()`, `computeAutoZoomTAB()`, `updateAutoZoomIndicator()`, `updateOutputs()`, `formatZoomFactor()`, Loop (`loop()`, `applyPlayback()`), Variablen (`isPlaying`, `u_time`, `u_mode_AB`, `AUTO_ZOOM_MIN_PX`, `RENDER_SCALE`, `EDGE_BLUR_PX`, `LINE_WIDTH_PX`, `ANIM_PAUSE_DURATION`, `ANIM_SPEED`, `ctx`, `canvas`, `bankZoomLabel`, `bankAreaLabel`, `autoZoomMarker`, `autoZoomNote`, `bankPanel`, `numberPanel`, `numberPanelInner`, `restGridPanel`)
-  - Auskommentierte Regler-Blöcke (renderScale, edgeBlur)
-  - Lebendiger Pfad ist `TargetBankCanvas.svelte` (Phase 4a)
+- [x] **CODE: Toter Code in `sqrt2.html` entfernen** — **obsolet:** `sqrt2.html`
+  existiert nicht mehr (Phase 7: Einstiegspunkt ist `index.html`, gesamte
+  Logik in `src/App.svelte` + Komponenten). Der lebendige Render-Pfad ist
+  `TargetBankCanvas.svelte`. Kein `sqrt2.html`-Aufräumen mehr nötig.
 
 - [ ] **CODE: `compiledStore.depth` Pitfall Test-Absicherung**
   - AGENTS.md GOTCHA #2 dokumentiert: `compiledStore` hat KEIN `depth`-Feld, `configStore.depth` (Alias N_MAX) nutzen
@@ -30,4 +30,4 @@
 
 - Widget-Auswahl-UI (bereits als `displayStore`-Select in `<ControlPanel>` vorhanden)
 - Admin-konfigurierbare Steuerungs-Komplexität (README Abschnitt 11)
-- Toter Code aufräumen (s.o.)
+- Phase 6 (Politur) weiter (siehe TOOLING_SPEC.md Phase 6)

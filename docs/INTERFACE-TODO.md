@@ -61,6 +61,16 @@ Lass uns die Einstellungen / die Remote-Steuerung aufräumen
      (base/depth/transformMode/bankZoomThresholdPowers/zoomSpeedCoef/
      compactionEnabled/compactionTransitionTicks) und startet den Job nur,
      wenn sich EIN solches Feld ändert.
+   - **Hauptfenster-Regler:** dezenter, schmaler Slider **rechts neben der
+     Timeline** in `#bottomBar`; **grauer** Knopf (nicht auffällig), mit
+     kleiner **numerischer Anzeige (2 Nachkommastellen, `xx,xx×`,
+     weiß/grau wie die Zeit-Angabe)** direkt dahinter.
+   - **Auto-Zoom Mindestpixelgröße:** war eine px-`number`-Eingabe, ist jetzt
+     ein **logarithmischer Schieberegler 0.001 … 100 px** (Mapping
+     `v = 0.001·(100/0.001)^t`). Ganz nach links (v < 1.5·0.001) wird
+     effektiv auf **0** gesetzt → deaktiviert den Auto-Zoom
+     (`AUTO_ZOOM_MIN_PX <= 0`). Readout mit 3 Nachkommastellen
+     (`0,001 px` / `0,000 px`).
 
    ### Test-Kriterien (Geschwindigkeit)
     - [ ] Controls: ein Geschwindigkeitsregler ist in den Controls vorhanden
@@ -271,94 +281,60 @@ C1, waehrend das Teil selbst nicht mehr gezeichnet wird.
   gezeichnet; Masse/Slot bleibt ueber die Exit-Phase reserviert und
   schrumpft C1.
 
-## Flug-Stottern: Korrelation mit HUD-Update (neue Hypothese)
+## Flug-Stottern: Root-Cause = pro-Frame HUD-Update (behoben)
 
-Der Haupt-Hebel fuer das **Flug**-Stottern ist NICHT der Blatt-Exit
-(s.o.), sondern die **Zwei-Uhren-Architektur** + die teure HUD-Aktualisierung:
+Der Haupt-Hebel fuer das **Flug**-Stottern war NICHT der Blatt-Exit
+(s.o.), sondern die teure **Zahlentafel-Aktualisierung pro Frame**:
 
-- Canvas `loop()` (`TargetBankCanvas.svelte:570`) laeuft EIGENEN
-  `requestAnimationFrame`, advance `u_time` und zeichnet **jeden Frame**
-  inkl. der Flug-Animation (`render_pipeline`, Zeilen 418-510).
-- `App.svelte:207` abonniert `playbackStore` -> `updateHUD(u_time)`.
-  `loop()` schreibt JEDEN Frame `playbackStore.set({time})`
-  (`TargetBankCanvas.svelte:591`) -> die HUD wird **pro Frame** neu
-  berechnet: `computeLiveL` + `innerHTML`-Rewrite + **MathJax
-  `typesetPromise`** (teuer, blockiert den Main-Thread).
-- Korrelation: HUD-Aenderungen cluster GENAU dann, wenn Schalen
-  abschliessen (Ziffern wechseln) = wenn Fluege passieren. Das blockierende
-  MathJax-Typeset stallt den rAF-`loop` -> die Flug-Animation ruckelt.
-  Zwei Uhren, selbe Zeitquelle, aber verschiedene Kosten/Takte.
+- Canvas `loop()` (`TargetBankCanvas.svelte`) laeuft EIGENEN
+  `requestAnimationFrame` und zeichnet **jeden Frame** inkl. Flug.
+- Ursprünglich (`App.svelte` `updateHUD` -> `MathJax.typesetPromise`)
+  wurde die Zahlentafel (l/l²/R) JEDEN sichtbaren Schritt neu als
+  LaTeX-String gebaut + typsettet. Das blockierte den rAF-Loop exakt
+  dann, wenn Schalen abschliessen (= wenn Fluege passieren) -> Stottern.
+- Zwischenschritt: MathJax durch eigenen DOM-Renderer ersetzt
+  (`buildNumberPanelHTML` + `innerHTML`). Das eliminierte das MathJax-
+  Typeset, aber das verbleibende `innerHTML` + erzwungener Reflow
+  (`updateNumberPanelScale` liest `scrollWidth`/`clientWidth`) verursachte
+  NACH dem MathJax-Entzug **NEUE** Ruckler.
 
-### Schalter eingebaut (Diagnose, noch NICHT die eigentliche Fix)
-Zwei Checkboxen im Animation-Tab (`ControlPanel.svelte`) + configStore-
-Felder + URL-Parameter, um die Quelle zu isolieren:
-- **`hudUpdateEnabled`** (URL `hud=0`): gatet `updateHUD` in
-  `App.svelte` (playback-Subscribe + applyConfig). Bei `0` wird die
-  Zahlentafel nicht neu typsettet -> MathJax blockiert den Loop nicht mehr.
-- **`bankRenderEnabled`** (URL `bankrender=0`): gatet `renderFrame` in
-  `TargetBankCanvas.svelte` (fruehes Return). Bei `0` friert der
-  Bank-Canvas (inkl. Flug) ein.
-
-Test-Kriterium zur Isolierung:
-- `hud=0` -> Flug wird ruhig => HUD/MathJax IST die Quelle. **BESTAETIGT
-  (laeuft nun butterweich):** mit `hud=0` laeuft die Flug-Animation
-  raeumlich gluckenfei; das Stottern kam ausschliesslich aus dem pro-Frame
-  HUD-Update (MathJax-Typeset blockiert den rAF-Loop).
-- `bankrender=0`, `hud=1` -> HUD aktualisiert sich, Bank steht =>
-  bestaetigt die Entkopplung.
-
-### Fazit: MathJax ist fuer die Zahlendarstellung UNGEEIGNET
-Die Zahlentafel (l/l²/R) wird ueber `updateHUD()` (`App.svelte:62`)
-jeden sichtbaren Schritt neu als LaTeX-String gebaut und via
-`MathJax.typesetPromise` gerendert. Das ist fuer eine **pro-Frame-
-Animation** grundsaetzlich falsch:
-- MathJax ist ein schwerer, synchron blockierender Typesetter (DOM-Rewrite
-  + Layout), kein Canvas-/Text-Renderer. Schon ein einzelnes Typeset
-  pro sichtbarem Ziffernwechsel reicht, um den rAF-Loop zu stallen -
-  exakt dann, wenn Schalen abschliessen (= wenn Fluege passieren).
-- Die Zahlentafel zeigt ohnehin nur 3 kurze Zeilen (l, l², R) in
-  Basis-Darstellung - das braucht KEINEN vollwertigen Math-Typesetter.
+### Endgueltiger Fix: Zahlentafel direkt aufs Canvas, gecacht
+- Die drei Zeilen (l/l²/R) werden JETZT in `TargetBankCanvas.svelte`
+  `renderHud()` **direkt auf dem Bank-Canvas** gemalt (exakte BigInt-
+  Werte aus `computeLiveL` + `formatLiveNumbers` aus `src/lib/
+  numberRenderer.js`, nur die Darstellungsschicht geaendert, nicht die
+  Mathematik). Kein MathJax, kein DOM-`innerHTML`, kein Reflow.
+- Performance: das Canvas wird pro Frame voll geloescht, die Tafel muesste
+  also eigentlich jeden Frame neu gezeichnet werden - das (inkl. dem
+  teuren `computeLiveL`/BigInt) WAR die Performance-Regression (massiv
+  langsamer). Daher wird die Tafel nur NEU berechnet + auf ein
+  **Offscreen-Canvas** gemalt, wenn sich die angezeigten Werte (Hash
+  ueber l/l²/R/Basis) ODER die Canvas-Groesse aendern. Pro Frame wird
+  nur das gecachte Bitmap via `drawImage` aufgelegt (sehr guenstig).
+- Layout: **linksbuendig oben, rechts vom Ziel-Quadrat** (nicht mehr
+  am linken Rand). Die **Basis** erscheint als **tiefgestellte, kleinere
+  Zahl** direkt nach dem Wert (Subscript), nicht inline. EINE
+  Schriftgroesse fuer die ganze Anzeige; automatisch verkleinert, falls
+  die laengste Zeile die verfuegbare Breite ueberschreitet.
+- Schalter **`hudUpdateEnabled`** (URL `hud=0`) schaltet die Anzeige
+  weiterhin ab (Cache wird zurueckgesetzt, nichts gemalt). `App.svelte`
+  hat KEIN `updateHUD` mehr; das `#numberPanel`-Markup, die
+  `.np-*`-CSS und `updateNumberPanelScale` sind entfernt.
 
 ### Eigener Renderer fuer die Zahlendarstellung (UMGESETZT + auf Canvas verlagert)
 MathJax durch einen leichtgewichtigen, **eigenen** Renderer ersetzt
 (`src/lib/numberRenderer.js` + `formatLiveNumbers` + `splitBaseNumber`).
 Die Zahlentafel (l/l²/R) wird JETZT **direkt auf dem Bank-Canvas gemalt**
-(`TargetBankCanvas.svelte` `renderFrame` -> `renderHud()`), nicht mehr ins
-DOM geschrieben. Layout: **linksbuendig oben**, Schriftgroesse wird
-**automatisch verkleinert**, falls die laengste Zeile die verfuegbare
-Breite ueberschreitet.
-
-Performance: das Canvas wird pro Frame voll geloescht, die Zahlentafel
-muesste also eigentlich jeden Frame neu gezeichnet werden - das (inkl. dem
-teuren `computeLiveL`/BigInt) WAR die Performance-Regression (massiv
-langsamer). Daher wird die Zahlentafel nur NEU berechnet + auf ein
-**Offscreen-Canvas** gemalt, wenn sich die angezeigten Werte (Hash ueber
-l/l²/R/Basis) ODER die Canvas-Groesse aendern. Pro Frame wird nur das
-gecachte Bitmap via `drawImage` aufgelegt (sehr guenstig, kein Reflow,
-keine BigInt-Berechnung pro Frame). Der Schalter "Zahlendarstellung"
-(`hudUpdateEnabled`) schaltet die Anzeige weiterhin ab (Cache wird
-zurueckgesetzt).
-
-Anforderungen (aus dem alten TODO), alle erfuellt:
-- KEIN MathJax, KEINE pro-Frame Typeset-Neuberechnung. Dezimalpunkte
-  ALLER Zeilen stehen exakt untereinander (reines `fillText`, drei
-  rechtsbuendige Zeilen).
-- Uebenimmt die exakte BigInt-Darstellung aus `computeLiveL` (P_str /
-  P2_str / rem_str inkl. Basis-Punkt-Formatierung + Trailing-Zero-Trim
-  aus `App.svelte` `updateHUD`) - nur die *Darstellungsschicht*
-  getauscht, nicht die Mathematik.
-- DOM-Zwischenschicht entfernt: das stuendige `innerHTML`-Umschreiben in
- kl. `#numberPanel` INKL. erzwungenem Reflow (`updateNumberPanelScale`
-  las scrollWidth/clientWidth) verursachte nach dem MathJax-Entzug NEUE
-  Ruckler. Canvas-Paint hat keinen Reflow, kein `innerHTML`. `App.svelte`
-  `updateHUD`/`updateNumberPanelScale` + das `#numberPanel`-Markup und die
-  `.np-*`-CSS-Regeln sind entfernt; `compiledRef` wird in
-  `TargetBankCanvas.applyConfig` aus dem `compiledStore` uebernommen.
-- `index.html`: MathJax-`<script>` (cdn.jsdelivr) + `window.MathJax`-
-  Chtml-Config entfernt. Keine externe Bibliothek mehr.
-- `hudUpdateEnabled`-Schalter (nur Diagnose) bleibt als nuetzliches
-  Wartungs-Werkzeug erhalten (nun ohne Funktion in der Zahlentafel);
-  der `bankRenderEnabled`-Schalter bleibt.
+(siehe oben: "Endgueltiger Fix: Zahlentafel direkt aufs Canvas, gecacht").
+Wesentliche Punkte der Umsetzung:
+- `renderHud()` in `TargetBankCanvas.svelte` malt auf ein **Offscreen-Canvas**,
+  nur bei Wertaenderung (Hash ueber l/l²/R/Basis) oder Grosseaenderung;
+  pro Frame nur `drawImage` des gecachten Bitmaps (kein Reflow, keine
+  BigInt-Berechnung pro Frame).
+- `App.svelte` hat KEIN `updateHUD`/`updateNumberPanelScale` mehr; das
+  `#numberPanel`-Markup, die `.np-*`-CSS-Regeln und `index.html` MathJax
+  sind entfernt. `compiledRef` wird in `TargetBankCanvas.applyConfig`
+  aus dem `compiledStore` uebernommen.
 
 Verifikation:
 - Unit-Test `tests/unit/numberRenderer.test.js` (5 Tests): splitBaseNumber
@@ -367,9 +343,9 @@ Verifikation:
 - `pnpm test:e2e` sqrt2-Suite (8/8): Canvas + HUD mount, l/l²/R
   werden wie zuvor in der gewaehlten Basis dargestellt.
 - Flug-Animation bei `hud=1` (Default): nicht mehr durch pro-Frame
-  MathJax-Typeset blockiert (Haupt-Hebel des Flug-Stotterns, via
-  `hud=0` bestaetigt). Die verbleibende Restarbeit am Stottern
-  (C1-Blatt-Exit, async Kamera, s.o.) ist unabhaengig davon.
+  HUD-Neuberechnung blockiert (Haupt-Hebel des Flug-Stotterns). Die
+  verbleibende Restarbeit am Stottern (C1-Blatt-Exit, async Kamera,
+  s.o.) ist unabhaengig davon.
 
 
 ## Architektur: drei Oberflächen, eine Komponente
