@@ -124,12 +124,14 @@
 		gap: 8px;
 	}
 	.compact-speed-readout {
-		color: #3b82f6;
-		font-weight: bold;
+		color: #cbd5e1;
+		font-family: monospace;
+		font-weight: normal;
 		font-size: 0.85em;
 		flex-shrink: 0;
 		white-space: nowrap;
 		min-width: 3.4em;
 		text-align: left;
+		text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 	}
 </style>
