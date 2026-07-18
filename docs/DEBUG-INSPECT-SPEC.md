@@ -89,6 +89,25 @@ Hooks (aus `TargetBankCanvas.svelte`), die den Agent füttern:
 - `setDebugBankDrawnRest(map)` + `setDebugBankDrawnDetail(arr)` in `renderFrame`
   (zählt die tatsächlich gezeichneten `bank_out`-Rects nach `k`).
 
+### Canvas-Overlay: Exponent des gemeinsamen Elternrestes (`?debug=1`)
+
+Nur bei aktivem Debug-Kanal zeichnet `renderFrame()` (TargetBankCanvas.svelte)
+ein Text-Overlay über dem Bank-Bereich: **`gem. Elternrest: k = N`** - der
+Exponent `k` des tiefsten gemeinsamen Vorfahren (LCA) ALLER in diesem Frame
+gezeichneten Rest-Stücke. Zweck: auf einen Blick sehen, wie tief die aktuell
+sichtbaren Reste im Rekursionsbaum gemeinsam verankert sind.
+
+- LCA-Logik: `commonAncestor(pieces, byId)` in `src/lib/recursive-layout.js`
+  (paarweise Reduktion über `parent_id`/`k`; `k` = Schnitt-/Rekursionstiefe =
+  Baumtiefe, deshalb erst auf gleiche Tiefe heben, dann gemeinsam hochlaufen).
+- Gezeichnete Reste werden als Nebeneffekt der ohnehin laufenden
+  `bank_out`-Schleife gesammelt (kein zweiter Traversal), dann einmal pro
+  Frame `commonAncestor(...)` + `drawCommonAncestorExponent(...)`.
+- Kosten: µs-Bereich, ausschließlich unter `?debug=1` (Normalbetrieb = 0).
+  Zur Frage "an diskreten Zeiten vorberechnen" siehe
+  `COMPILER-LAYERING-PLAN.md` Abschnitt E (lohnt nicht).
+- Tests: `tests/unit/recursive-layout.test.js` (`commonAncestor:`-Fälle).
+
 ### Peer-Skripte (Claude-Terminal)
 
 - `scripts/debug-cdp.mjs` — verbindet `connectOverCDP`, findet die
