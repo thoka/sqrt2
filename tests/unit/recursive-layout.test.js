@@ -12,6 +12,7 @@ import {
 	computeZoomFrame,
 	findRect,
 	commonAncestor,
+	gapEase,
 } from '../../src/lib/recursive-layout.js';
 
 function build(depth, cellMode = 'morph', compactionParams) {
@@ -106,13 +107,13 @@ test('Teil D: te/delaySnapshot werden bei Entnahme korrekt eingefroren', () => {
 	assert.ok(takenA.length > 0 && takenB.length > 0);
 
 	for (let p of takenA) {
-		assert.equal(p.delaySnapshot, 1, 'GAP_CLOSE_DELAY_TICKS-Default bleibt 1');
+		assert.equal(p.gapHoldTicks, 1, 'GAP_CLOSE_DELAY_TICKS-Default bleibt 1');
 		assert.equal(p.transitionSnapshot, 3);
-		assert.equal(p.te, p.taken_time + p.delaySnapshot + p.transitionSnapshot);
+		assert.equal(p.te, p.taken_time + p.gapHoldTicks + p.transitionSnapshot);
 	}
 	for (let p of takenB) {
 		assert.equal(p.transitionSnapshot, 20);
-		assert.equal(p.te, p.taken_time + p.delaySnapshot + p.transitionSnapshot);
+		assert.equal(p.te, p.taken_time + p.gapHoldTicks + p.transitionSnapshot);
 	}
 
 	// Zwei UNABHÄNGIGE Simulationsläufe mit unterschiedlicher Konfiguration
@@ -151,28 +152,51 @@ test('Teil D: computeSubtreeTe (implizit via buildSystem) - ein nie entnommenes 
 });
 
 // --------------------------------------------------------------------------
-// Testkriterium 4: C¹ an Phasengrenzen (taken_time+delaySnapshot und te) -
-// numerische Ableitung links/rechts der Grenze muss übereinstimmen.
-// Zusätzlich: Ableitung an `ts` (born_time) dokumentiert den bewussten
-// "sofort"-Sprung (User-Entscheidung, siehe REST-PRECISION-PLAN Teil D
-// "Offene Punkte") - HIER wird die C¹-Regel bewusst NICHT eingehalten.
+// Testkriterium 4: C¹ an Phasengrenzen (gapHoldEnd_u und te) -
+// numerische Ableitung links/rechts der Grenze muss übereinstimmen (0).
+// Nutzt compileSystem, damit gapHoldEnd_u/te als u_time vorliegen
+// (siehe BUG-FIX leafEffectiveSize). Zusätzlich: Ableitung an `ts`
+// (born_time) dokumentiert den bewussten "sofort"-Sprung
+// (User-Entscheidung, siehe REST-PRECISION-PLAN Teil D "Offene Punkte")
+// - HIER wird die C¹-Regel bewusst NICHT eingehalten.
 // --------------------------------------------------------------------------
-test('Teil D: C¹-Ease an taken_time+delaySnapshot und an te (numerische Ableitung)', () => {
-	const { sim } = build(6, 'morph', { transitionTicks: 5 });
-	let leaf = sim.bank_pieces.find(
+test('Teil D: C¹-Ease an gapHoldEnd_u und an te (numerische Ableitung)', () => {
+	const { root, pieces } = compiledRoot({
+		base: 2,
+		depth: 8,
+		mode: 'S',
+		compaction: 1,
+		playSpeed: 1,
+		zoomSpeed: 0.5,
+		autoZoom: 1,
+		zoomThresh: 0,
+		transition: 5,
+		pause: 1,
+		lineWidth: 0.3,
+		time: 0,
+		play: 0,
+	});
+	let leaf = pieces.find(
 		(p) => p.children.length === 0 && isFinite(p.taken_time) && p.transitionSnapshot > 0,
 	);
-	assert.ok(leaf);
+	assert.ok(leaf, 'entnommenes Blatt mit transitionSnapshot');
 
 	function widthAt(t) {
+		// RESERVIERTE Slot-Größe (treibt Parent-Cursor + Masse), NICHT
+		// die gezeichnete Rect (das Blatt wird ab t > taken_time nicht
+		// mehr gezeichnet, siehe layoutBox). Die Slot-Größe bleibt exakt
+		// das C1-Ease-Verhalten.
 		return layoutBox(leaf, t, 0, 0).w;
 	}
 
 	const EPS = 1e-4;
-	const holdEnd = leaf.taken_time + leaf.delaySnapshot;
+	const holdEnd = leaf.gapHoldEnd_u;
 
 	// Wert stetig an holdEnd (kein Sprung).
-	assert.ok(Math.abs(widthAt(holdEnd - EPS) - widthAt(holdEnd + EPS)) < 1e-6);
+	assert.ok(
+		Math.abs(widthAt(holdEnd - EPS) - widthAt(holdEnd + EPS)) < 1e-6,
+		'Wert stetig an gapHoldEnd_u',
+	);
 	// Ableitung an holdEnd: links (im Hold, konstant) ist Steigung 0, rechts
 	// (Ease-Start) ist Steigung ebenfalls 0 (smoothstep-Randbedingung).
 	let slopeLeft = (widthAt(holdEnd) - widthAt(holdEnd - EPS)) / EPS;
@@ -204,29 +228,66 @@ test('Teil D (dokumentiert, offener Punkt): an born_time (ts) springt die Größ
 });
 
 // --------------------------------------------------------------------------
-// Blatt-Exit ist ein harter Cutoff (kein Ease-Out mehr, siehe
-// leafEffectiveSize()): ein entnommenes Blatt bleibt bis EINSCHLIESSLICH
-// taken_time in voller Design-Größe sichtbar und ist unmittelbar DANACH
-// (t > taken_time) vollständig verschwunden - kein hideFading-Parameter mehr
-// nötig, da es keine Zwischenphase (schrumpfende Größe) mehr gibt, die
-// wahlweise aus `out` ausgeblendet werden müsste.
+// Blatt-Exit (BUG-FIX, siehe docs/INTERFACE-TODO.md "BUG: Lücke hart
+// ausblenden" + "Restteil waehrend Ease-out angezeigt"): ein entnommenes
+// Blatt wird bis EINSCHLIESSLICH taken_time gezeichnet (inklusive Grenze,
+// wichtig für flightQueryTime). DANACH (t > taken_time) wird es NICHT
+// mehr gezeichnet ("das Teil wird nicht mehr gezeichnet") - die Luecke
+// (reservierte Slot-Groesse) bleibt aber sichtbar und schliesst sich
+// WEICH C1 ueber die Compact-Phase [gapHoldEnd_u, te].
 // --------------------------------------------------------------------------
-test('Teil D: Blatt bleibt bis einschließlich taken_time in voller Design-Größe sichtbar, danach sofort verschwunden', () => {
-	const { sim } = build(6, 'morph');
-	let leaf = sim.bank_pieces.find((p) => p.children.length === 0 && isFinite(p.taken_time));
-	assert.ok(leaf);
+test('Teil D: Blatt gezeichnet bis einschließlich taken_time, danach nur noch reservierte Slot-Größe (C1, kein harter Cutoff)', () => {
+	const { root, pieces } = compiledRoot({
+		base: 2,
+		depth: 8,
+		mode: 'S',
+		compaction: 1,
+		playSpeed: 1,
+		zoomSpeed: 0.5,
+		autoZoom: 1,
+		zoomThresh: 0,
+		transition: 3,
+		pause: 1,
+		lineWidth: 0.3,
+		time: 0,
+		play: 0,
+	});
+	let leaf = pieces.find((p) => p.children.length === 0 && isFinite(p.taken_time));
+	assert.ok(leaf, 'es muss ein entnommenes Blatt geben');
 
+	// bei GENAU taken_time: volle Design-Größe, NOCH gezeichnet (inklusive Grenze)
 	let outAt = [];
 	let sizeAt = layoutBox(leaf, leaf.taken_time, 0, 0, outAt);
-	assert.equal(outAt.length, 1, 'bei GENAU taken_time noch sichtbar');
-	assert.equal(sizeAt.w, leaf.w);
-	assert.equal(sizeAt.h, leaf.h);
+	assert.equal(outAt.length, 1, 'bei GENAU taken_time noch gezeichnet');
+	assert.ok(Math.abs(sizeAt.w - leaf.w) < 1e-9 && Math.abs(sizeAt.h - leaf.h) < 1e-9);
 
-	let outAfter = [];
-	let sizeAfter = layoutBox(leaf, leaf.taken_time + 1e-6, 0, 0, outAfter);
-	assert.equal(outAfter.length, 0, 'unmittelbar danach vollständig verschwunden (kein Ease-Out)');
-	assert.equal(sizeAfter.w, 0);
-	assert.equal(sizeAfter.h, 0);
+	// unmittelbar danach (noch in der Hold-Phase): NICHT mehr gezeichnet,
+	// aber die reservierte Slot-Größe bleibt voll (Luecke sichtbar).
+	let holdT = (leaf.taken_time + leaf.gapHoldEnd_u) / 2;
+	let outHold = [];
+	let sizeHold = layoutBox(leaf, holdT, 0, 0, outHold);
+	assert.equal(outHold.length, 0, 'ab t > taken_time nicht mehr gezeichnet');
+	assert.ok(
+		Math.abs(sizeHold.w - leaf.w) < 1e-9 && Math.abs(sizeHold.h - leaf.h) < 1e-9,
+		'Hold-Phase: reservierte Slot-Größe voll (Luecke sichtbar)',
+	);
+
+	// bei te (exakt): Slot vollständig geschlossen (Größe 0)
+	let sizeTe = layoutBox(leaf, leaf.te, 0, 0).w;
+	assert.ok(sizeTe < 1e-9, 'bei te Slot-Größe 0 (Luecke geschlossen)');
+
+	// C1: feines Sampling der reservierten Slot-Größe über [gapHoldEnd_u, te]
+	// darf keinen harten Einzelsprung zeigen (Schritt << Blatt-Eigenfläche).
+	let prev = null;
+	let maxStep = 0;
+	const M = 4000;
+	for (let i = 0; i <= M; i++) {
+		let t = leaf.gapHoldEnd_u + (leaf.te - leaf.gapHoldEnd_u) * (i / M);
+		let s = layoutBox(leaf, t, 0, 0).w * layoutBox(leaf, t, 0, 0).h;
+		if (prev !== null) maxStep = Math.max(maxStep, Math.abs(s - prev));
+		prev = s;
+	}
+	assert.ok(maxStep < leaf.w * leaf.h * 0.05, `C1-kleiner Schritt: ${maxStep.toExponential(2)}`);
 });
 
 // --------------------------------------------------------------------------
@@ -407,4 +468,118 @@ test('Teil D: computeZoomFrame bei t=0 (volles Quadrat) liefert z=1, zentriert',
 	assert.equal(frame.w, 1);
 	assert.equal(frame.h, 1);
 	assert.ok(Math.abs(zoom.z - 1 / 1.05) < 1e-9, 'z bei vollem [0,1]-Quadrat mit ZOOM_MARGIN=0.05');
+});
+
+// --------------------------------------------------------------------------
+// BUG-FIX: entnommenes Blatt wird C1 (weich) ausgeblendet, nicht hart.
+// (siehe docs/INTERFACE-TODO.md "BUG: Lücke hart ausblenden").
+// Nutzt compileSystem (compiler.js), damit finalizeCompiled() die
+// u_time-Felder (gapHoldEnd_u/te) am Stück berechnet - der
+// buildSystem()-Pfad (bank-core.js) tut das NICHT.
+// --------------------------------------------------------------------------
+import { compileSystem } from '../../src/lib/compiler.js';
+function compiledRoot(config) {
+	const c = compileSystem(config);
+	const byId = new Map(c.bank_pieces.map((p) => [p.id, p]));
+	for (let p of c.bank_pieces) p.children = p.children.map((ch) => byId.get(ch.id));
+	return { root: c.bank_pieces[0], pieces: c.bank_pieces };
+}
+
+test('BUG-FIX: gapEase ist C1 smoothstep (0 bei 0, 1 bei 1, monoton)', () => {
+	assert.equal(gapEase(-1), 0);
+	assert.equal(gapEase(0), 0);
+	assert.equal(gapEase(1), 1);
+	assert.equal(gapEase(2), 1);
+	let prev = -1;
+	for (let i = 0; i <= 100; i++) {
+		let v = gapEase(i / 100);
+		assert.ok(v >= prev - 1e-12, `monoton nicht fallend bei s=${i / 100}`);
+		prev = v;
+	}
+	// Ableitung an BEIDEN Enden 0 (kein Kink): zentrale Differenz an 0 und 1.
+	let d0 = gapEase(0.001) / 0.001;
+	let d1 = (1 - gapEase(0.999)) / 0.001;
+	assert.ok(d0 < 0.05, `Ableitung bei s=0 ~0, war ${d0}`);
+	assert.ok(d1 < 0.05, `Ableitung bei s=1 ~0, war ${d1}`);
+});
+
+test('BUG-FIX: entnommenes Blatt bleibt voll bis gapHoldEnd_u, dann C1 -> 0 bei te', () => {
+	const { root, pieces } = compiledRoot({
+		base: 2,
+		depth: 8,
+		mode: 'S',
+		compaction: 1,
+		playSpeed: 1,
+		zoomSpeed: 0.5,
+		autoZoom: 1,
+		zoomThresh: 0,
+		transition: 3,
+		pause: 1,
+		lineWidth: 0.3,
+		time: 0,
+		play: 0,
+	});
+	let leaf = pieces.find((p) => p.children.length === 0 && isFinite(p.taken_time));
+	assert.ok(leaf, 'es muss ein entnommenes Blatt geben');
+	let rTaken = findRect(root, leaf.taken_time, leaf.id);
+	// bei gapHoldEnd_u (Hold-Phase) wird das Blatt NICHT mehr gezeichnet,
+	// aber die reservierte Slot-Größe bleibt voll (Luecke sichtbar).
+	let sizeHold = layoutBox(leaf, leaf.gapHoldEnd_u, 0, 0).w;
+	let rTe = findRect(root, leaf.te, leaf.id);
+	// volle Design-Größe bei taken_time (noch gezeichnet)
+	assert.ok(
+		Math.abs(rTaken.w - leaf.w) < 1e-9 && Math.abs(rTaken.h - leaf.h) < 1e-9,
+		'volle Größe bei taken_time',
+	);
+	// reservierte Slot-Größe bei gapHoldEnd_u voll (Blatt selbst nicht gezeichnet)
+	assert.ok(
+		Math.abs(sizeHold - leaf.w) < 1e-9,
+		'reservierte Slot-Größe voll bei gapHoldEnd_u (Luecke sichtbar, Teil nicht gezeichnet)',
+	);
+	assert.ok(
+		findRect(root, leaf.gapHoldEnd_u, leaf.id) === null,
+		'ab t>taken_time nicht mehr gezeichnet',
+	);
+	// bei te (exakt) ist das Stück verschwunden
+	assert.ok(rTe === null || rTe.w * rTe.h < 1e-9, 'bei te unsichtbar (0)');
+});
+
+test('BUG-FIX: Blatt-Exit ist C1 (kein harter Sprung) über [taken_time, te]', () => {
+	const { root, pieces } = compiledRoot({
+		base: 2,
+		depth: 12,
+		mode: 'S',
+		compaction: 1,
+		playSpeed: 1,
+		zoomSpeed: 0.5,
+		autoZoom: 1,
+		zoomThresh: 0,
+		transition: 3,
+		pause: 1,
+		lineWidth: 0.3,
+		time: 0,
+		play: 0,
+	});
+	let leaf = pieces.find((p) => p.children.length === 0 && isFinite(p.taken_time));
+	assert.ok(leaf, 'es muss ein entnommenes Blatt geben');
+	// feines Sampling der RESERVIERTEN Slot-Fläche über die Exit-Phase
+	// (das Blatt selbst wird ab t>taken_time nicht mehr gezeichnet, siehe
+	// layoutBox) - die Slot-Größe muss C1 schrumpfen, kein flare C0-Sprung.
+	let prev = null;
+	let maxStep = 0;
+	const M = 8000;
+	const a = leaf.gapHoldEnd_u;
+	const b = leaf.te;
+	for (let i = 0; i <= M; i++) {
+		let t = a + (b - a) * (i / M);
+		let area = layoutBox(leaf, t, 0, 0).w * layoutBox(leaf, t, 0, 0).h;
+		if (prev !== null) maxStep = Math.max(maxStep, Math.abs(area - prev));
+		prev = area;
+	}
+	// Schwellwert: deutlich unter der Blatt-Eigenfläche (die ein harter
+	// Sprung erzeugen würde), dafür groß genug über Rauschen.
+	assert.ok(
+		maxStep < leaf.w * leaf.h * 0.05,
+		`max Slot-Flächen-Schritt über Exit-Phase C1-klein: ${maxStep.toExponential(2)} (Blattfläche ${leaf.w * leaf.h})`,
+	);
 });

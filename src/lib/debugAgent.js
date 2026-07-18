@@ -152,7 +152,7 @@ function buildSnapshot() {
 							cut: p.cut_time,
 							taken: p.taken_time,
 							te: p.te,
-							delay: p.delaySnapshot,
+							gapHold: p.gapHoldTicks,
 						}))
 				: null,
 		frame: {

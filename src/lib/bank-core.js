@@ -35,13 +35,18 @@ import { computeSegmentBlend } from './smoothing.js';
 // (siehe TEIL 3: buildTickTimeMapping) - der Algorithmus selbst muss davon
 // nichts wissen, er liefert nur die Tick-Nummer jeder Entnahme mit zurueck.
 
-// compactionParams (TEIL D, REST-PRECISION-PLAN): gapCloseDelayTicks/
-// transitionTicks werden NUR gebraucht, um bei jeder ENTNAHME das Feld `te`
-// (siehe unten, "Rekursives Box-in-Boxes-Modell") einmalig einzufrieren -
-// Defaults sind dieselben Konstanten, die auch die alte, externe
-// Kompaktierung (TEIL 2 weiter unten) nutzt, damit beide Modelle bei
-// unveränderter Konfiguration exakt denselben Verzögerungs-/
-// Übergangs-Zeitraum sehen.
+// compactionParams (TEIL D, REST-PRECISION-PLAN): die ZWEI Lücke-
+// Parameter, die bei jeder ENTNAHME einmalig am Stück eingefroren werden:
+//   gapCloseDelayTicks (= "Lücke bleibt so wie sie ist", Hold-Phase)
+//   transitionTicks       (= "Dauer bis kompaktiert", Überblend-Phase)
+// Beide werden NUR gebraucht, um `te` (siehe unten, "Rekursives
+// Box-in-Boxes-Modell") einmalig einzufrieren - Defaults sind dieselben
+// Konstanten, die auch die alte, externe Kompaktierung (TEIL 2 weiter
+// unten) nutzt, damit beide Modelle bei unveränderter Konfiguration
+// exakt denselben Verzögerungs-/Übergangs-Zeitraum sehen.
+// ACHTUNG: nur DAUERN in Tick-Raum. Die eigentliche C1-Überblend im
+// Render-Pfad (recursive-layout.js leafEffectiveSize) rechnet daraus die
+// u_time-Knoten - siehe finalizeCompiled() in compiler.js.
 function createBankSimulation(BASE, N_MAX, squareSplit, compactionParams) {
 	squareSplit = squareSplit || 'fixed'; // 'fixed' oder 'alternating'
 	let gapCloseDelayTicks = compactionParams?.gapCloseDelayTicks ?? GAP_CLOSE_DELAY_TICKS;
@@ -93,7 +98,7 @@ function createBankSimulation(BASE, N_MAX, squareSplit, compactionParams) {
 			// per computeSubtreeTe() rekursiv aus den Kindern übernommen.
 			dir: null,
 			te: Infinity,
-			delaySnapshot: null,
+			gapHoldTicks: null,
 			transitionSnapshot: null,
 			children: [],
 		},
@@ -148,12 +153,12 @@ function createBankSimulation(BASE, N_MAX, squareSplit, compactionParams) {
 			available.sort((a, b) => isolationScore(a, tick) - isolationScore(b, tick));
 			let chosen = available[0];
 			chosen.taken_time = tick;
-			// TEIL D: te/delaySnapshot beim Entnehmen einmalig einfrieren (siehe
+			// TEIL D: te/gapHoldTicks beim Entnehmen einmalig einfrieren (siehe
 			// Kommentar an compactionParams oben) - eine spätere Änderung von
 			// gapCloseDelayTicks/transitionTicks (z.B. bei einem Neu-Kompilat mit
 			// anderer Konfiguration) wirkt dadurch nie rückwirkend auf bereits
 			// eingefrorene Stücke aus einem ANDEREN Simulationslauf.
-			chosen.delaySnapshot = gapCloseDelayTicks;
+			chosen.gapHoldTicks = gapCloseDelayTicks;
 			chosen.transitionSnapshot = transitionTicks;
 			chosen.te = tick + gapCloseDelayTicks + transitionTicks;
 
@@ -254,7 +259,7 @@ function createBankSimulation(BASE, N_MAX, squareSplit, compactionParams) {
 				taken_time: Infinity,
 				dir: null,
 				te: Infinity,
-				delaySnapshot: null,
+				gapHoldTicks: null,
 				transitionSnapshot: null,
 				children: [],
 			};

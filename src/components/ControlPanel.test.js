@@ -40,21 +40,44 @@ test('Basis-Feld: löst erst bei "change", nicht bei "input" eine configStore-Ä
 	unmount(app);
 });
 
-test('Tiefe > 5 zeigt die Performance-Warnung', () => {
+test('Performance-Warnung bei Tiefe > 5 wurde entfernt', () => {
 	const app = mount(ControlPanel, { target: document.body });
-	// Default-Tiefe (16) liegt bereits über der Schwelle.
-	expect(document.body.textContent).toContain('kann Leistung beeinträchtigen');
-
-	configStore.update((c) => ({ ...c, depth: 3 }));
-	flushSync();
 	expect(document.body.textContent).not.toContain('kann Leistung beeinträchtigen');
+	unmount(app);
+});
 
+test('Tabs sind vorhanden (Grundeinstellungen aktiv)', () => {
+	const app = mount(ControlPanel, { target: document.body });
+	expect(document.body.textContent).toContain('Grundeinstellungen');
+	expect(document.body.textContent).toContain('Animation');
+	expect(document.body.textContent).toContain('Admin');
+	expect(document.body.textContent).toContain('Remote-Connect');
+	// Standardtab zeigt die Grundeinstellungen (Basis/Tiefe).
+	expect(document.body.textContent).toContain('Basis');
+	expect(document.body.textContent).toContain('Tiefe');
+	unmount(app);
+});
+
+test('Remote-Ansicht zeigt nur Grundeinstellungen', () => {
+	const app = mount(ControlPanel, {
+		target: document.body,
+		props: { visibleTabs: ['Grundeinstellungen'] },
+	});
+	expect(document.body.textContent).toContain('Grundeinstellungen');
+	expect(document.body.textContent).not.toContain('Animation');
+	expect(document.body.textContent).not.toContain('Admin');
+	expect(document.body.textContent).not.toContain('Remote-Connect');
 	unmount(app);
 });
 
 test('Modus-B-Regler (range) aktualisiert configStore.modeAB live bei "input"', () => {
 	const app = mount(ControlPanel, { target: document.body });
-	const rangeInput = document.querySelector('input[type=range]');
+	// Der Zoom-Regler (modeAB) trägt das Label "Zoom"; der SpeedSlider
+	// (Geschwindigkeit) ist ebenfalls ein range-input und kommt vorher im DOM.
+	const zoomLabel = [...document.querySelectorAll('.control-group')].find((g) =>
+		g.textContent.startsWith('Zoom'),
+	);
+	const rangeInput = zoomLabel.querySelector('input[type=range]');
 
 	rangeInput.value = '0.5';
 	fire(rangeInput, 'input');
@@ -79,9 +102,15 @@ test('Kompaktierungs-Checkbox schreibt configStore.compactionEnabled', () => {
 
 test('Tick-Eingabe: springt über playbackStore.time zum passenden Zeitpunkt (GLOBAL_TTM aus compiledStore)', () => {
 	const app = mount(ControlPanel, { target: document.body });
+	// Admin-Tab aktivieren (Tick-Feld liegt dort).
+	const adminTab = [...document.querySelectorAll('.tab-btn')].find(
+		(b) => b.textContent === 'Admin',
+	);
+	adminTab.click();
+	flushSync();
 	// Das Tick-Feld hat keine feste ID mehr - über den zugehörigen Label-Text finden.
 	const tickLabel = [...document.querySelectorAll('.control-group')].find((g) =>
-		g.textContent.startsWith('Tick ('),
+		g.textContent.startsWith('Tick (Debug)'),
 	);
 	const tick = tickLabel.querySelector('input');
 

@@ -297,19 +297,44 @@ export function compileSystemData(config) {
 	const MAX_CHECKPOINTS = 400;
 
 	let eventTimesSet = new Set([0]);
+	// TEIL D (REST-PRECISION-PLAN): die Blatt-Exit-Fenster (Hold/Compact)
+	// muessen ALS KNOTEN in die Kamera-Spline fallen, sonst weiss der
+	// (gedaempfte) Bank-Zoom nichts vom Schrumpfen des Blatts und "hinkt"
+	// hinter der tatsaechlich gerenderten Geometrie her - das Blatt bleibt
+	// sichtbar schrumpfend stehen, waehrend die Nachbarn (deren
+	// Kompaktierung denselben Zeitraum sieht) die Luecke schon
+	// geschlossen haben. gapHoldEnd_u/te sind hier noch Roh-Ticks (wie
+	// taken_time), finalizeCompiled() rechnet alle ueber dieselbe
+	// Tick->Zeit-Abbildung in u_time um - beide Modelle (rekursives
+	// Rect-Layout UND Kamera-Spline) nutzen dann exakt dasselbe Fenster.
 	for (let p of bank_pieces) {
 		if (isFinite(p.taken_time)) eventTimesSet.add(p.taken_time);
+		if (isFinite(p.gapHoldEnd_u ?? p.taken_time + p.gapHoldTicks)) {
+			let holdEnd = isFinite(p.gapHoldEnd_u) ? p.gapHoldEnd_u : p.taken_time + p.gapHoldTicks;
+			eventTimesSet.add(holdEnd);
+		}
+		if (isFinite(p.te)) eventTimesSet.add(p.te);
 	}
 	eventTimesSet.add(local_max_time);
 	let eventTimesTicks = Array.from(eventTimesSet).sort((a, b) => a - b);
 	if (eventTimesTicks.length > MAX_CHECKPOINTS) {
+		// Budget erhalten (finalizeCompiled() baut pro Stuetzpunkt einen
+		// Damped-Filter-Knoten auf dem Main-Thread - zu viele wuerden
+		// eine >500ms-Blockade waerend der Kompilierung ausloesen, siehe
+		// Kriterium 6). Gleichverteiltes Downsampling ueber ALLE
+		// Stuetzpunkte (inkl. der kritischen Blatt-Exit-Fenster) - die
+		// Daempfung vertraegt das Ausduennen, einzelne (kleine, tiefe)
+		// Blaetter ohne eigenen Knoten "hinken" hoechstens marginal
+		// hinterher, das sichtbare Ruckeln der grossen, fruehen
+		// Blaetter bleibt aber behoben, weil deren Fenster im
+		// Strichtakt mit erfasst werden.
 		let sampled = [];
 		for (let i = 0; i < MAX_CHECKPOINTS; i++) {
 			sampled.push(
 				eventTimesTicks[Math.floor((i * (eventTimesTicks.length - 1)) / (MAX_CHECKPOINTS - 1))],
 			);
 		}
-		eventTimesTicks = Array.from(new Set(sampled));
+		eventTimesTicks = Array.from(new Set(sampled)).sort((a, b) => a - b);
 	}
 
 	// Kompaktierung: computeCompactionWaypoints enthält mapX/mapY-Funktionen,
@@ -391,6 +416,9 @@ export function finalizeCompiled(data) {
 	const CUT_BORN_LEAD = 0.1;
 	let ttm = buildTickTimeMapping(tickTimePairs);
 	for (let p of bank_pieces) {
+		// Roh-Tick von taken_time fangen, BEVOR die Umrechnung ihn
+		// überschreibt - brauchen ihn für gapHoldEnd_u (s.u.).
+		let takenTick = p.taken_time;
 		p.taken_time = isFinite(p.taken_time) ? ttm.tickToTime(p.taken_time) : Infinity;
 		p.cut_time = isFinite(p.cut_time) ? ttm.tickToTime(p.cut_time) - CUT_BORN_LEAD : Infinity;
 		p.born_time = p.born_time === 0 ? 0 : ttm.tickToTime(p.born_time) - CUT_BORN_LEAD;
@@ -400,6 +428,19 @@ export function finalizeCompiled(data) {
 		// Render-Pfad ausgewertet wird (kein separates Zeit-Mapping nötig,
 		// siehe REST-PRECISION-PLAN Teil D "Zeitachse").
 		p.te = isFinite(p.te) ? ttm.tickToTime(p.te) : Infinity;
+		// BUG-FIX (s. docs/INTERFACE-TODO.md "hartes Ausblenden"): die Lücke
+		// soll nicht hart bei taken_time auf 0 springen, sondern C1-ausblenden.
+		// ZWEI Phasen (beide in Tick-Raum, s. bank-core.js gapCloseDelayTicks/
+		// transitionTicks):
+		//   Hold : [taken_time, taken_time + gapHoldTicks]  -> volle Größe
+		//   Compact: [taken_time + gapHoldTicks, te]            -> C1 -> 0
+		// gapHoldEnd_u ist der u_time-Knoten zwischen den beiden Phasen
+		// (abgeleitet, KEIN neuer Config-Parameter). Bei nie-entnommenen
+		// Stücken (taken_time=Infinity / gapHoldTicks=null) bleibt er Infinity.
+		p.gapHoldEnd_u =
+			isFinite(takenTick) && p.gapHoldTicks != null
+				? ttm.tickToTime(takenTick + p.gapHoldTicks)
+				: Infinity;
 		// PERFORMANCE-FIX (REST-PRECISION-PLAN, Stand 2026-07-17): additiv, der
 		// Zeitpunkt, an dem TargetBankCanvas.svelte die Herkunfts-Position
 		// dieses Stücks für die Flug-Animation einfrieren soll - EINMAL hier

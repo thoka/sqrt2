@@ -19,22 +19,6 @@ canvas {
 	height: 100%;
 }
 
-#numberPanel {
-	position: fixed;
-	top: 24px;
-	right: 150px;
-	z-index: 10;
-	pointer-events: none;
-	width: 700px;
-	color: #94a3b8;
-	font-size: 1.6em;
-	line-height: 1.6;
-	text-align: left;
-}
-#numberPanelInner {
-	display: inline-block;
-	transform-origin: left top;
-}
 #bankPanel {
 	position: fixed;
 	top: 0;
@@ -122,10 +106,19 @@ canvas {
 	flex: 1 1 auto;
 	min-width: 0;
 }
+
+/* Dezenter Geschwindigkeitsregler im Hauptfenster: rechts NEben der
+   Timeline ganz unten (#bottomBar), schmal, optisch wie der Zeitregler
+   (INTERFACE-TODO "Korrektur: Geschwindigkeitsregler"). */
+#speedControl {
+	flex-shrink: 0;
+	pointer-events: auto;
+	display: flex;
+	align-items: center;
+}
 #bottomBar #playBtn {
-	opacity: 0;
-	pointer-events: none;
-	transition: opacity 0.2s ease;
+	opacity: 1;
+	pointer-events: auto;
 	background: none;
 	border: none;
 	color: #f8fafc;
@@ -141,20 +134,14 @@ canvas {
 	text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
 #bottomBar #timeReadout {
-	opacity: 0;
+	opacity: 1;
 	pointer-events: none;
-	transition: opacity 0.2s ease;
 	color: #cbd5e1;
 	font-family: monospace;
 	font-size: 0.85em;
 	flex-shrink: 0;
 	text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 	white-space: nowrap;
-}
-#bottomBar.visible #playBtn,
-#bottomBar.visible #timeReadout {
-	opacity: 1;
-	pointer-events: auto;
 }
 #bottomBar #playBtn:hover {
 	color: #3b82f6;

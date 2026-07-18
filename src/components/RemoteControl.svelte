@@ -49,7 +49,9 @@
 	<p class="hint">
 		Relay-Status: <span id="relayStatus">idle</span>
 	</p>
-	<div id="controlPanelMount"><ControlPanel /></div>
+	<div id="controlPanelMount">
+		<ControlPanel visibleTabs={['Grundeinstellungen']} />
+	</div>
 	<div id="playbackBarMount"><PlaybackBar /></div>
 </main>
 

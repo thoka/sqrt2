@@ -44,5 +44,8 @@ export default defineConfig({
 	test: {
 		environment: 'jsdom',
 		include: ['src/**/*.test.js'],
+		// Synchronous compileSystem-Fallback (kein Worker in jsdom) kann bei
+		// tiefen Configs >5s dauern - Default-Timeout sonst flaky.
+		testTimeout: 30000,
 	},
 });

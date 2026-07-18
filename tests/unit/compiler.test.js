@@ -212,6 +212,43 @@ test('Kompaktierung mit ungültigem compactionTransitionTicks (NaN) fällt auf D
 	);
 });
 
+test('TEIL D: Blatt-Exit-Fenster (gapHoldEnd_u, te) sind Kamera-Spline-Knoten', () => {
+	// Bug ("Blatt schrumpft sichtbar weiter, während Nachbarn die Lücke
+	// schon geschlossen haben"): der (gedämpfte) Bank-Zoom-Spline darf
+	// das Schrumpfen eines Blatts nicht übersehen - die Blatt-Exit-
+	// Fenster müssen ALS Stützpunkte (eventTimes) in die Kamera fallen,
+	// sonst hinkt der Zoom hinter der gerenderten Geometrie her.
+	const r = compileSystem({
+		...BASE_CONFIG,
+		base: 2,
+		depth: 8,
+		compactionEnabled: true,
+		compactionTransitionTicks: 3,
+	});
+	const ev = r.GLOBAL_BANK_ZOOM_TIMES;
+	assert.ok(ev.length > 0);
+	// mindestens ein entnommenes Blatt mit endlichem Exit-Fenster finden
+	const leaf = r.bank_pieces.find(
+		(p) =>
+			p.children.length === 0 &&
+			isFinite(p.taken_time) &&
+			isFinite(p.gapHoldEnd_u) &&
+			isFinite(p.te),
+	);
+	assert.ok(leaf, 'entnommenes Blatt mit Exit-Fenster');
+	// beide Fenstergrenzen müssen exakt als Stützpunkt vorhanden sein
+	// (Knappheit: Tick->Zeit-Rasterung kann minimal abweichen -> Toleranz).
+	const tol = 1e-9;
+	assert.ok(
+		ev.some((t) => Math.abs(t - leaf.gapHoldEnd_u) <= tol),
+		`gapHoldEnd_u=${leaf.gapHoldEnd_u} fehlt in eventTimes`,
+	);
+	assert.ok(
+		ev.some((t) => Math.abs(t - leaf.te) <= tol),
+		`te=${leaf.te} fehlt in eventTimes`,
+	);
+});
+
 test('computeLiveL: exakte Präfixsumme der Achsen = P_int aus bank-core (zwei unabhängige Konstruktionen)', async () => {
 	// GLOBAL_L_PREFIX[TOTAL_STEPS] (voll abgeschlossen) muss bitidentisch
 	// mit der in bank-core.js aufgebauten P_int-Zahl übereinstimmen.

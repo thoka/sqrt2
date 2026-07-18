@@ -293,3 +293,78 @@ test('Routing: / und /remote.html ok, unbekannte Pfade 404', async ({ request, p
 	const unknown = await request.get('/control');
 	expect(unknown.status()).toBe(404);
 });
+
+// INTERFACE-TODO "Korrektur: Geschwindigkeitsregler": im Hauptfenster liegt
+// ein schmaler, dezenter Geschwindigkeitsregler rechts VOR dem Bank-Zähler
+// (#bankPanel) - nicht die ganze Breite. Er muss betätigbar sein und
+// configStore.playSpeed ändern (hier sichtbar im ControlPanel-Readout).
+test('Geschwindigkeit: dezenter Regler im Hauptfenster rechts neben der Timeline unten, betätigbar', async ({
+	page,
+}) => {
+	await page.goto('/');
+	await page.waitForTimeout(1500);
+
+	const speed = page.locator('#speedControl input[type="range"]');
+	await expect(speed).toBeVisible();
+
+	// Position: innerhalb #bottomBar, RECHTS neben der Timeline
+	// (#playbackBarMount), ganz unten.
+	const geo = await page.evaluate(() => {
+		const sc = document.getElementById('speedControl').getBoundingClientRect();
+		const bb = document.getElementById('bottomBar').getBoundingClientRect();
+		const pb = document.getElementById('playbackBarMount').getBoundingClientRect();
+		return {
+			speedLeft: sc.left,
+			speedRight: sc.right,
+			speedTop: sc.top,
+			speedBottom: sc.bottom,
+			bbTop: bb.top,
+			bbBottom: bb.bottom,
+			pbRight: pb.right,
+			speedW: sc.width,
+			winW: window.innerWidth,
+		};
+	});
+	// Regler liegt vertikal INNERHALB der bottomBar (ganz unten).
+	expect(geo.speedTop).toBeGreaterThanOrEqual(geo.bbTop - 1);
+	expect(geo.speedBottom).toBeLessThanOrEqual(geo.bbBottom + 1);
+	// Regler beginnt RECHTS von der Timeline (playbackBarMount).
+	expect(geo.speedLeft).toBeGreaterThan(geo.pbRight - 1);
+	// Regler nimmt NICHT die ganze Breite ein.
+	expect(geo.speedW).toBeLessThan(geo.winW * 0.5);
+
+	// Betätigen: auf Maximum schieben -> playSpeed wird groß (Log-Regler,
+	// Mitte = Faktor 1, rechtes Ende ~20×).
+	await speed.fill('1');
+	await page.waitForTimeout(400);
+	const ctrlText = await page.locator('#controlPanelMount').textContent();
+	// Das ControlPanel (Grundeinstellungen) zeigt die Geschwindigkeit als "x×"
+	// (de-DE-Locale: Komma statt Punkt).
+	expect(ctrlText).toMatch(/\d{2}[.,]\d×/);
+});
+
+// Geschwindigkeit in der Fernsteuerung (/remote.html) ändert die
+// Wiedergabegeschwindigkeit im Hauptfenster (Sync via BroadcastChannel),
+// analog zum bestehenden Config-Sync-Test.
+test('Geschwindigkeit: Fernsteuerung ändert Speed im Hauptfenster (Sync)', async ({ context }) => {
+	const pageA = await context.newPage();
+	const pageB = await context.newPage();
+	await pageA.goto('/');
+	await pageB.goto('/remote.html');
+	await pageA.waitForTimeout(1500);
+
+	// Speed in der Fernsteuerung auf Maximum schieben (Regler im
+	// "Geschwindigkeit"-Label, nicht der Zoom-Regler).
+	const remoteSpeed = pageB
+		.locator('#controlPanelMount .control-group', { hasText: 'Geschwindigkeit' })
+		.locator('input[type="range"]');
+	await remoteSpeed.fill('1');
+	await pageA.waitForTimeout(800);
+
+	// Hauptfenster-ControlPanel zeigt die geänderte Geschwindigkeit.
+	const ctrlText = await pageA.locator('#controlPanelMount').textContent();
+	expect(ctrlText).toMatch(/\d{2}[.,]\d×/);
+
+	await pageA.close();
+	await pageB.close();
+});

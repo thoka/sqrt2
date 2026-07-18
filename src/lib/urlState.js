@@ -67,6 +67,18 @@ const CONFIG_FIELDS = [
 		parse: (v) => Math.max(0, Math.min(1, parseFloat(v) || 0)),
 		format: (c) => c.modeAB.toFixed(4),
 	},
+	{
+		key: 'hud',
+		field: 'hudUpdateEnabled',
+		parse: (v) => v !== '0',
+		format: (c) => (c.hudUpdateEnabled ? '1' : '0'),
+	},
+	{
+		key: 'bankrender',
+		field: 'bankRenderEnabled',
+		parse: (v) => v !== '0',
+		format: (c) => (c.bankRenderEnabled ? '1' : '0'),
+	},
 ];
 
 // Liest alle in `params` vorhandenen CONFIG_FIELDS-Parameter und liefert ein

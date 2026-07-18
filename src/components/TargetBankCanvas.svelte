@@ -23,6 +23,8 @@
 	import { applyCompactionFit } from '../lib/bank-core.js';
 	import { layoutCentered, findRect, commonAncestor } from '../lib/recursive-layout.js';
 	import { configStore, playbackStore, compiledStore } from '../lib/stores.js';
+	import { computeLiveL } from '../lib/compiler.js';
+	import { formatLiveNumbers } from '../lib/numberRenderer.js';
 	import {
 		setDebugCanvas,
 		setDebugFrame,
@@ -81,12 +83,18 @@
 	let animPause = 0;
 	let u_time = 0.0;
 	let u_mode_AB = 0.0;
+	// Vollstaendiger kompilierter Zustand (fuer computeLiveL der
+	// Canvas-gezeichneten Zahlentafel l/l²/R) - nur in applyConfig
+	// frisch gesetzt, NICHT pro Frame neu geholt.
+	let compiledRef = null;
+
 	let AUTO_ZOOM_MIN_PX = 0;
 	let RENDER_SCALE = 1;
 	let EDGE_BLUR_PX = 0;
 	let LINE_WIDTH_PX = 0.3;
 	let ANIM_PAUSE_DURATION = 1.5;
 	let ANIM_SPEED = 2.0;
+	let bankRenderEnabled = true; // Diagnose-Schalter: Bank-Canvas (inkl. Flug) einfrieren
 
 	// === Canvas ===
 	let canvasEl = $state();
@@ -118,8 +126,10 @@
 			LINE_WIDTH_PX = c.lineWidth;
 			ANIM_PAUSE_DURATION = c.pauseDuration;
 			ANIM_SPEED = c.playSpeed;
+			bankRenderEnabled = c.bankRenderEnabled;
 
 			let compiled = get(compiledStore);
+			compiledRef = compiled;
 			if (!compiled) {
 				// Asynchroner Compile (compileOrchestrator) noch nicht fertig:
 				// config-Felder sind gesetzt, aber die kompilierten Daten
@@ -217,6 +227,7 @@
 
 	function renderFrame() {
 		if (!ctx) return; // 2D-Kontext fehlt (z.B. jsdom/SSR) - Rendering überspringen
+		if (!bankRenderEnabled) return; // Diagnose-Schalter: Bank-Canvas (inkl. Flug) einfrieren
 		ctx.setTransform(1, 0, 0, 1, 0, 0);
 		ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
 		if (render_pipeline.length === 0) return;
@@ -231,6 +242,13 @@
 		const rightEdgeStart = bankPanel.getBoundingClientRect().left;
 		const renderAreaWidth = rightEdgeStart - 40;
 		const scale = Math.min(renderAreaWidth / LOGICAL_MAX_W, (H - 100) / LOGICAL_MAX_H);
+
+		// Zahlentafel startet RECHTS vom Ziel-Quadrat: das Ziel liegt im
+		// logischen Bereich x in [0, SQRT2] (links im Spielfeld), daher
+		// rechte Kante = 40(CSS) + scale*SQRT2, umgerechnet in
+		// Geraetepixel. (bankPanel ist das FERNSTE Rechts - dort darf die
+		// Tafel NICHT beginnen.)
+		hudX0 = (40 + scale * SQRT2) * RENDER_SCALE + 28;
 
 		let autoZoomTargetExp = getSmoothedAutoZoomExp(u_time);
 		let autoZoomTAB = computeAutoZoomTAB(AUTO_ZOOM_MIN_PX, scale, autoZoomTargetExp);
@@ -263,11 +281,12 @@
 		let teilDCamera = GLOBAL_TEIL_D_ZOOM_SPLINE
 			? GLOBAL_TEIL_D_ZOOM_SPLINE.at(u_time)
 			: { z: 1, cx: 0.5, cy: 0.5, offsetX: 0, offsetY: 0 };
-		bankZoomLabel.innerText = formatZoomFactor(teilDCamera.z);
-		bankAreaLabel.innerText =
-			(bank_frame.mass * 100).toLocaleString('de-DE', {
-				maximumFractionDigits: bank_frame.mass < 0.01 ? 4 : 1,
-			}) + '%';
+		if (bankZoomLabel) bankZoomLabel.innerText = formatZoomFactor(teilDCamera.z);
+		if (bankAreaLabel)
+			bankAreaLabel.innerText =
+				(bank_frame.mass * 100).toLocaleString('de-DE', {
+					maximumFractionDigits: bank_frame.mass < 0.01 ? 4 : 1,
+				}) + '%';
 
 		// Debug-Telemetrie: Bank-Zoom-Transform fuer den Inspect-Kanal melden.
 		// Die Bank-Drawn-Reste selbst werden NICHT hier in einem eigenen
@@ -525,10 +544,36 @@
 			ctx.restore();
 		}
 
+		// === Zahlentafel l / l² / R AUF DEM CANVAS (statt DOM) ===
+		// Frueher DOM-#numberPanel: pro Ziffernwechsel innerHTML +
+		// updateNumberPanelScale() (scrollWidth/clientWidth -> erzwungener
+		// Reflow) -> neue Ruckler. JETZT direkt gemalt: exakte
+		// BigInt-Werte aus computeLiveL (Mathe unveraendert), nur die
+		// Darstellungsschicht ist Canvas statt DOM. Kein Reflow, kein
+		// innerHTML.
+		// Performance: das Canvas wird pro Frame voll geloescht, die
+		// Zahlentafel muesste also eigentlich jeden Frame neu gezeichnet
+		// werden - das (inkl. dem teuren computeLiveL/BigInt) war die
+		// Performance-Regression. Daher: die drei Zeilen werden NUR neu
+		// berechnet + auf ein OFFSCREEN-Canvas gemalt, wenn sich die
+		// angezeigten Werte (Hash ueber l/l²/R/Basis) ODER die
+		// Canvas-Groesse aendern. Pro Frame wird nur das gecachte
+		// Bitmap via drawImage aufgelegt (sehr guenstig).
+		// Schalter "Zahlendarstellung" (hudUpdateEnabled) schaltet die
+		// Anzeige weiterhin ab - wie vor dem Canvas-Umbau.
+		// Layout: linksbuendig oben, Schrift automatisch verkleinert,
+		// falls die laengste Zeile die verfuegbare Breite ueberschreitet.
+		renderHud(ctx);
+
 		ctx.restore();
 	}
 
 	function updateAutoZoomIndicator(autoZoomTAB, isActive) {
+		// Cross-Komponenten-DOM aus <ControlPanel>: kann null sein, wenn
+		// das Panel (noch) nicht gemountet ist (z.B. remote.html, oder
+		// Canvas rendert vor dem Panel). Dann einfach ueberspringen -
+		// der Marker ist rein informativ.
+		if (!autoZoomMarker || !autoZoomNote) return;
 		if (AUTO_ZOOM_MIN_PX <= 0) {
 			autoZoomMarker.style.display = 'none';
 			autoZoomNote.style.display = 'none';
@@ -566,6 +611,110 @@
 			);
 		if (f < 1000) return Math.round(f).toLocaleString('de-DE') + '×';
 		return f.toExponential(1).replace('.', ',').replace('e+', ' × 10^') + '×';
+	}
+
+	// === Zahlentafel-Rendering (l/l²/R auf Canvas, gecacht) ===
+	// Offscreen-Canvas fuer die Zahlentafel: wird NUR neu bemalt, wenn
+	// sich die angezeigten Werte (Hash) oder die Canvas-Groesse aendert.
+	// Pro Frame wird nur das Bitmap via drawImage aufgelegt.
+	let hudOffscreen = null;
+	let hudOffCtx = null;
+	// Start-X der Zahlentafel (rechts vom Ziel-Quadrat), in Geraetepixeln.
+	let hudX0 = 24;
+	// Gecachter Zustand: zuletzt gemalener Hash + Canvas-Masse + ob an.
+	let hudCache = { hash: '', w: 0, h: 0, on: false };
+
+	function ensureHudOffscreen(w, h) {
+		if (!hudOffscreen) {
+			hudOffscreen = document.createElement('canvas');
+			hudOffCtx = hudOffscreen.getContext('2d');
+		}
+		if (hudOffscreen.width !== w || hudOffscreen.height !== h) {
+			hudOffscreen.width = w;
+			hudOffscreen.height = h;
+		}
+	}
+
+	function renderHud(ctx) {
+		const enabled = get(configStore).hudUpdateEnabled;
+		const ready = compiledRef && compiledRef.axes;
+		// Anzeige aus: gecachten Zustand zuruecksetzen, nichts malen.
+		if (!enabled || !ready) {
+			hudCache = { hash: '', w: 0, h: 0, on: false };
+			return;
+		}
+		// Exakte BigInt-Werte aus der Simulation (Mathe unveraendert).
+		let { N_l, N_R, GRID, AREA_SCALE } = computeLiveL(compiledRef, u_time, BASE);
+		let { P_str, P2_str, rem_str } = formatLiveNumbers(N_l, N_R, GRID, AREA_SCALE, BASE);
+		// Jede Zeile: [Label, Wert, Basis-Subscript]. Die Basis wird als
+		// tiefgestellte, kleinere Zahl NACH dem Wert gemalt (kein Inline).
+		let rows = [
+			['l   = ', P_str, BASE],
+			['l²  = ', P2_str, BASE],
+			['R   = ', rem_str, BASE],
+		];
+		let hash = P_str + '|' + P2_str + '|' + rem_str + '|' + BASE;
+
+		let W = canvasEl.width;
+		let H = canvasEl.height;
+		// Start X: rechts vom Ziel-Quadrat (von renderFrame gesetzt).
+		let x0 = hudX0;
+		// Nur neu bemaden, wenn sich Werte ODER Groesse geaendert haben.
+		if (hash !== hudCache.hash || W !== hudCache.w || H !== hudCache.h || !hudCache.on) {
+			ensureHudOffscreen(W, H);
+			let c = hudOffCtx;
+			c.clearRect(0, 0, W, H);
+			c.setTransform(1, 0, 0, 1, 0, 0);
+
+			let padX = 24;
+			let padY = 28;
+			let lineH = Math.round(H * 0.032) + 8;
+
+			// EINE Schriftgroesse fuer die GANZE Anzeige: startet bei
+			// ~0.8*lineH und wird nur verkleinert, falls die laengste
+			// Zeile (Wert + Luecke + Basis-Subscript) die verfuegbare
+			// Breite (von x0 bis W - padX) ueberschreitet.
+			let fontSize = Math.round(lineH * 0.8);
+			let subFont = Math.round(fontSize * 0.7);
+			let fontFor = (s) => `${s}px ui-monospace, monospace`;
+			let avail = W - padX - x0;
+			c.font = fontFor(fontSize);
+			let longest = 0;
+			for (const [lab, val, base] of rows) {
+				let wval = c.measureText(lab + val).width;
+				let wbase = c.measureText(String(base)).width * (subFont / fontSize);
+				longest = Math.max(longest, wval + 6 + wbase);
+			}
+			if (longest > avail && longest > 0) {
+				let factor = avail / longest;
+				fontSize = Math.max(10, Math.floor(fontSize * factor));
+				subFont = Math.round(fontSize * 0.7);
+				c.font = fontFor(fontSize);
+			}
+
+			c.textAlign = 'left';
+			c.textBaseline = 'alphabetic';
+			c.fillStyle = 'rgba(148,163,184,0.95)';
+			let x = x0;
+			let y = padY + fontSize;
+			for (const [lab, val, base] of rows) {
+				c.font = fontFor(fontSize);
+				c.fillText(lab + val, x, y);
+				// Basis als Subscript: eine Stufe kleinere Schrift,
+				// leicht abgesenkt, direkt NACH dem Wert.
+				let wval = c.measureText(lab + val).width;
+				c.font = fontFor(subFont);
+				c.fillText(String(base), x + wval + 6, y + fontSize - subFont);
+				y += lineH;
+			}
+			hudCache = { hash, w: W, h: H, on: true };
+		}
+		// Gecachtes Bitmap pro Frame auflegen (günstig, kein Reflow/
+		// keine BigInt-Berechnung pro Frame).
+		ctx.save();
+		ctx.setTransform(1, 0, 0, 1, 0, 0);
+		ctx.drawImage(hudOffscreen, 0, 0);
+		ctx.restore();
 	}
 
 	function resizeCanvas() {

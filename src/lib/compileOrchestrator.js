@@ -127,13 +127,34 @@ runJob(get(configStore));
 
 // configStore-Änderungen abonnieren (configStore selbst bleibt synchron/
 // sofort - Tippen/URL-Export warten NICHT auf den Compile).
+// Nur recompilieren, wenn sich FELDER aendern, die den Compile
+// tatsaechlich beeinflussen (Basis, Tiefe, Transform, Zoom-Schwellen,
+// Kompaktierung). Reine Laufzeit-Felder wie playSpeed/playback duerfen
+// KEINEN teuren Recompile ausloesen (s. INTERFACE-TODO "Geschwindigkeits-
+// regler loest Recompile aus").
 // Der erste subscribe-Feuer liefert sofort den Initialwert - den überspringen
 // wir, da wir runJob oben bereits manuell gestartet haben.
+function compileRelevantKey(c) {
+	return JSON.stringify([
+		c.base,
+		c.depth,
+		c.transformMode,
+		c.bankZoomThresholdPowers,
+		c.zoomSpeedCoef,
+		c.compactionEnabled,
+		c.compactionTransitionTicks,
+	]);
+}
 let firstSubscribe = true;
+let _lastCompileKey;
 configStore.subscribe((config) => {
 	if (firstSubscribe) {
 		firstSubscribe = false;
+		_lastCompileKey = compileRelevantKey(config);
 		return;
 	}
+	let key = compileRelevantKey(config);
+	if (key === _lastCompileKey) return; // kein recompile-noetiges Feld geaendert
+	_lastCompileKey = key;
 	runJob(config);
 });
