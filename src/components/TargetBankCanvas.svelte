@@ -506,8 +506,11 @@
 			);
 			let [end_x, end_y, end_w, end_h] = project(tx, ty, target_w, target_h, true);
 
-			let px = start_x * (1 - fly_t) + end_x * fly_t;
-			let py = start_y * (1 - fly_t) + end_y * fly_t;
+			// Position: Center interpolieren (nicht linke obere Ecke),
+			// weil bei reiner Drehung die Größe konstant bleibt und
+			// das Stück sonst nicht auf der Zielzelle landet.
+			let px = (start_x + start_w / 2) * (1 - fly_t) + (end_x + end_w / 2) * fly_t;
+			let py = (start_y + start_h / 2) * (1 - fly_t) + (end_y + end_h / 2) * fly_t;
 			// Form + Drehung ueber morphRect (FLIGHT-MORPH-SPEC): Flaeche
 			// konstant, optional 90°-Drehung statt Streckung. Z_micro ist der
 			// bewusste Streckmodus (keine Morph-Form) - dort lineare Kanten.
@@ -527,8 +530,8 @@
 			// Einheitlicher Zeichenpfad fuer alle Flug-Typen: zentriert +
 			// rotiert. gridPath (Kanten-Gitter) nur bei achsen-aligned
 			// (rot ~ 0) und voller Deckkraft - sonst nur fillRect.
-			let center_x = px + pw / 2;
-			let center_y = py + ph / 2;
+			let center_x = px;
+			let center_y = py;
 			ctx.save();
 			ctx.translate(center_x, center_y);
 			if (Math.abs(rot) > 1e-4) ctx.rotate(rot);
