@@ -273,11 +273,12 @@
 		let teilDCamera = GLOBAL_TEIL_D_ZOOM_SPLINE
 			? GLOBAL_TEIL_D_ZOOM_SPLINE.at(u_time)
 			: { z: 1, cx: 0.5, cy: 0.5, offsetX: 0, offsetY: 0 };
-		bankZoomLabel.innerText = formatZoomFactor(teilDCamera.z);
-		bankAreaLabel.innerText =
-			(bank_frame.mass * 100).toLocaleString('de-DE', {
-				maximumFractionDigits: bank_frame.mass < 0.01 ? 4 : 1,
-			}) + '%';
+		if (bankZoomLabel) bankZoomLabel.innerText = formatZoomFactor(teilDCamera.z);
+		if (bankAreaLabel)
+			bankAreaLabel.innerText =
+				(bank_frame.mass * 100).toLocaleString('de-DE', {
+					maximumFractionDigits: bank_frame.mass < 0.01 ? 4 : 1,
+				}) + '%';
 
 		// Debug-Telemetrie: Bank-Zoom-Transform fuer den Inspect-Kanal melden.
 		// Die Bank-Drawn-Reste selbst werden NICHT hier in einem eigenen
@@ -535,7 +536,9 @@
 		// BigInt-Werte aus computeLiveL (Mathe unveraendert), nur die
 		// Darstellungsschicht ist Canvas statt DOM. Kein Reflow, kein
 		// innerHTML. Position: oben rechts, fix in Geraetepixeln.
-		if (compiledRef && compiledRef.axes) {
+		// Schalter "Zahlendarstellung" (hudUpdateEnabled) schaltet die
+		// Anzeige weiterhin ab - wie vor dem Canvas-Umbau.
+		if (get(configStore).hudUpdateEnabled && compiledRef && compiledRef.axes) {
 			let { N_l, N_R, GRID, AREA_SCALE } = computeLiveL(compiledRef, u_time, BASE);
 			let { P_str, P2_str, rem_str } = formatLiveNumbers(N_l, N_R, GRID, AREA_SCALE, BASE);
 			ctx.save();
@@ -563,6 +566,11 @@
 	}
 
 	function updateAutoZoomIndicator(autoZoomTAB, isActive) {
+		// Cross-Komponenten-DOM aus <ControlPanel>: kann null sein, wenn
+		// das Panel (noch) nicht gemountet ist (z.B. remote.html, oder
+		// Canvas rendert vor dem Panel). Dann einfach ueberspringen -
+		// der Marker ist rein informativ.
+		if (!autoZoomMarker || !autoZoomNote) return;
 		if (AUTO_ZOOM_MIN_PX <= 0) {
 			autoZoomMarker.style.display = 'none';
 			autoZoomNote.style.display = 'none';
