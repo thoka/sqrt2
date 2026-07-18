@@ -8,6 +8,57 @@ Offene Punkte, nach Relevanz sortiert. Erledigtes wird durchgestrichen
 - [x] Weiße Quadrate am Anfang müssen exakt gleich groß sein und vertikal gleich ausgerichtet sein.
 - [x] Test dafür erstellen (`tests/unit/zoom-start-equal.test.js`)
 
+## Steuerung
+- [ ] Solange ein slider bewegt wird, soll das verlassen des parents nicht den Dialog schhließen. Das passiert zuerzeit in den Einstellungen.
+
+
+## Sync-Isolierung via Pin (BroadcastChannel) — optional
+- [ ] Pin als Teil des `BroadcastChannel`-Namens (`sqrt2-state-<pin>`): Tabs mit
+      gleichem Pin teilen einen Kanal, ungleiche/no-Pin sind isoliert.
+- [ ] Pin-Eingabe im ControlPanel/Settings + als URL-Parameter (`?pin=1234`)
+      zum Teilen vorkonfigurierter Links (analog zu urlState.js).
+- [ ] Pin-Wechsel zur Laufzeit: Channel neu aufmachen, wenn sich der Pin
+      ändert (bestehender Listener schließen + neuer öffnen).
+- [ ] (Nett, aber NICHT zwingend für Virtual-Canvas — dort identifiziert
+      jedes Fenster sich über eine eigene zufällige ID, siehe unten.)
+
+## Virtual Canvas / Multi-Viewport (Mehrbildschirm-Exponat)
+Konzept: ein gemeinsamer VIRTUELLER Canvas-Koordinatenraum, zusammengesetzt
+aus vielen Fenstern/Beamern/Laptops. Jedes Fenster zeichnet nur SEINEN
+Ausschnitt (inkl. Lücken dazwischen). Fliegende Teile bewegen sich
+physikalisch über Fenstergrenzen hinweg (nahtlos, weil alle Fenster denselben
+compiledStore + dieselbe playbackStore-Zeit haben und daher dieselbe
+Welt-Position eines Stücks berechnen).
+
+- [ ] **Fenster-ID**: jedes Tab bekommt eine eindeutige ZUFÄLLIGE ID (nicht
+      vom User vergeben). Identifiziert das Fenster eindeutig im Verbund.
+- [ ] **Layout-Map (geteilter Zustand)**: pro Fenster-ID seine Lage auf dem
+      virtuellen Canvas: Position (x,y), Größe (w,h), optional Lücken.
+      Liegt in einem geteilten Store (Sync / Connection-Service), damit jedes
+      Fenster das Gesamt-Layout kennt.
+- [ ] **Viewport-Transformation im Render-Pfad** (`renderFrame` /
+      `TargetBankCanvas.svelte`): Welt-Koordinate -> Bildschirm =
+      (Welt - FensterOffset) * Scale; Fenster zeichnet nur den Teil des
+      virtuellen Canvas, der in seinen Ausschnitt fällt. KEINE zweite
+      Kompilierung nötig (configStore/compiledStore sind durch Sync identisch).
+- [ ] **Lücken**: Fenster dürfen Lücken im virtuellen Canvas lassen (nicht
+      lückenlos aneinandergereiht) — die Transformation muss Offset + Scale
+      pro Fenster unabhängig handhaben.
+- [ ] **Konfiguration je Fenster**: in den Einstellungen auf dem virtuellen
+      Canvas sagen, welches Fenster (ID) wo sitzt — nicht jeder Nutzer tippt
+      Koordinaten, sondern verschiebt/platziert sein Fenster im Layout-Editor.
+- [ ] **Cross-Device (später)**: derselbe Mechanismus über den Connection-
+      Service (Relay/WebSocket) statt nur BroadcastChannel — jeder Laptop/
+      Beamer ist ein Fenster mit ID + Layout-Position. Der Relay-Transport
+      (schon gebaut) ist der einzige Unterschied zum Same-Browser-Fast-Path.
+- [ ] **Voraussetzung**: Sync-Isolierung (Pin oder anderer Kanal-Filter),
+      sonst steuern fremde Tabs im selben Browser den Verbund mit.
+- [ ] Unit/E2E: zwei Fenster mit unterschiedlicher Viewport-Transformation
+      rendern denselben Welt-Punkt an der korrekten, sich ergänzenden Stelle;
+      ein fliegendes Stück überquert die Grenze ohne Sprung.
+
+## Flug-Animation
+
 ## Flug-Animation
 - [ ] Die Flug-Animation soll ab einer bestimmten Geschwindigkeit ausgeschaltet werden.
 - [ ] Diese Geschwindigkeit (Vorgabe 3) soll einstellbar sein in den Animations-Optionen.
