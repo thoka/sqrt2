@@ -72,12 +72,14 @@
 	const MINPX_HI = 100;
 	const MINPX_SPAN = Math.log(MINPX_HI / MINPX_LO);
 	const MINPX_EFF_ZERO = 1.5 * MINPX_LO;
-	let minPxPos = $state(0.5);
-	$effect(() => {
-		const v = $configStore.autoZoomMinPx;
-		let t = Math.log(Math.max(MINPX_LO, v) / MINPX_LO) / MINPX_SPAN;
-		minPxPos = Math.max(0, Math.min(1, t));
-	});
+	// Position aus dem Store-Wert abgeleitet (kein $effect + bind:value,
+	// das eine Endlosschleife ausloest): t = log(v/LO)/SPAN.
+	const minPxPos = $derived(
+		Math.max(
+			0,
+			Math.min(1, Math.log(Math.max(MINPX_LO, $configStore.autoZoomMinPx) / MINPX_LO) / MINPX_SPAN),
+		),
+	);
 	function onMinPxInput(e) {
 		let t = parseFloat(e.target.value);
 		let v = MINPX_LO * Math.exp(t * MINPX_SPAN);
@@ -331,14 +333,7 @@
 
 		<label class="control-group" style="margin-top:6px;"
 			>Auto-Zoom: Mindestpixelgröße
-			<input
-				type="range"
-				min="0"
-				max="1"
-				step="0.001"
-				bind:value={minPxPos}
-				oninput={onMinPxInput}
-			/>
+			<input type="range" min="0" max="1" step="0.001" value={minPxPos} oninput={onMinPxInput} />
 			<span class="zoom-readout"
 				>{$configStore.autoZoomMinPx.toLocaleString('de-DE', {
 					minimumFractionDigits: 3,
