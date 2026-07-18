@@ -181,6 +181,49 @@ bleibt die volle Groesse. Alle Rest-Widget-/Zahlentafel-Filter
 Sprünge + Kamera-dz). Bestätigt: Massen-Sprünge bis 2.0/Frame (C0),
 Kamera-dz = 0 im Fenster.
 
+## Bug (NEU, gefunden nach dem C1-Blatt-Exit-Fix): Blatt-Exit und Kamera-Kompaktierung laufen ASynchron
+
+Symptom (User): "während der Kompaktierung ist die Lücke NOCH gezeichnet
+(Blatt sichtbar schrumpfend), obwohl die Kompaktierung (Nachbarn schliessen
+die Lücke) BEREITS passiert ist" - Blatt-Exit und Kompaktierung greifen
+zeitlich nicht zusammen.
+
+### Wurzel
+Beide Modelle teilen sich zwar dasselbe Tick-Fenster (`gapHoldTicks=1`,
+`transitionTicks` aus `compactionTransitionTicks` - verifiziert in
+`diag-raw.mjs`: leaf-exit Compact `[taken+1, taken+1+transitionTicks]`
+== Kompaktierungs-Reserve-Fenster), ABER der (gedämpfte) Bank-Zoom
+(`GLOBAL_TEIL_D_ZOOM_SPLINE`, aus `layoutCentered`-Zoom-Staenden bei den
+`eventTimes`-Stützpunkten gebaut) kannte das Blatt-Exit-Fenster gar nicht:
+`eventTimesSet` (`compiler.js`) enthielt nur jedes `taken_time` (Blatt VOLL),
+aber NICHT `gapHoldEnd_u`/`te` (Blatt schrumpfend -> 0). Dazwischen lag
+KEIN Stützpunkt, der gedämpfte Filter interpolierte über die ganze
+Exit-Phase hinweg -> die Kamera "hinkt" hinter der tatsächlich gerenderten
+Geometrie her: das Blatt ist im Rect-Layout schon auf 0 geschrumpft
+(Nachbarn haben die Lücke geschlossen), aber der Zoom steht noch auf dem
+"Blatt voll"-Zustand von `taken_time` -> Blatt erscheint noch schrumpfend.
+
+### Fix (UMGESETZT)
+`eventTimesSet` (`compileSystemData`) enthält jetzt zusätzlich jedes
+`gapHoldEnd_u` und `te` eines entnommenen Blatts als Stützpunkt. Beide
+Modelle (rekursives Rect-Layout UND Kamera-Spline) nutzen damit exakt
+dasselbe Exit-Fenster; der gedämpfte Zoom trifft den "Blatt weg"-Zustand
+jetzt bei `te` exakt. Budget erhalten: das bestehende `MAX_CHECKPOINTS`-
+Downsampling greift weiterhin (gleichverteilt über ALLE Stützpunkte inkl.
+der neuen), damit `finalizeCompiled()` auf dem Main-Thread nicht blockiert
+(Kriterium 6: keine >500ms-rAF-Lücke während der Kompilierung). Sehr
+kleine/tiefe Blätter ohne eigenen Knoten "hinken" höchstens marginal -
+die sichtbaren großen/frühen Blätter sind behoben.
+
+### Verifikation
+- Unit-Test `compiler.test.js`: "TEIL D: Blatt-Exit-Fenster
+  (gapHoldEnd_u, te) sind Kamera-Spline-Knoten" - prüft, dass beide
+  Fenstergrenzen eines entnommenen Blatts in `GLOBAL_BANK_ZOOM_TIMES`
+  als Stützpunkt vorhanden sind.
+- `pnpm test:e2e` (16/16 grün, Kriterium 6 + 10 inklusive).
+- `diag-camera.mjs`: `eventTimes` innerhalb eines Blatt-Exit-Fensters
+  enthalten jetzt die Fenstergrenzen.
+
 ## Flug-Stottern: Korrelation mit HUD-Update (neue Hypothese)
 
 Der Haupt-Hebel fuer das **Flug**-Stottern ist NICHT der Blatt-Exit

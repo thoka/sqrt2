@@ -297,19 +297,44 @@ export function compileSystemData(config) {
 	const MAX_CHECKPOINTS = 400;
 
 	let eventTimesSet = new Set([0]);
+	// TEIL D (REST-PRECISION-PLAN): die Blatt-Exit-Fenster (Hold/Compact)
+	// muessen ALS KNOTEN in die Kamera-Spline fallen, sonst weiss der
+	// (gedaempfte) Bank-Zoom nichts vom Schrumpfen des Blatts und "hinkt"
+	// hinter der tatsaechlich gerenderten Geometrie her - das Blatt bleibt
+	// sichtbar schrumpfend stehen, waehrend die Nachbarn (deren
+	// Kompaktierung denselben Zeitraum sieht) die Luecke schon
+	// geschlossen haben. gapHoldEnd_u/te sind hier noch Roh-Ticks (wie
+	// taken_time), finalizeCompiled() rechnet alle ueber dieselbe
+	// Tick->Zeit-Abbildung in u_time um - beide Modelle (rekursives
+	// Rect-Layout UND Kamera-Spline) nutzen dann exakt dasselbe Fenster.
 	for (let p of bank_pieces) {
 		if (isFinite(p.taken_time)) eventTimesSet.add(p.taken_time);
+		if (isFinite(p.gapHoldEnd_u ?? p.taken_time + p.gapHoldTicks)) {
+			let holdEnd = isFinite(p.gapHoldEnd_u) ? p.gapHoldEnd_u : p.taken_time + p.gapHoldTicks;
+			eventTimesSet.add(holdEnd);
+		}
+		if (isFinite(p.te)) eventTimesSet.add(p.te);
 	}
 	eventTimesSet.add(local_max_time);
 	let eventTimesTicks = Array.from(eventTimesSet).sort((a, b) => a - b);
 	if (eventTimesTicks.length > MAX_CHECKPOINTS) {
+		// Budget erhalten (finalizeCompiled() baut pro Stuetzpunkt einen
+		// Damped-Filter-Knoten auf dem Main-Thread - zu viele wuerden
+		// eine >500ms-Blockade waerend der Kompilierung ausloesen, siehe
+		// Kriterium 6). Gleichverteiltes Downsampling ueber ALLE
+		// Stuetzpunkte (inkl. der kritischen Blatt-Exit-Fenster) - die
+		// Daempfung vertraegt das Ausduennen, einzelne (kleine, tiefe)
+		// Blaetter ohne eigenen Knoten "hinken" hoechstens marginal
+		// hinterher, das sichtbare Ruckeln der grossen, fruehen
+		// Blaetter bleibt aber behoben, weil deren Fenster im
+		// Strichtakt mit erfasst werden.
 		let sampled = [];
 		for (let i = 0; i < MAX_CHECKPOINTS; i++) {
 			sampled.push(
 				eventTimesTicks[Math.floor((i * (eventTimesTicks.length - 1)) / (MAX_CHECKPOINTS - 1))],
 			);
 		}
-		eventTimesTicks = Array.from(new Set(sampled));
+		eventTimesTicks = Array.from(new Set(sampled)).sort((a, b) => a - b);
 	}
 
 	// Kompaktierung: computeCompactionWaypoints enthält mapX/mapY-Funktionen,
