@@ -112,8 +112,8 @@ canvas {
 }
 #playbackBarMount {
 	display: flex;
-	align-items: center;
-	gap: 14px;
+	flex-direction: column;
+	gap: 8px;
 	width: 100%;
 	flex: 1 1 auto;
 	min-width: 0;

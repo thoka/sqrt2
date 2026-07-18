@@ -6,6 +6,7 @@ test-results/
 e2e/artifacts/
 .direnv/
 .claude/
+.opencode/
 docs/
 infra/
 pnpm-lock.yaml

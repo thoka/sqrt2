@@ -4,6 +4,12 @@
 	// configStore/playbackStore, liest kompilierte Werte (GLOBAL_TTM) aus
 	// compiledStore - kein direkter DOM-Zugriff auf das restliche Tool nötig.
 	//
+	// INTERFACE-TODO Phase 1: Einstellungen in Tabs gegliedert
+	// (Grundeinstellungen / Animation / Admin / Remote-Connect). Die
+	// Fernsteuerung (RemoteControl.svelte) zeigt per `visibleTabs`-Prop nur
+	// "Grundeinstellungen"; das Exponat-Overlay und die künftige /admin-Route
+	// zeigen alle Tabs (gleiche Komponente, eigener Host).
+	//
 	// "pre"-Felder (base/depth/mode/zoomThreshold/zoomSpeed/compaction/
 	// compactionTransition) lösen wie zuvor NUR bei "change" (Blur/Enter) eine
 	// Änderung aus, nicht bei jedem Tastendruck - deshalb bewusst kein
@@ -25,6 +31,21 @@
 		createWsRoom,
 	} from '../lib/connection.js';
 
+	// Welche Tabs sichtbar sind. Default: alle. Die Fernsteuerung übergibt
+	// nur ['Grundeinstellungen'] (Besucher-QR zeigt nur die Grundeinstellungen).
+	const ALL_TABS = ['Grundeinstellungen', 'Animation', 'Admin', 'Remote-Connect'];
+	let { visibleTabs = ALL_TABS } = $props();
+
+	let activeTab = $state('Grundeinstellungen');
+	// Wenn der erlaubte Tab-Satz wechselt (z.B. Remote ohne Admin), sicher-
+	// stellen, dass ein sichtbarer Tab aktiv ist.
+	$effect(() => {
+		if (!visibleTabs.includes(activeTab)) {
+			activeTab = visibleTabs[0] ?? 'Grundeinstellungen';
+		}
+	});
+	const showTab = (t) => visibleTabs.includes(t);
+
 	function onChangeInt(field, fallback) {
 		return (e) => {
 			let v = parseInt(e.target.value);
@@ -45,6 +66,18 @@
 	}
 	function onChangeValue(field) {
 		return (e) => configStore.update((c) => ({ ...c, [field]: e.target.value }));
+	}
+
+	// Zoom-Schwellwert: in der UI "Zoom-Schwellwert" (immer Basis 10), im
+	// Store als Potenzen zur echten Basis. Umrechnung 10/base (siehe
+	// INTERFACE-TODO Admin).
+	const base10Threshold = $derived(
+		Math.round(($configStore.bankZoomThresholdPowers * 10) / $configStore.base),
+	);
+	function onThreshold10Change(e) {
+		let v10 = parseInt(e.target.value);
+		if (Number.isNaN(v10)) v10 = 0;
+		configStore.update((c) => ({ ...c, bankZoomThresholdPowers: Math.round((v10 * c.base) / 10) }));
 	}
 
 	// Tick-Eingabe: alternative Zeitachse (Vergleich mit Test-Tool, siehe
@@ -94,21 +127,20 @@
 	}
 
 	// === Fernsteuerung / Cross-Device (Connection-Service, Spec §12 3/4) ===
-	// Das Exponat (Haupttool) startet eine Sitzung: mintet ein Join-Token
-	// beim Relay, verbindet sich als Host via WebSocket und zeigt Gästen
-	// einen QR-Code (Link zur Svelte-Fernsteuerung) sowie die PIN.
 	const LS_RELAY = 'sqrt2.relayUrl';
 	const LS_APIKEY = 'sqrt2.apiKey';
 
-	// Default: selber Origin (Vite-Proxy bzw. server/index.js leiten
-	// /api + /ws auf den embedded Relay weiter) -> kein CORS, kein Port-
-	// Unterschied. Nur wer den Relay standalone auf einem anderen Port
-	// betreibt, aendert das hier.
-	let relayUrl = $state(localStorage.getItem(LS_RELAY) ?? location.origin);
-	let apiKey = $state(localStorage.getItem(LS_APIKEY) ?? '');
+	let relayUrl = $state(
+		typeof localStorage !== 'undefined'
+			? (localStorage.getItem(LS_RELAY) ?? location.origin)
+			: location.origin,
+	);
+	let apiKey = $state(
+		typeof localStorage !== 'undefined' ? (localStorage.getItem(LS_APIKEY) ?? '') : '',
+	);
 	let seats = $state(4);
 	let pinInput = $state('');
-	let session = $state(null); // { token, wsUrl, pin, seats, expiresAt, guestLink, room }
+	let session = $state(null);
 	let connStatus = $state('idle');
 	let guestCount = $state(0);
 	let sessionError = $state('');
@@ -116,11 +148,12 @@
 	let linkCopied = $state(false);
 
 	function persistSettings() {
-		localStorage.setItem(LS_RELAY, relayUrl);
-		localStorage.setItem(LS_APIKEY, apiKey);
+		if (typeof localStorage !== 'undefined') {
+			localStorage.setItem(LS_RELAY, relayUrl);
+			localStorage.setItem(LS_APIKEY, apiKey);
+		}
 	}
 
-	// Relativer Pfad zur Fernsteuerung (berücksichtigt base: '/sqrt2/').
 	function remoteControlPath() {
 		return new URL('remote.html', location.href).pathname;
 	}
@@ -131,10 +164,6 @@
 		await QRCode.toCanvas(qrCanvas, text, { width: 200, margin: 1 });
 	}
 
-	// QR erst zeichnen, sobald der Canvas im DOM ist (er liegt im Session-
-	// Zweig, der beim Klick noch nicht gemountet war - direktes renderQr im
-	// startSession traf einen noch nicht existierenden Canvas). $effect läuft
-	// nach dem DOM-Update, wenn qrCanvas gebunden ist.
 	$effect(() => {
 		if (session && qrCanvas) renderQr(session.guestLink);
 	});
@@ -219,276 +248,318 @@
 	}
 </script>
 
-<div style="font-weight: bold; margin-bottom: 5px; color: #3b82f6;">System-Compiler</div>
-<div class="control-row">
-	<label class="control-group"
-		>Basis (b)
-		<input
-			type="number"
-			min="2"
-			max="16"
-			value={$configStore.base}
-			onchange={onChangeInt('base', $configStore.base)}
-		/>
-	</label>
-	<label class="control-group"
-		>{'Tiefe ($n_{max}$)'}
-		<input
-			type="number"
-			min="1"
-			max="100"
-			value={$configStore.depth}
-			onchange={onChangeInt('depth', $configStore.depth)}
-		/>
-	</label>
+<div class="tabs" role="tablist">
+	{#each ALL_TABS as tab}
+		{#if showTab(tab)}
+			<button
+				role="tab"
+				class="tab-btn"
+				class:active={activeTab === tab}
+				onclick={() => (activeTab = tab)}>{tab}</button
+			>
+		{/if}
+	{/each}
 </div>
-{#if $configStore.depth > 5}
-	<div class="warning">Tiefe &gt; 5 kann Leistung beeinträchtigen.</div>
-{/if}
 
-<label class="control-group" style="margin-top: 5px;"
-	>Transformation (Flug-Modus)
-	<select value={$configStore.transformMode} onchange={onChangeValue('transformMode')}>
-		<option value="S">S: Strecken (Morphing)</option>
-		<option value="Z">Z: Zerschneiden (Montessori) - Rück-Verschmelzung noch buggy</option>
-	</select>
-</label>
+<div class="tab-body">
+	{#if showTab('Grundeinstellungen') && activeTab === 'Grundeinstellungen'}
+		<div class="control-row">
+			<label class="control-group"
+				>Basis
+				<input
+					type="number"
+					min="2"
+					max="16"
+					value={$configStore.base}
+					onchange={onChangeInt('base', $configStore.base)}
+				/>
+			</label>
+			<label class="control-group"
+				>Tiefe
+				<input
+					type="number"
+					min="1"
+					max="100"
+					value={$configStore.depth}
+					onchange={onChangeInt('depth', $configStore.depth)}
+				/>
+			</label>
+		</div>
 
-<hr style="border: 1px solid #334155; margin: 10px 0;" />
+		<label class="control-group" style="margin-top: 5px;"
+			>Zoom
+			<div class="slider-with-marker">
+				<input
+					type="range"
+					min="0"
+					max="1"
+					step="0.01"
+					value={$configStore.modeAB}
+					oninput={onInputFloat('modeAB', 0)}
+				/>
+				<div class="auto-zoom-marker" id="autoZoomMarker" title="Auto-Zoom-Mindestwert"></div>
+			</div>
+		</label>
+		<div class="auto-zoom-note" id="autoZoomNote">
+			Auto-Zoom aktiv - übersteuert den Regler nach oben
+		</div>
 
-<label class="control-group"
-	>Tick (Vergleich mit Test-Tool) — {$compiledStore?.GLOBAL_TTM
-		? $compiledStore.GLOBAL_TTM.timeToTick($playbackStore.time).toFixed(2)
-		: 0} / {$compiledStore?.GLOBAL_TTM ? $compiledStore.GLOBAL_TTM.maxTick : 0}
-	<input
-		bind:this={tickEl}
-		type="number"
-		min="0"
-		step="1"
-		value="0"
-		onfocus={() => {
-			tickFocused = true;
-		}}
-		onblur={() => {
-			tickFocused = false;
-		}}
-		onchange={onTickChange}
-	/>
-</label>
+		<label class="control-group" style="margin-top:6px;"
+			>Auto-Zoom: Mindestbreite (px)
+			<input
+				type="number"
+				min="0"
+				max="200"
+				step="1"
+				value={$configStore.autoZoomMinPx}
+				oninput={onInputFloat('autoZoomMinPx', 0)}
+			/>
+		</label>
 
-<div class="control-group" style="margin-top:10px;">
-	<label class="control-group"
-		>Modus B (Hypothetische Basis $b \to 1$)
-		<div class="slider-with-marker">
+		<div class="control-group" style="margin-top:10px;">
+			<div>
+				Bank-Zoom (automatisch, reale Basis) — <span class="zoom-readout" id="bankZoomLabel"
+					>1,0×</span
+				>
+			</div>
+			<div style="margin-top:-4px;">
+				Restfläche der Bank — <span class="zoom-readout" id="bankAreaLabel">100%</span>
+			</div>
+		</div>
+
+		<label
+			class="control-group"
+			style="margin-top:10px; flex-direction: row; align-items: center; gap: 8px;"
+		>
+			<input
+				type="checkbox"
+				style="width: auto;"
+				checked={$configStore.compactionEnabled}
+				onchange={onChangeChecked('compactionEnabled')}
+			/>
+			Kompaktierung
+		</label>
+		<label class="control-group" style="margin-top:6px;"
+			>Übergangsdauer (Ticks)
+			<input
+				type="number"
+				min="0"
+				max="30"
+				step="1"
+				value={$configStore.compactionTransitionTicks}
+				onchange={onChangeInt('compactionTransitionTicks', $configStore.compactionTransitionTicks)}
+			/>
+		</label>
+	{/if}
+
+	{#if showTab('Animation') && activeTab === 'Animation'}
+		<label class="control-group" style="margin-top: 5px;"
+			>Flug-Modus
+			<select value={$configStore.transformMode} onchange={onChangeValue('transformMode')}>
+				<option value="S">S: Strecken (Morphing)</option>
+				<option value="Z">Z: Zerschneiden (Montessori) - Rück-Verschmelzung noch buggy</option>
+			</select>
+		</label>
+
+		<label class="control-group" style="margin-top:6px;"
+			>Zoom-Trägheit (kleiner = schneller)
+			<input
+				type="number"
+				min="0.002"
+				max="0.08"
+				step="0.001"
+				value={$configStore.zoomSpeedCoef}
+				onchange={onChangeFloat('zoomSpeedCoef', $configStore.zoomSpeedCoef)}
+			/>
+		</label>
+
+		<label class="control-group" style="margin-top:6px;"
+			>Linienbreite
+			<span class="zoom-readout"
+				>{$configStore.lineWidth.toLocaleString('de-DE', {
+					minimumFractionDigits: 1,
+					maximumFractionDigits: 1,
+				})}px</span
+			>
 			<input
 				type="range"
 				min="0"
-				max="1"
-				step="0.01"
-				value={$configStore.modeAB}
-				oninput={onInputFloat('modeAB', 0)}
+				max="4"
+				step="0.1"
+				value={$configStore.lineWidth}
+				oninput={onInputFloat('lineWidth', 0.3)}
 			/>
-			<div class="auto-zoom-marker" id="autoZoomMarker" title="Auto-Zoom-Mindestwert"></div>
-		</div>
-	</label>
-	<div class="auto-zoom-note" id="autoZoomNote">
-		Auto-Zoom aktiv - übersteuert den Regler nach oben
-	</div>
-</div>
-<label class="control-group" style="margin-top:6px;"
-	>Auto-Zoom: Mindestbreite feinste Stelle (Pixel, 0 = aus)
-	<input
-		type="number"
-		min="0"
-		max="200"
-		step="1"
-		value={$configStore.autoZoomMinPx}
-		oninput={onInputFloat('autoZoomMinPx', 0)}
-	/>
-</label>
+		</label>
 
-<div class="control-group" style="margin-top:10px;">
-	<div>
-		Bank-Zoom (automatisch, reale Basis) — <span class="zoom-readout" id="bankZoomLabel">1,0×</span>
-	</div>
-	<div style="margin-top:-4px;">
-		Restfläche der Bank — <span class="zoom-readout" id="bankAreaLabel">100%</span>
-	</div>
-</div>
-<label class="control-group" style="margin-top:6px;"
-	>Zoom-Schwellwert (Potenzen ignorieren)
-	<input
-		type="number"
-		min="0"
-		max="10"
-		step="1"
-		value={$configStore.bankZoomThresholdPowers}
-		onchange={onChangeInt('bankZoomThresholdPowers', $configStore.bankZoomThresholdPowers)}
-	/>
-</label>
-<label class="control-group" style="margin-top:6px;"
-	>Bank-/Kompaktierungs-Zoom: Trägheit (kleiner = schneller)
-	<input
-		type="number"
-		min="0.002"
-		max="0.08"
-		step="0.001"
-		value={$configStore.zoomSpeedCoef}
-		onchange={onChangeFloat('zoomSpeedCoef', $configStore.zoomSpeedCoef)}
-	/>
-</label>
-<label
-	class="control-group"
-	style="margin-top:6px; flex-direction: row; align-items: center; gap: 8px;"
->
-	<input
-		type="checkbox"
-		style="width: auto;"
-		checked={$configStore.compactionEnabled}
-		onchange={onChangeChecked('compactionEnabled')}
-	/>
-	Kompaktierung ("Zeilen/Spalten ausblenden") statt Bank-Zoom
-</label>
-<label class="control-group" style="margin-top:6px;"
-	>Kompaktierung: Übergangsdauer (Ticks)
-	<input
-		type="number"
-		min="0"
-		max="30"
-		step="1"
-		value={$configStore.compactionTransitionTicks}
-		onchange={onChangeInt('compactionTransitionTicks', $configStore.compactionTransitionTicks)}
-	/>
-</label>
+		<label class="control-group" style="margin-top:6px;"
+			>Wartezeit (Anfang/Ende) (Sekunden)
+			<input
+				type="number"
+				min="0"
+				max="10"
+				step="0.1"
+				value={$configStore.pauseDuration}
+				oninput={onInputFloat('pauseDuration', 1.5)}
+			/>
+		</label>
+	{/if}
 
-<hr style="border: 1px solid #334155; margin: 10px 0;" />
-
-<label class="control-group" style="margin-top:6px;"
-	>Linienbreite (dicker = weniger Flirren, kaum Performance-Kosten) — <span class="zoom-readout"
-		>{$configStore.lineWidth.toLocaleString('de-DE', {
-			minimumFractionDigits: 1,
-			maximumFractionDigits: 1,
-		})}px</span
-	>
-	<input
-		type="range"
-		min="0"
-		max="4"
-		step="0.1"
-		value={$configStore.lineWidth}
-		oninput={onInputFloat('lineWidth', 0.3)}
-	/>
-</label>
-
-<hr style="border: 1px solid #334155; margin: 10px 0;" />
-
-<label class="control-group"
-	>Wiedergabe: Wartezeit an Anfang &amp; Ende (Sekunden)
-	<input
-		type="number"
-		min="0"
-		max="10"
-		step="0.1"
-		value={$configStore.pauseDuration}
-		oninput={onInputFloat('pauseDuration', 1.5)}
-	/>
-</label>
-<label class="control-group"
-	>Wiedergabe: Geschwindigkeit (Multiplikator)
-	<input
-		type="number"
-		min="0.1"
-		max="20"
-		step="0.1"
-		value={$configStore.playSpeed}
-		oninput={onInputFloat('playSpeed', 2.0)}
-	/>
-</label>
-
-<hr style="border: 1px solid #334155; margin: 10px 0;" />
-
-<label class="control-group" style="margin-top:6px;"
-	>Rest-Anzeige (austauschbares Widget)
-	<select
-		value={$displayStore.restWidget}
-		onchange={(e) => displayStore.update((d) => ({ ...d, restWidget: e.target.value }))}
-	>
-		<option value="bars">Balken (vertikal)</option>
-		<option value="grid">Grid (4×4, horizontal)</option>
-	</select>
-</label>
-
-<hr style="border: 1px solid #334155; margin: 10px 0;" />
-
-<div class="control-group">
-	<div>Aktuellen Zustand teilen (kopiert in die Zwischenablage)</div>
-	<div class="control-row">
-		<button type="button" class="settings-btn" class:copied={urlCopied} onclick={copyUrl}
-			>{urlCopied ? 'Kopiert ✓' : 'Als URL kopieren'}</button
-		>
-		<button type="button" class="settings-btn" class:copied={paramsCopied} onclick={copyParams}
-			>{paramsCopied ? 'Kopiert ✓' : 'Nur Parameter kopieren'}</button
-		>
-	</div>
-
-	<hr style="border: 1px solid #334155; margin: 10px 0;" />
-
-	<div class="control-group">
-		<div style="font-weight: bold; color: #3b82f6;">Fernsteuerung (Handy via QR)</div>
-		{#if !session}
-			<label class="control-group" style="margin-top:5px;"
-				>Relay-URL (des Connection-Service)
-				<input type="text" bind:value={relayUrl} placeholder="http://host:8080" />
-			</label>
-			<label class="control-group" style="margin-top:5px;"
-				>API-Key (Exponat)
-				<input type="text" bind:value={apiKey} placeholder="Relay-API_KEY" />
-			</label>
-			<div class="control-row" style="margin-top:5px;">
-				<label class="control-group"
-					>Plätze (Seats)
-					<input type="number" min="1" max="999" bind:value={seats} />
-				</label>
-				<label class="control-group"
-					>PIN (optional)
-					<input type="text" bind:value={pinInput} placeholder="leer = keine PIN" />
-				</label>
-			</div>
-			<button type="button" class="settings-btn" onclick={startSession}>Sitzung starten</button>
-			{#if sessionError}
-				<div class="error-msg">{sessionError}</div>
-			{/if}
-		{:else}
-			<div class="control-row" style="align-items:center; gap:14px; margin-top:5px;">
-				<canvas bind:this={qrCanvas} width="200" height="200"></canvas>
-				<div class="control-group" style="gap:6px;">
-					<div>
-						Status:
-						<span class="zoom-readout">{connStatus}</span>
-					</div>
-					<div>
-						Gäste verbunden: <span class="zoom-readout">{guestCount}</span>
-					</div>
-					{#if session.pin}
-						<div>
-							PIN: <span class="zoom-readout" style="font-size:1.3rem; letter-spacing:2px;"
-								>{session.pin}</span
-							>
-						</div>
-					{:else}
-						<div class="muted-note">Keine PIN - Gäste joinen ohne Code.</div>
-					{/if}
-					<button type="button" class="settings-btn" onclick={copyGuestLink}
-						>{linkCopied ? 'Kopiert ✓' : 'Link kopieren'}</button
-					>
-					<button type="button" class="settings-btn" onclick={rotateSessionPin}>PIN rotieren</button
-					>
-					<button type="button" class="settings-btn" onclick={endSession}>Beenden</button>
-				</div>
-			</div>
-			<div class="muted-note" style="margin-top:6px; word-break:break-all;">
-				Gast-Link: {session.guestLink}
+	{#if showTab('Admin') && activeTab === 'Admin'}
+		<label class="control-group" style="margin-top: 5px;"
+			>Zoom-Schwellwert
+			<input
+				type="number"
+				min="0"
+				max="10"
+				step="1"
+				value={base10Threshold}
+				disabled={$configStore.compactionEnabled}
+				onchange={onThreshold10Change}
+			/>
+		</label>
+		{#if $configStore.compactionEnabled}
+			<div class="muted-note" style="margin-top:-4px;">
+				Bei aktiver Kompaktierung nicht verwendet.
 			</div>
 		{/if}
-	</div>
+
+		<label class="control-group" style="margin-top:10px;"
+			>Tick (Debug) — {$compiledStore?.GLOBAL_TTM
+				? $compiledStore.GLOBAL_TTM.timeToTick($playbackStore.time).toFixed(2)
+				: 0} / {$compiledStore?.GLOBAL_TTM ? $compiledStore.GLOBAL_TTM.maxTick : 0}
+			<input
+				bind:this={tickEl}
+				type="number"
+				min="0"
+				step="1"
+				value="0"
+				onfocus={() => {
+					tickFocused = true;
+				}}
+				onblur={() => {
+					tickFocused = false;
+				}}
+				onchange={onTickChange}
+			/>
+		</label>
+
+		<label class="control-group" style="margin-top:6px;"
+			>Rest-Anzeige
+			<select
+				value={$displayStore.restWidget}
+				onchange={(e) => displayStore.update((d) => ({ ...d, restWidget: e.target.value }))}
+			>
+				<option value="bars">Balken (vertikal)</option>
+				<option value="grid">Grid (4×4, horizontal)</option>
+			</select>
+		</label>
+
+		<div class="control-group" style="margin-top:10px;">
+			<div>Aktuellen Zustand teilen (kopiert in die Zwischenablage)</div>
+			<div class="control-row">
+				<button type="button" class="settings-btn" class:copied={urlCopied} onclick={copyUrl}
+					>{urlCopied ? 'Kopiert ✓' : 'Als URL kopieren'}</button
+				>
+				<button type="button" class="settings-btn" class:copied={paramsCopied} onclick={copyParams}
+					>{paramsCopied ? 'Kopiert ✓' : 'Nur Parameter kopieren'}</button
+				>
+			</div>
+		</div>
+	{/if}
+
+	{#if showTab('Remote-Connect') && activeTab === 'Remote-Connect'}
+		<div class="control-group">
+			<div style="font-weight: bold; color: #3b82f6;">Fernsteuerung (Handy via QR)</div>
+			{#if !session}
+				<label class="control-group" style="margin-top:5px;"
+					>Relay-URL (des Connection-Service)
+					<input type="text" bind:value={relayUrl} placeholder="http://host:8080" />
+				</label>
+				<label class="control-group" style="margin-top:5px;"
+					>API-Key (Exponat)
+					<input type="text" bind:value={apiKey} placeholder="Relay-API_KEY" />
+				</label>
+				<div class="control-row" style="margin-top:5px;">
+					<label class="control-group"
+						>Plätze (Seats)
+						<input type="number" min="1" max="999" bind:value={seats} />
+					</label>
+					<label class="control-group"
+						>PIN (optional)
+						<input type="text" bind:value={pinInput} placeholder="leer = keine PIN" />
+					</label>
+				</div>
+				<button type="button" class="settings-btn" onclick={startSession}>Sitzung starten</button>
+				{#if sessionError}
+					<div class="error-msg">{sessionError}</div>
+				{/if}
+			{:else}
+				<div class="control-row" style="align-items:center; gap:14px; margin-top:5px;">
+					<canvas bind:this={qrCanvas} width="200" height="200"></canvas>
+					<div class="control-group" style="gap:6px;">
+						<div>
+							Status:
+							<span class="zoom-readout">{connStatus}</span>
+						</div>
+						<div>
+							Gäste verbunden: <span class="zoom-readout">{guestCount}</span>
+						</div>
+						{#if session.pin}
+							<div>
+								PIN: <span class="zoom-readout" style="font-size:1.3rem; letter-spacing:2px;"
+									>{session.pin}</span
+								>
+							</div>
+						{:else}
+							<div class="muted-note">Keine PIN - Gäste joinen ohne Code.</div>
+						{/if}
+						<button type="button" class="settings-btn" onclick={copyGuestLink}
+							>{linkCopied ? 'Kopiert ✓' : 'Link kopieren'}</button
+						>
+						<button type="button" class="settings-btn" onclick={rotateSessionPin}
+							>PIN rotieren</button
+						>
+						<button type="button" class="settings-btn" onclick={endSession}>Beenden</button>
+					</div>
+				</div>
+				<div class="muted-note" style="margin-top:6px; word-break:break-all;">
+					Gast-Link: {session.guestLink}
+				</div>
+			{/if}
+		</div>
+	{/if}
 </div>
+
+<style>
+	.tabs {
+		display: flex;
+		gap: 4px;
+		flex-wrap: wrap;
+		margin-bottom: 10px;
+		border-bottom: 1px solid #334155;
+	}
+	.tab-btn {
+		background: transparent;
+		color: #94a3b8;
+		border: none;
+		border-bottom: 2px solid transparent;
+		padding: 6px 10px;
+		cursor: pointer;
+		font-size: 0.85em;
+		border-radius: 4px 4px 0 0;
+	}
+	.tab-btn:hover {
+		color: #cbd5e1;
+	}
+	.tab-btn.active {
+		color: #f8fafc;
+		border-bottom-color: #3b82f6;
+	}
+	.tab-body {
+		display: block;
+	}
+	.muted-note {
+		color: #64748b;
+		font-size: 0.78em;
+	}
+</style>
