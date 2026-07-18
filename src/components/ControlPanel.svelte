@@ -341,8 +341,8 @@
 			/>
 			<span class="zoom-readout"
 				>{$configStore.autoZoomMinPx.toLocaleString('de-DE', {
-					minimumFractionDigits: 2,
-					maximumFractionDigits: 2,
+					minimumFractionDigits: 3,
+					maximumFractionDigits: 3,
 				})} px</span
 			>
 		</label>
