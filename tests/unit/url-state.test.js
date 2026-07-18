@@ -23,6 +23,8 @@ const DEFAULT_CONFIG = {
 	pauseDuration: 1.5,
 	playSpeed: 2.0,
 	modeAB: 0.0,
+	hudUpdateEnabled: true,
+	bankRenderEnabled: true,
 };
 const DEFAULT_PLAYBACK = { time: 0, isPlaying: false, direction: 1 };
 const FAKE_COMPILED = {
@@ -85,6 +87,32 @@ test('parsePlaybackFromUrl(): "play" wird als Boolean gelesen, fehlt ohne Parame
 	);
 });
 
+test('parsePlaybackFromUrl(): "dir" kodiert die Laufrichtung (-1 rueckwaerts, sonst vorwaerts)', () => {
+	assert.strictEqual(
+		parsePlaybackFromUrl(new URLSearchParams('dir=-1'), FAKE_COMPILED).direction,
+		-1,
+	);
+	assert.strictEqual(
+		parsePlaybackFromUrl(new URLSearchParams('dir=1'), FAKE_COMPILED).direction,
+		1,
+	);
+	assert.strictEqual(
+		parsePlaybackFromUrl(new URLSearchParams('dir=0'), FAKE_COMPILED).direction,
+		1,
+	);
+	assert.strictEqual(
+		parsePlaybackFromUrl(new URLSearchParams(''), FAKE_COMPILED).direction,
+		undefined,
+	);
+});
+
+test('buildStateParams() schreibt "dir" aus dem playbackStore', () => {
+	let params = buildStateParams(DEFAULT_CONFIG, { time: 0, isPlaying: true, direction: -1 });
+	assert.strictEqual(params.get('dir'), '-1');
+	let paramsFwd = buildStateParams(DEFAULT_CONFIG, { time: 0, isPlaying: true, direction: 1 });
+	assert.strictEqual(paramsFwd.get('dir'), '1');
+});
+
 test('buildStateParams() -> parseConfigFromUrl()/parsePlaybackFromUrl() ist ein Roundtrip (Export == Import)', () => {
 	let config = { ...DEFAULT_CONFIG, base: 7, depth: 12, compactionEnabled: true, modeAB: 0.42 };
 	let playback = { time: 4.5, isPlaying: true, direction: -1 };
@@ -97,6 +125,7 @@ test('buildStateParams() -> parseConfigFromUrl()/parsePlaybackFromUrl() ist ein 
 	let playbackOverrides = parsePlaybackFromUrl(params, { MAX_TIME: 100, GLOBAL_TTM: null });
 	assert.ok(Math.abs(playbackOverrides.time - playback.time) < 1e-6);
 	assert.strictEqual(playbackOverrides.isPlaying, playback.isPlaying);
+	assert.strictEqual(playbackOverrides.direction, playback.direction);
 });
 
 test('buildStateParams() setzt jeden erwarteten URL-Schlüssel', () => {
@@ -116,6 +145,7 @@ test('buildStateParams() setzt jeden erwarteten URL-Schlüssel', () => {
 		'modeab',
 		'time',
 		'play',
+		'dir',
 	]) {
 		assert.ok(params.has(key), `Parameter "${key}" fehlt`);
 	}

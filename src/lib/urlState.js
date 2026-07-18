@@ -79,14 +79,33 @@ const CONFIG_FIELDS = [
 		parse: (v) => v !== '0',
 		format: (c) => (c.bankRenderEnabled ? '1' : '0'),
 	},
+	// --- Playback-Felder (liegen in playbackStore, nicht configStore) ---
+	// Laufrichtung der Zeit: -1 = rueckwaerts, sonst vorwaerts.
+	{
+		key: 'dir',
+		field: 'direction',
+		store: 'playback',
+		parse: (v) => (parseInt(v, 10) < 0 ? -1 : 1),
+		format: (pb) => String(pb.direction),
+	},
 ];
 
-// Liest alle in `params` vorhandenen CONFIG_FIELDS-Parameter und liefert ein
-// partielles Overrides-Objekt (nur tatsächlich in der URL gesetzte Felder) -
-// zum Mergen in configStore, z.B. `configStore.update(c => ({...c, ...overrides}))`.
+// Felder ohne expliciten `store`-Marker gehoeren zum configStore (Default).
+function isConfig(f) {
+	return !f.store || f.store === 'config';
+}
+function isPlayback(f) {
+	return f.store === 'playback';
+}
+
+// Liest alle in `params` vorhandenen CONFIG_FIELDS-Parameter (configStore-
+// Anteil) und liefert ein partielles Overrides-Objekt (nur tatsächlich in der
+// URL gesetzte Felder) - zum Mergen in configStore, z.B.
+// `configStore.update(c => ({...c, ...overrides}))`.
 export function parseConfigFromUrl(params) {
 	let overrides = {};
 	for (let f of CONFIG_FIELDS) {
+		if (!isConfig(f)) continue;
 		if (!params.has(f.key)) continue;
 		let raw = f.parse(params.get(f.key));
 		if (raw === undefined || (typeof raw === 'number' && Number.isNaN(raw))) continue;
@@ -96,8 +115,8 @@ export function parseConfigFromUrl(params) {
 }
 
 // time/tick/play hängen von der bereits kompilierten Simulation ab
-// (MAX_TIME/GLOBAL_TTM) bzw. sind reiner Playback-Zustand - werden separat
-// behandelt (entspricht der früheren "phase: post"-Unterscheidung in
+// (MAX_TIME/GLOBAL_TTM); direction ist reiner Playback-Zustand - werden
+// separat behandelt (entspricht der früheren "phase: post"-Unterscheidung in
 // sqrt2.html, siehe TOOLING_SPEC.md). `compiled` ist das compiledStore-Ergebnis
 // (braucht MAX_TIME/GLOBAL_TTM zum Clampen bzw. Tick->Zeit-Umrechnen).
 export function parsePlaybackFromUrl(params, compiled) {
@@ -117,6 +136,13 @@ export function parsePlaybackFromUrl(params, compiled) {
 		overrides.time = compiled.GLOBAL_TTM.tickToTime(tick);
 	}
 	if (params.has('play')) overrides.isPlaying = params.get('play') === '1';
+	// uebrige playback-Felder (z.B. direction) aus CONFIG_FIELDS uebernehmen.
+	for (let f of CONFIG_FIELDS) {
+		if (!isPlayback(f) || !params.has(f.key)) continue;
+		let raw = f.parse(params.get(f.key));
+		if (raw === undefined || (typeof raw === 'number' && Number.isNaN(raw))) continue;
+		overrides[f.field] = raw;
+	}
 	return overrides;
 }
 
@@ -124,7 +150,10 @@ export function parsePlaybackFromUrl(params, compiled) {
 // zurücklesen - Gegenstück für die "Zustand teilen"-Buttons.
 export function buildStateParams(config, playback) {
 	let p = new URLSearchParams();
-	for (let f of CONFIG_FIELDS) p.set(f.key, f.format(config));
+	for (let f of CONFIG_FIELDS) {
+		if (isConfig(f)) p.set(f.key, f.format(config));
+		else if (isPlayback(f)) p.set(f.key, f.format(playback));
+	}
 	p.set('time', playback.time.toFixed(3));
 	p.set('play', playback.isPlaying ? '1' : '0');
 	return p;
