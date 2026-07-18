@@ -68,6 +68,78 @@ Lass uns die Einstellungen / die Remote-Steuerung aufräumen
    - [ ] E2E: der schmale Geschwindigkeitsregler im Hauptfenster ist per Klick
          betätigbar und schreibt `playSpeed` (kein Overlay/keine tote Zone).
 
+## Ruckeln / "stotternder Film" - Root-Cause (Korrektur der 1e-9-Hypothese)
+
+URL: `base=2&depth=40&mode=S&zoomthresh=0&autozoom=3&zoomspeed=0.012&
+linewidth=0.3&pause=1.5&compaction=1&speed=0.0687&transition=3&time=94.934&play=1`
+
+### Korrektur der urspruenglichen Hypothese
+Die erste Vermutung war: die festen `1e-9`-Schwellen in `buildCompactionMap`
+(`bank-core.js:387`/`:420`) liessen die Kamera pro Frame springen. **FALSCH.**
+Diese Schwellen laufen NUR bei der Kompilierung (einmalig) ueber
+`computeCompactionFitStates` -> `computeCompactionAt` -> `buildCompactionMap`
+(`compiler.js:617`), um die Compile-Zeit-Kamera-Fit-Wegpunkte zu bauen. Zur
+Laufzeit werden die Stueck-POSITIONEN NICHT ueber diese Map gerechnet - das
+macht der rekursive Renderer selbst (siehe unten). Die `1e-9` sind also ein
+reines Compile-Zeit-Thema, kein Per-Frame-Stutter.
+
+### Was wirklich stottert: die Geometrie ist C0, die Kamera C1
+Der rekursive Renderer (`recursive-layout.js`, `layoutBox`/`layoutCentered`)
+berechnet die sichtbaren Stueck-Rechtecke **exakt bei `u_time`**, OHNE
+jegliche zeitliche Interpolation/Glaettung der Geometrie selbst. Nur die
+Kamera (`GLOBAL_TEIL_D_ZOOM_SPLINE`, ein `buildDampedFilterBundle` ueber
+`eventTimes`-Checkpoints) ist C1/gedaempft. Das fuehrt zum asymmetrischen
+"Stotterfilm": die Kamera gleitet weich, waehrend der Inhalt harte Spruenge
+macht.
+
+Konkret (gemessen mit einem Node-Diagnostic ueber `compileSystem` + feines
+`u_time`-Sampling, base=2/depth=10 als Stellvertreter):
+- **Massen-Sprung bis 2.0 volle Einheiten in EINEM Frame** an Ereignis-
+  zeitpunkten (C0-Diskontinuitaet). Bei `dt~1.18e-3` ist das ein echter
+  Sprung, keine interpolierte Bewegung.
+- Quelle: `leafEffectiveSize()` (`recursive-layout.js:54`) liefert volle
+  Groesse bis `taken_time`, dann **hart 0** (bewusste Design-Entscheidung
+  dort, Zeilen 34-59: "sichtbarer Rest endet HART bei taken_time"). Ebenso
+  der `cut_time`-Umschalt in `layoutBox` (`:86`): Blatt->geteilt ist ein
+  harter Wechsel, keine Ueberblendung.
+- Kamera dagegen: `GLOBAL_TEIL_D_ZOOM_SPLINE.at(t).z` liefert im gesamten
+  getesteten Zeitfenster **konstant** (max dz = 0) - die Kamera bewegt sich
+  in diesem Ausschnitt gar nicht, waehrend der Inhalt springt. Das ist der
+  wahrnehmbare Ruckel-Kontrast.
+
+### Einordnung gegen CLAUDE.md "stetige Ableitung"
+CLAUDE.md fordert fuer ALLE automatisierten Bewegungen C1 (kein Sprung in
+Wert ODER Steigung). Die Bank-Geometrie ist hier bewusst davon ausgenommen
+(harter Blatt-Exit, begruendet mit "kein Ease-Out brachte laut Messung
+keine Rest-Drift-Besserung"). Das ist der eigentliche Konflikt: bei
+`base=2/depth=40` + vielen, dicht getakteten Entnahmen (hier ~37
+Ereigniszeiten auf `MAX_TIME~9.45` bei depth=10; bei depth=40 entsprechend
+viel dichter) werden aus den C0-Einzelsprüngen tausende pro Sekunde ->
+sichtbares Ruckeln.
+
+### Offene Richtungsfrage (noch NICHT umgesetzt)
+Moegliche Hebel, um "Interpolation der Zeit glatt genug" zu machen, OHNE die
+Rest-Drift-Garantie zu brechen:
+1. Die Bank-Geometrie (nicht nur die Kamera) ueber `computeSegmentBlend()`
+   oder `buildDampedFilterBundle()` zeitlich glaetten - aber: der harte
+   Blatt-Exit ist aktuell BEWUSST hart (s.o.), aendert man das, muss die
+   Bank/Rest-Drift erneut vermessen werden.
+2. `u_time` nicht linear, sondern ueber eine C1-Zeit-Transformation
+   vorruecken lassen, die bei Ereignisdichten automatisch "ausdünnt"
+   (Vermeidung von Häufungs-Sprüngen) - entspräche der "stetigen
+   Ableitung" der ZEIT selbst.
+3. `MAX_CHECKPOINTS=400` (`compiler.js:297`) ist fuer depth=40 zu
+   grob: die Kamera-Spline-Stuetzpunkte werden auf 400 heruntergesampelt,
+   waehrend die Geometrie an ALLEN Ereigniszeiten (viel mehr) springt ->
+   Kamera und Inhalt laufen auseinander. Feineres Sampling oder
+   ereignis-relative Kamera-Waypoints pruefen.
+
+### Diagnose-Skript (Reproduktion)
+`/tmp/opencode/diag-smooth.mjs` (kompiliert base=2/depth=10, sampelt
+`layoutCentered` ueber 8000 `u_time`-Schritte, misst Massen-/Zentrums-
+Sprünge + Kamera-dz). Bestätigt: Massen-Sprünge bis 2.0/Frame (C0),
+Kamera-dz = 0 im Fenster.
+
 ## Architektur: drei Oberflächen, eine Komponente
 
   - **Exponat selbst** (`#settingsPanel`-Overlay, Hover-Reveal): nur während
