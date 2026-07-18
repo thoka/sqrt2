@@ -514,25 +514,24 @@
 			// Form + Drehung ueber morphRect (FLIGHT-MORPH-SPEC): Flaeche
 			// konstant, optional 90°-Drehung statt Streckung. Z_micro ist der
 			// bewusste Streckmodus (keine Morph-Form) - dort lineare Kanten.
+			// targetRot ist beim Compile bestimmt (0, +PI/2 oder -PI/2).
 			let pw, ph, rot;
 			if (p.type === 'Z_micro') {
 				pw = start_w * (1 - fly_t) + end_w * fly_t;
 				ph = start_h * (1 - fly_t) + end_h * fly_t;
 				rot = 0;
 			} else {
-				// Rotation aus LOGISCHEN Dimensionen (zoom-unabhängig),
-				// Form aus SCREEN-SPACE Dimensionen.
-				let cr = computeRotation(
-					origin?.rect?.w ?? start_w,
-					origin?.rect?.h ?? start_h,
-					target_w,
-					target_h,
-					MORPH_ROT_WEIGHT,
-				);
-				let m = morphRect(start_w, start_h, end_w, end_h, fly_t, cr.rho, cr.dir);
-				pw = m.pw;
-				ph = m.ph;
-				rot = rotationAngle(cr, fly_t) + (p.rot || 0) * fly_t;
+				// Drehung: targetRot wird linear über fly_t interpoliert
+				rot = (p.targetRot || 0) * fly_t;
+				if (Math.abs(rot) < 1e-9) {
+					// Keine Drehung: Form morph zum Ziel (alter Lerp)
+					pw = start_w * (1 - fly_t) + end_w * fly_t;
+					ph = start_h * (1 - fly_t) + end_h * fly_t;
+				} else {
+					// Mit Drehung: Seitenlängen konstant, Canvas-Rotation
+					pw = start_w;
+					ph = start_h;
+				}
 			}
 
 			// Einheitlicher Zeichenpfad fuer alle Flug-Typen: zentriert +

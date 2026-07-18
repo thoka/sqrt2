@@ -152,6 +152,31 @@ export function compileSystemData(config) {
 		GLOBAL_L_PREFIX[i + 1] = acc;
 	}
 
+	// Berechnet die Ziel-Drehung eines fliegenden Stücks (0, +PI/2 oder -PI/2)
+	// aus den LOGISCHEN Dimensionen (zoom-unabhängig). Wird beim Compile
+	// einmalig bestimmt, nicht bei jedem Frame ausgerechnet.
+	// rotWeight: 0 = keine Drehung, 1 = maximale Drehung wo sinnvoll.
+	function computeTargetRot(bp, u, v, rotWeight) {
+		if (rotWeight <= 0) return 0;
+		// Logisches Seitenverhältnis des Bank-Stücks
+		const bankAR = bp.w / bp.h;
+		const logBankAR = Math.log(bankAR);
+		// Logisches Seitenverhältnis der Zielzelle (bei BASE, kein Zoom)
+		const targetW = Math.pow(BASE, -axes[u].exp);
+		const targetH = Math.pow(BASE, -axes[v].exp);
+		const logTargetAR = Math.log(targetW / targetH);
+		const logTargetARRot = Math.log(targetH / targetW); // 90° gedreht
+		// Verzerrung
+		const e_s = Math.abs(logBankAR - logTargetAR);
+		const e_r = Math.abs(logBankAR - logTargetARRot);
+		if (e_s < 1e-9) return 0; // Quadrat oder gleiches Seitenverhältnis
+		const g = Math.max(0, e_s - e_r);
+		if (g < 1e-9) return 0; // Drehung bringt nichts
+		// Binär: wenn Drehung sinnvoll (rho > 0), volle Drehung
+		const dir = logTargetARRot >= logBankAR ? 1 : -1;
+		return (dir * Math.PI) / 2;
+	}
+
 	let render_pipeline = [];
 	let tickTimePairs = [];
 	let global_time = 1.0;
@@ -194,10 +219,25 @@ export function compileSystemData(config) {
 		if (e.count === 1) {
 			let t_fly = global_time;
 			tickTimePairs.push({ tick: e.tick, time: t_fly });
+			let targetRot = computeTargetRot(e.piece, e.u, e.v, 0.5);
 			if (e.is_top) {
-				render_pipeline.push({ type: 'S_macro', bp: e.piece, u: e.u, v: e.v, time_fly: t_fly });
+				render_pipeline.push({
+					type: 'S_macro',
+					bp: e.piece,
+					u: e.u,
+					v: e.v,
+					time_fly: t_fly,
+					targetRot,
+				});
 			} else {
-				render_pipeline.push({ type: 'Z_direct', bp: e.piece, u: e.u, v: e.v, time_fly: t_fly });
+				render_pipeline.push({
+					type: 'Z_direct',
+					bp: e.piece,
+					u: e.u,
+					v: e.v,
+					time_fly: t_fly,
+					targetRot,
+				});
 			}
 			local_max_time = Math.max(local_max_time, t_fly + 1.0);
 			global_time += 0.15;
