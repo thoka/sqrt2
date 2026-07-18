@@ -20,6 +20,7 @@
 	import RestCounterBars from './components/RestCounterBars.svelte';
 	import RestCounterGrid from './components/RestCounterGrid.svelte';
 	import TargetBankCanvas from './components/TargetBankCanvas.svelte';
+	import SpeedSlider from './components/SpeedSlider.svelte';
 
 	// Schaltet die Wort-Präfixe ("Länge ", "Fläche ", "Rest ") im Zahlen-Panel
 	// oben rechts an/aus - Standard aus (nur kurze Symbole l/l²/R).
@@ -245,6 +246,7 @@
 <div id="canvasMount"></div>
 
 <div id="numberPanel"><div id="numberPanelInner"></div></div>
+<div id="speedControl"><SpeedSlider variant="compact" /></div>
 <div id="bankPanel"><div id="bankPanelMount"></div></div>
 <div class="overlay-panel" id="restGridPanel"><div id="restGridMount"></div></div>
 

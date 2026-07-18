@@ -112,8 +112,8 @@ canvas {
 }
 #playbackBarMount {
 	display: flex;
-	flex-direction: column;
-	gap: 8px;
+	align-items: center;
+	gap: 14px;
 	width: 100%;
 	flex: 1 1 auto;
 	min-width: 0;
@@ -122,10 +122,24 @@ canvas {
 	flex: 1 1 auto;
 	min-width: 0;
 }
+
+/* Dezenter Geschwindigkeitsregler im Hauptfenster: rechts VOR dem Bank-
+   Zähler (#bankPanel, 150px breit an right:20px -> dessen linke Kante liegt
+   ~170px vom rechten Rand). Vertikal zentriert, schmal, optisch wie der
+   Zeitregler (INTERFACE-TODO "Korrektur: Geschwindigkeitsregler"). */
+#speedControl {
+	position: fixed;
+	top: 50%;
+	right: 180px;
+	transform: translateY(-50%);
+	z-index: 15;
+	pointer-events: auto;
+	display: flex;
+	align-items: center;
+}
 #bottomBar #playBtn {
-	opacity: 0;
-	pointer-events: none;
-	transition: opacity 0.2s ease;
+	opacity: 1;
+	pointer-events: auto;
 	background: none;
 	border: none;
 	color: #f8fafc;
@@ -141,20 +155,14 @@ canvas {
 	text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
 #bottomBar #timeReadout {
-	opacity: 0;
+	opacity: 1;
 	pointer-events: none;
-	transition: opacity 0.2s ease;
 	color: #cbd5e1;
 	font-family: monospace;
 	font-size: 0.85em;
 	flex-shrink: 0;
 	text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 	white-space: nowrap;
-}
-#bottomBar.visible #playBtn,
-#bottomBar.visible #timeReadout {
-	opacity: 1;
-	pointer-events: auto;
 }
 #bottomBar #playBtn:hover {
 	color: #3b82f6;

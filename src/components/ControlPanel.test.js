@@ -72,7 +72,12 @@ test('Remote-Ansicht zeigt nur Grundeinstellungen', () => {
 
 test('Modus-B-Regler (range) aktualisiert configStore.modeAB live bei "input"', () => {
 	const app = mount(ControlPanel, { target: document.body });
-	const rangeInput = document.querySelector('input[type=range]');
+	// Der Zoom-Regler (modeAB) trägt das Label "Zoom"; der SpeedSlider
+	// (Geschwindigkeit) ist ebenfalls ein range-input und kommt vorher im DOM.
+	const zoomLabel = [...document.querySelectorAll('.control-group')].find((g) =>
+		g.textContent.startsWith('Zoom'),
+	);
+	const rangeInput = zoomLabel.querySelector('input[type=range]');
 
 	rangeInput.value = '0.5';
 	fire(rangeInput, 'input');

@@ -19,6 +19,7 @@
 	// (oninput), genau wie im alten Panel.
 	import { configStore, playbackStore, compiledStore } from '../lib/stores.js';
 	import { displayStore } from '../lib/displayStore.js';
+	import SpeedSlider from './SpeedSlider.svelte';
 	import { buildStateParams } from '../lib/urlState.js';
 	import { initNetworkSync } from '../lib/syncedStore.js';
 	import {
@@ -285,6 +286,8 @@
 				/>
 			</label>
 		</div>
+
+		<SpeedSlider variant="control" />
 
 		<label class="control-group" style="margin-top: 5px;"
 			>Zoom
