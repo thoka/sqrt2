@@ -6,16 +6,25 @@ import { morphRect } from '../../src/lib/morphRect.js';
 
 const DEG = Math.PI / 180;
 
-// erwartete Fläche zu t: morphRect wendet KEIN smoothstep mehr an,
-// der Render-Pfad glättet fly_t vor dem Aufruf.
-function expectedArea(sw, sh, ew, eh, t) {
-	const A0 = sw * sh;
-	const A1 = ew * eh;
+// smoothstep wie im Render-Pfad (TargetBankCanvas ~Zeile 478)
+function smoothstep(t) {
+	return t * t * (3 - 2 * t);
+}
+// Erwartete Fläche: A0 -> A1 über den GEGEBENEN t (kein extra smoothstep,
+// da morphRect keinen internen macht - Render-Pfad glättet fly_t bereits).
+function expectedArea(A0, A1, t) {
 	return A0 * (1 - t) + A1 * t;
 }
 function areaAt(sw, sh, ew, eh, t, w) {
 	const r = morphRect(sw, sh, ew, eh, t, w);
 	return r.pw * r.ph;
+}
+// Exakte Lerp-Formel wie alter Code (ohne morphRect) — Referenz für Endpunkte.
+function linearLerp(start_w, start_h, end_w, end_h, t) {
+	return {
+		pw: start_w * (1 - t) + end_w * t,
+		ph: start_h * (1 - t) + end_h * t,
+	};
 }
 
 test('Invariante: pw*ph == A(t) exakt für beliebige Rechtecke', () => {
@@ -26,9 +35,11 @@ test('Invariante: pw*ph == A(t) exakt für beliebige Rechtecke', () => {
 		[2, 2, 3, 7],
 		[0.3, 0.7, 0.8, 0.2],
 	]) {
+		const A0 = sw * sh;
+		const A1 = ew * eh;
 		for (let i = 0; i <= 10; i++) {
 			const t = i / 10;
-			const A = expectedArea(sw, sh, ew, eh, t); // erwartete Fläche (smoothstep)
+			const A = expectedArea(A0, A1, t);
 			assert.ok(
 				Math.abs(areaAt(sw, sh, ew, eh, t, 0.5) - A) < 1e-9,
 				`Fläche bei (${sw},${sh})->(${ew},${eh}) t=${t}: ${areaAt(sw, sh, ew, eh, t, 0.5)} vs ${A}`,
@@ -51,21 +62,18 @@ test('Kein Pulsieren: pw*ph monoton zwischen A0 und A1', () => {
 		assert.ok(a >= prev - 1e-9, `Fläche nicht monoton bei t=${t}`);
 		prev = a;
 	}
-	// und innerhalb [min,max] der Endflächen (hier A0<A1)
 	assert.ok(prev <= Math.max(A0, A1) + 1e-9);
 });
 
 test('Reine Drehung bei 1:4 -> 4:1 mit weight=1 (Fläche exakt konstant)', () => {
-	// t=0.5: halbe Drehung (45°), Fläche == A0 == A1 == 4
 	const r = morphRect(1, 4, 4, 1, 0.5, 1);
 	assert.ok(Math.abs(r.pw * r.ph - 4) < 1e-9);
 	assert.ok(Math.abs(Math.abs(r.rot) - 45 * DEG) < 1e-6, `rot=${r.rot}`);
 	assert.ok(Math.abs(r.rho - 1) < 1e-9, `rho=${r.rho}`);
-	// t=1: volle Drehung (90°), Form == Ziel
 	const r1 = morphRect(1, 4, 4, 1, 1, 1);
 	assert.ok(Math.abs(r1.pw * r1.ph - 4) < 1e-9);
-	assert.ok(Math.abs(r1.pw - 1) < 1e-6, `pw=${r1.pw}`);
-	assert.ok(Math.abs(r1.ph - 4) < 1e-6, `ph=${r1.ph}`);
+	assert.ok(Math.abs(r1.pw - 4) < 1e-6, `pw=${r1.pw}`);
+	assert.ok(Math.abs(r1.ph - 1) < 1e-6, `ph=${r1.ph}`);
 	assert.ok(Math.abs(Math.abs(r1.rot) - 90 * DEG) < 1e-6, `rot=${r1.rot}`);
 });
 
@@ -96,15 +104,26 @@ test('weight=0 -> keine Drehung (reine Flächenkonstanz-Streckung)', () => {
 	}
 });
 
-test('Endpunkte exakt: t=0 -> Start, t=1 -> Ziel mit Drehung', () => {
-	// t=0
-	let r0 = morphRect(1, 4, 4, 1, 0, 1);
-	assert.ok(Math.abs(r0.pw - 1) < 1e-9 && Math.abs(r0.ph - 4) < 1e-9);
+test('Endpunkte exakt == alter linearer Lerp', () => {
+	const cases = [
+		[1, 4, 4, 1],
+		[1, 0.1, 0.5, 0.5],
+		[2, 2, 3, 7],
+		[0.3, 0.7, 0.8, 0.2],
+	];
+	for (const [sw, sh, ew, eh] of cases) {
+		for (const t of [0, 1]) {
+			const m = morphRect(sw, sh, ew, eh, t, 0.5);
+			const old = linearLerp(sw, sh, ew, eh, t);
+			assert.ok(
+				Math.abs(m.pw - old.pw) < 1e-9 && Math.abs(m.ph - old.ph) < 1e-9,
+				`t=${t} (${sw},${sh})->(${ew},${eh}): morphRect(${m.pw},${m.ph}) != lerp(${old.pw},${old.ph})`,
+			);
+		}
+	}
+	// t=0: rot immer 0
+	const r0 = morphRect(1, 4, 4, 1, 0, 1);
 	assert.ok(Math.abs(r0.rot) < 1e-9);
-	// t=1: volle Drehung (90°), Form == Ziel (gedrehte Zielform via Seitenverhältnis)
-	let r1 = morphRect(1, 4, 4, 1, 1, 1);
-	assert.ok(Math.abs(r1.pw - 1) < 1e-9 && Math.abs(r1.ph - 4) < 1e-9);
-	assert.ok(Math.abs(Math.abs(r1.rot) - 90 * DEG) < 1e-6, `rot=${r1.rot}`);
 });
 
 test('C1-Stetigkeit: morphRect stetig in t (kein Sprung)', () => {
