@@ -21,7 +21,7 @@ pnpm rebuild esbuild >/dev/null 2>&1
 echo "==> build (GITHUB_PAGES=true)"
 # packageManager-Feld temporaer entfernen, sonst triggert Vite einen
 # eigenen (fehlschlagenden) pnpm-install-Lauf.
-mv package.json package.json.bak
+cp package.json package.json.bak
 sed -i.bak '/"packageManager": "pnpm@11.13.0",/d' package.json
 GITHUB_PAGES=true pnpm build
 mv package.json.bak package.json
