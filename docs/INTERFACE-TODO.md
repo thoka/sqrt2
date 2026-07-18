@@ -197,13 +197,48 @@ Felder + URL-Parameter, um die Quelle zu isolieren:
   Bank-Canvas (inkl. Flug) ein.
 
 Test-Kriterium zur Isolierung:
-- `hud=0` -> Flug wird ruhig => HUD/MathJax IST die Quelle.
+- `hud=0` -> Flug wird ruhig => HUD/MathJax IST die Quelle. **BESTAETIGT
+  (laeuft nun butterweich):** mit `hud=0` laeuft die Flug-Animation
+  raeumlich gluckenfei; das Stottern kam ausschliesslich aus dem pro-Frame
+  HUD-Update (MathJax-Typeset blockiert den rAF-Loop).
 - `bankrender=0`, `hud=1` -> HUD aktualisiert sich, Bank steht =>
   bestaetigt die Entkopplung.
-- Danach echter Fix: HUD-Update vom rAF-Loop ENTKOPPELN (z.B. HUD nur
-  bei tatsaechlichem Ziffernwechsel neu typsetten, oder auf eigenen
-  langsamen Timer/Idle-Callback legen), statt pro Frame ueber
-  `playbackStore.set`.
+
+### Fazit: MathJax ist fuer die Zahlendarstellung UNGEEIGNET
+Die Zahlentafel (l/l²/R) wird ueber `updateHUD()` (`App.svelte:62`)
+jeden sichtbaren Schritt neu als LaTeX-String gebaut und via
+`MathJax.typesetPromise` gerendert. Das ist fuer eine **pro-Frame-
+Animation** grundsaetzlich falsch:
+- MathJax ist ein schwerer, synchron blockierender Typesetter (DOM-Rewrite
+  + Layout), kein Canvas-/Text-Renderer. Schon ein einzelnes Typeset
+  pro sichtbarem Ziffernwechsel reicht, um den rAF-Loop zu stallen -
+  exakt dann, wenn Schalen abschliessen (= wenn Fluege passieren).
+- Die Zahlentafel zeigt ohnehin nur 3 kurze Zeilen (l, l², R) in
+  Basis-Darstellung - das braucht KEINEN vollwertigen Math-Typesetter.
+
+### TODO: eigenen Renderer fuer die Zahlendarstellung
+MathJax durch einen leichtgewichtigen, **eigenen** Renderer ersetzen.
+Anforderungen:
+- Rendert l / l² / R direkt (Canvas-Text ODER schlichtes, vorab
+  aufgebautes DOM - KEIN MathJax, KEINE pro-Frame Typeset-Neuberechnung).
+- Muss die exakte BigInt-Darstellung aus `computeLiveL` uebernehmen
+  (P_str / P2_str / rem_str inkl. Basis-Punkt-Formatierung +
+  Trailing-Zero-Trim - s. `App.svelte:80-107`), also nur die
+  *Darstellungsschicht* tauschen, nicht die Mathematik.
+- Das pro-Frame `playbackStore.set({time})` darf NICHT mehr zu einem
+  teuren Render zwingen: entweder HUD nur bei tatsaechlichem
+  Ziffernwechsel (Hash-Vergleich exitsiert schon: `current_hud_hash`,
+  `App.svelte:113`) neu zeichnen, ODER den eigenen Renderer so billig
+  halten, dass er problemlos pro Frame laeuft.
+- `updateHUD()` bleibt die logische Stelle; nur der
+  `MathJax.typesetPromise`-Pfad wird durch den eigenen Renderer ersetzt.
+- Nach dem Tausch: `hudUpdateEnabled`-Schalter kann entfallen (war nur
+  Diagnose); der `bankRenderEnabled`-Schalter bleibt als nuetzliches
+  Diagnose/Wartungs-Werkzeug erhalten.
+- Verifikation: `pnpm test:e2e` (Canvas + HUD mount), Visueller Check
+  dass l/l²/R in der gewaehlten Basis exakt gleich dargestellt werden wie
+  zuvor (Trailing-Zero-Trim, Punkt-Format), und dass die Flug-Animation
+  bei `hud=1` (Default) weiterhin butterweich laeuft.
 
 ## Architektur: drei Oberflächen, eine Komponente
 
@@ -295,3 +330,8 @@ Test-Kriterium zur Isolierung:
   - [ ] Scroll-Rad-Listener auf Zahlenfeldern
   - [ ] `/admin`-Route implementieren (neuer Vite-Entry, analog `remote.html`)
   - [ ] weitere Admin-only-Werte bündeln
+  - [ ] **Eigener Renderer für Zahlendarstellung (statt MathJax)** - siehe
+        "TODO: eigenen Renderer für die Zahlendarstellung" oben. MathJax ist
+        als pro-Frame-Typesetter ungeeignet (Ursache des Flug-Stotterns,
+        via `hud=0` bestätigt). `updateHUD()` behält die BigInt-Mathematik
+        aus `computeLiveL`, nur die Darstellungsschicht wird getauscht.
