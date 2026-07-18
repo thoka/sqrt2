@@ -62,6 +62,25 @@
 	function onChangeFloat(field, fallback) {
 		return onInputFloat(field, fallback);
 	}
+
+	// Logarithmischer Schieberegler fuer die Auto-Zoom-Geschwindigkeit
+	// (zoomSpeedCoef): Bereich 0.01 .. 100 (Faktor 1 exakt in der Mitte
+	// der logarithmischen Skala). Position t in [0,1] <-> Wert
+	// v = ZOOM_LO * (ZOOM_HI/ZOOM_LO)^t.
+	const ZOOM_LO = 0.01;
+	const ZOOM_HI = 100;
+	const ZOOM_SPAN = Math.log(ZOOM_HI / ZOOM_LO);
+	let zoomPos = $state(0.5);
+	$effect(() => {
+		const v = $configStore.zoomSpeedCoef;
+		let t = Math.log(Math.max(ZOOM_LO, v) / ZOOM_LO) / ZOOM_SPAN;
+		zoomPos = Math.max(0, Math.min(1, t));
+	});
+	function onZoomInput(e) {
+		let t = parseFloat(e.target.value);
+		let v = ZOOM_LO * Math.exp(t * ZOOM_SPAN);
+		configStore.update((c) => ({ ...c, zoomSpeedCoef: v }));
+	}
 	function onChangeChecked(field) {
 		return (e) => configStore.update((c) => ({ ...c, [field]: e.target.checked }));
 	}
@@ -365,15 +384,14 @@
 		</label>
 
 		<label class="control-group" style="margin-top:6px;"
-			>Zoom-Trägheit (kleiner = schneller)
-			<input
-				type="number"
-				min="0.002"
-				max="0.08"
-				step="0.001"
-				value={$configStore.zoomSpeedCoef}
-				onchange={onChangeFloat('zoomSpeedCoef', $configStore.zoomSpeedCoef)}
-			/>
+			>Auto-Zoom (Geschwindigkeit)
+			<input type="range" min="0" max="1" step="0.001" bind:value={zoomPos} oninput={onZoomInput} />
+			<span class="zoom-readout"
+				>{$configStore.zoomSpeedCoef.toLocaleString('de-DE', {
+					minimumFractionDigits: 2,
+					maximumFractionDigits: 3,
+				})}×</span
+			>
 		</label>
 
 		<label class="control-group" style="margin-top:6px;"
