@@ -287,7 +287,44 @@ Layout-Cache-Messung Basis 2 (gleiche Kennzahlen wie oben, 4 Frames/Tick):
   (nicht Basis 2 - dort ist buildSystem billig). Der eigentliche
   O(TOTAL_STEPS²)-Schmerz (Abschnitt A/F) tritt bei GROSSER Basis + Tiefe
   auf, nicht bei Basis 2. Für Basis 2 ist damit kein Compiler-Handlungsbedarf
-  erkennbar.
+  erkennbar. Nachgemessen in E.2.
+
+### E.2 Compiler-Wandzeit Basis 10, Tiefe > 20 (gemessen — WAND ERREICHT)
+
+**Methodik:** vorsichtig herangetastet, `buildSystem`-Wandzeit je Tiefe
+EINZELN mit hartem `timeout` (kein Groß-Benchmark - bei Basis 10 explodiert
+die Stückzahl, siehe AGENTS.md GOTCHA zu `compiler-split.test.js`).
+
+| Basis | Tiefe | Knoten | `buildSystem` Wandzeit |
+| ----: | ----: | -----: | ---------------------: |
+|    10 |    16 | 18 931 |               ~4 ms\* |
+|    10 |    20 | 35 011 |            **36,6 s** |
+|    10 |    21 | 35 961 |              41,7 s   |
+|    10 |    22 | 41 791 |              58,7 s   |
+
+\* Tiefe 16 aus dem Herantasten in Abschnitt E (Knotenzahl), nur zur
+Einordnung des Sprungs.
+
+**Befund:** die O(TOTAL_STEPS²)-Wand ist bei Basis 10 real und hart. Von
+Tiefe 20→21→22 steigt die Wandzeit 37 s → 42 s → 59 s (superlinear,
+`isolationScore()` ist O(Knoten) pro Entnahme, und die Knotenzahl wächst
+weiter). **Tiefe 40 bei Basis 10 ist damit praktisch nicht messbar** (grob
+extrapoliert viele Minuten bis Stunden) - der Lauf wurde bei Tiefe 22 bewusst
+gestoppt, die Aussage ist belegt.
+
+**Konsequenz für die Priorisierung:**
+
+- Basis 10 wird bereits ab Tiefe ~20 **im Sekunden-Bereich unbenutzbar** -
+  das ist der konkrete Beleg für den Compiler-Handlungsbedarf (Abschnitt A-C:
+  Split + Cache + inkrementelle Tiefe; F1: Hintergrund-Vorrechnen). Ohne
+  diese Maßnahmen ist "Basis 10 / Tiefe 40" schlicht kein erreichbarer
+  Betriebspunkt.
+- Der Kontrast zu Basis 2 (Tiefe 40 in 200 ms, E.1) zeigt: das Problem ist
+  NICHT die Tiefe an sich, sondern das Produkt aus Basis (Verzweigungsgrad)
+  und Tiefe, das TOTAL_STEPS und damit die Knotenzahl treibt.
+- Damit ist die Layout-Cache-Frage (Abschnitt E) endgültig zweitrangig: bei
+  Basis 10 kommt man wegen des Compilers gar nicht erst in die Tiefen, in
+  denen der Render-Cache theoretisch interessant würde.
 
 ## F. Compiler bei hohen Iterationsstufen: offene Richtungen (Recherche)
 
@@ -334,22 +371,19 @@ sich träge an". 3 ist eine billige Ergänzung, die 2 zusätzlich rechtfertigt.
 Alle drei setzen sinnvoll erst NACH A-C dieses Plans auf (Split + Cache +
 inkrementelle Tiefe als Fundament).
 
-## TODO: Messungen für Basis=2 und bis Iterationsstufe 40 wiederholen
+## Status der Nachmessungen (Basis=2 / hohe Tiefe) — ERLEDIGT
 
 Die ursprüngliche Messung in Abschnitt E beruhte NUR auf **Basis 10,
-Tiefe ≤ 20**. Stand der Nachmessungen:
+Tiefe ≤ 20**. Nachmessungen (beide erledigt, Details in E.1/E.2):
 
 - [x] **Basis = 2, bis Iterationsstufe 40** - erledigt, siehe Abschnitt E.1.
       Ergebnis: geometrisch viel kleiner (Tiefe 40 ≈ 1 600 Knoten),
       Cache-Faktor kleiner (~8-12×), `buildSystem` billig (≤ 200 ms). Kein
       Handlungsbedarf für Basis 2.
-- [ ] **Basis = 10, Tiefe > 20 - Compiler-WANDZEIT** (nicht nur Knotenzahl)
-      messen. Hier tritt das O(TOTAL_STEPS²)-Wachstum (Abschnitt A/F) voll
-      auf. VORSICHTIG herantasten (siehe Methodik in E.1): erst
-      `buildSystem`-Zeit je Tiefe einzeln mit hartem `timeout` proben, bevor
-      eine volle Reihe läuft - bei Basis 10 explodiert die Stückzahl schnell
-      (z.B. hängt `tests/unit/compiler-split.test.js` bei base 16/depth 15,
-      siehe AGENTS.md GOTCHA).
+- [x] **Basis = 10, Tiefe > 20 - Compiler-WANDZEIT** - erledigt, siehe
+      Abschnitt E.2. Ergebnis: O(TOTAL_STEPS²)-Wand real (Tiefe 20 ≈ 37 s,
+      22 ≈ 59 s, superlinear); Tiefe 40 praktisch nicht messbar. Belegt den
+      Compiler-Handlungsbedarf (A-C, F1).
 
 Reproduktion: `node scripts/measure-layout-cache.mjs [BASE] [tiefen...]`
 (nimmt Basis + Tiefen als CLI-Argumente). Für die Compiler-Wandzeit reicht

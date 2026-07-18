@@ -32,10 +32,10 @@
       `COMPILER-LAYERING-PLAN.md` Abschnitt E.1. Ergebnis: Basis 2 ist
       geometrisch klein (Tiefe 40 ≈ 1 600 Knoten), Cache-Faktor kleiner
       (~8-12×), `buildSystem` billig - kein Handlungsbedarf.
-- [ ] **Compiler-WANDZEIT Basis=10, Tiefe > 20** - noch offen (dort tritt
-      O(TOTAL_STEPS²) voll auf). VORSICHTIG herantasten. Details:
-      `COMPILER-LAYERING-PLAN.md` TODO-Abschnitt, Skript
-      `scripts/measure-layout-cache.mjs [BASE] [tiefen...]`.
+- [x] **Compiler-WANDZEIT Basis=10, Tiefe > 20** - erledigt, siehe
+      `COMPILER-LAYERING-PLAN.md` Abschnitt E.2. O(TOTAL_STEPS²)-Wand real
+      (Tiefe 20 ≈ 37 s, 22 ≈ 59 s); Tiefe 40 praktisch nicht messbar. Belegt
+      Compiler-Handlungsbedarf.
 
 ## Nächster logischer Schritt (Phase 6 - Politur)
 
