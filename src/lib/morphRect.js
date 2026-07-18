@@ -50,10 +50,11 @@ export function morphRect(sw, sh, ew, eh, t, rotWeight) {
 	let rho = 0;
 	if (e_s > 1e-9) rho = Math.min(1, Math.max(0, (rotWeight * g) / e_s));
 
-	// Ziel-Seitenverhältnis: IMMER das echte Ziel (rt), nicht gemischt.
-	// rho beeinflusst nur die Canvas-Rotation, nicht die Dimensionen -
-	// sonst stimmen die Endkoordinaten nicht mit dem alten Lerp überein.
-	const rTarget = rt;
+	// Ziel-Seitenverhältnis: bei reiner Drehung bleibt die Form konstant
+	// (rtRot = gedrehte Ziel-Proportion), bei reiner Streckung wird zum
+	// Ziel gemorpht (rt). rho mischt linear dazwischen.
+	// Bei rho=1: Dimensionen = Startform, Canvas-Rotation übernimmt visuell.
+	const rTarget = rho * rtRot + (1 - rho) * rt;
 	// Fläche folgt glatt A0 -> A1
 	const A = A0 * (1 - ts) + A1 * ts;
 	// Seitenverhältnis vom Start zum (gemischten) Ziel morph (log -> exp)

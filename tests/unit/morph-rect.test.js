@@ -1,17 +1,16 @@
 // Tests für src/lib/morphRect.js (FLIGHT-MORPH-SPEC §7).
 // Läuft via `pnpm test` (node:test). Reine Funktion, kein DOM.
+//
+// WICHTIG: Tests NICHT nach Belieben ändern. Jede Änderung muss durch
+// eine korrekte Spezifikation oder einen nachweisbaren Bug motiviert sein.
+// Tests sichern Verhalten ab, nicht Implementierungsdetails.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { morphRect } from '../../src/lib/morphRect.js';
 
 const DEG = Math.PI / 180;
 
-// smoothstep wie im Render-Pfad (TargetBankCanvas ~Zeile 478)
-function smoothstep(t) {
-	return t * t * (3 - 2 * t);
-}
-// Erwartete Fläche: A0 -> A1 über den GEGEBENEN t (kein extra smoothstep,
-// da morphRect keinen internen macht - Render-Pfad glättet fly_t bereits).
+// Erwartete Fläche: A0 -> A1 linear über t (kein smoothstep in morphRect).
 function expectedArea(A0, A1, t) {
 	return A0 * (1 - t) + A1 * t;
 }
@@ -19,13 +18,8 @@ function areaAt(sw, sh, ew, eh, t, w) {
 	const r = morphRect(sw, sh, ew, eh, t, w);
 	return r.pw * r.ph;
 }
-// Exakte Lerp-Formel wie alter Code (ohne morphRect) — Referenz für Endpunkte.
-function linearLerp(start_w, start_h, end_w, end_h, t) {
-	return {
-		pw: start_w * (1 - t) + end_w * t,
-		ph: start_h * (1 - t) + end_h * t,
-	};
-}
+
+// ─── Flächen-Invariante ───────────────────────────────────────────────
 
 test('Invariante: pw*ph == A(t) exakt für beliebige Rechtecke', () => {
 	for (const [sw, sh, ew, eh] of [
@@ -34,6 +28,7 @@ test('Invariante: pw*ph == A(t) exakt für beliebige Rechtecke', () => {
 		[1, 3, 1 / 3, 9],
 		[2, 2, 3, 7],
 		[0.3, 0.7, 0.8, 0.2],
+		[1, 10, 10, 1],
 	]) {
 		const A0 = sw * sh;
 		const A1 = ew * eh;
@@ -65,23 +60,58 @@ test('Kein Pulsieren: pw*ph monoton zwischen A0 und A1', () => {
 	assert.ok(prev <= Math.max(A0, A1) + 1e-9);
 });
 
-test('Reine Drehung bei 1:4 -> 4:1 mit weight=1 (Fläche exakt konstant)', () => {
-	const r = morphRect(1, 4, 4, 1, 0.5, 1);
-	assert.ok(Math.abs(r.pw * r.ph - 4) < 1e-9);
-	assert.ok(Math.abs(Math.abs(r.rot) - 45 * DEG) < 1e-6, `rot=${r.rot}`);
-	assert.ok(Math.abs(r.rho - 1) < 1e-9, `rho=${r.rho}`);
-	const r1 = morphRect(1, 4, 4, 1, 1, 1);
-	assert.ok(Math.abs(r1.pw * r1.ph - 4) < 1e-9);
-	assert.ok(Math.abs(r1.pw - 4) < 1e-6, `pw=${r1.pw}`);
-	assert.ok(Math.abs(r1.ph - 1) < 1e-6, `ph=${r1.ph}`);
-	assert.ok(Math.abs(Math.abs(r1.rot) - 90 * DEG) < 1e-6, `rot=${r1.rot}`);
+// ─── Reine Drehung: Seitenlängen konstant ─────────────────────────────
+
+test('Reine Drehung 1:4 -> 4:1 (weight=1): Seitenlängen konstant', () => {
+	// Bei rho=1 (reine Drehung) bleiben die Dimensionen auf dem Startwert.
+	// Die visuelle Transformation erfolgt über die Canvas-Rotation.
+	const sw = 1,
+		sh = 4,
+		ew = 4,
+		eh = 1;
+	for (let i = 0; i <= 10; i++) {
+		const t = i / 10;
+		const r = morphRect(sw, sh, ew, eh, t, 1);
+		// Fläche exakt konstant (A0 == A1 == 4)
+		assert.ok(Math.abs(r.pw * r.ph - 4) < 1e-9, `Fläche bei t=${t}: ${r.pw * r.ph}`);
+		// Dimensionen bleiben bei Startform (1×4)
+		assert.ok(Math.abs(r.pw - sw) < 1e-9, `pw bei t=${t}: ${r.pw} != ${sw}`);
+		assert.ok(Math.abs(r.ph - sh) < 1e-9, `ph bei t=${t}: ${r.ph} != ${sh}`);
+	}
+	// rot monoton von 0 bis 90°
+	const r0 = morphRect(sw, sh, ew, eh, 0, 1);
+	assert.ok(Math.abs(r0.rot) < 1e-9, `rot bei t=0: ${r0.rot}`);
+	const r1 = morphRect(sw, sh, ew, eh, 1, 1);
+	assert.ok(Math.abs(Math.abs(r1.rot) - 90 * DEG) < 1e-6, `rot bei t=1: ${r1.rot}`);
 });
+
+test('Reine Drehung 1:10 -> 10:1 (weight=1): Seitenlängen konstant', () => {
+	// Exakte Anforderung aus dem Bug-Report: 1:10 → 10:1, Seitenlängen
+	// bleiben konstant, nur Zentrum + Winkel ändern sich.
+	const sw = 1,
+		sh = 10,
+		ew = 10,
+		eh = 1;
+	for (let i = 0; i <= 10; i++) {
+		const t = i / 10;
+		const r = morphRect(sw, sh, ew, eh, t, 1);
+		assert.ok(Math.abs(r.pw * r.ph - 10) < 1e-9, `Fläche bei t=${t}: ${r.pw * r.ph}`);
+		assert.ok(Math.abs(r.pw - sw) < 1e-9, `pw bei t=${t}: ${r.pw} != ${sw}`);
+		assert.ok(Math.abs(r.ph - sh) < 1e-9, `ph bei t=${t}: ${r.ph} != ${sh}`);
+	}
+	const r1 = morphRect(sw, sh, ew, eh, 1, 1);
+	assert.ok(Math.abs(Math.abs(r1.rot) - 90 * DEG) < 1e-6, `rot bei t=1: ${r1.rot}`);
+});
+
+// ─── Quadrat: keine Drehung ───────────────────────────────────────────
 
 test('Quadrat wird nicht gedreht: (1,1) -> (3,7) weight=1', () => {
 	const r = morphRect(1, 1, 3, 7, 0.5, 1);
 	assert.ok(Math.abs(r.rot) < 1e-9, `rot sollte 0 sein, war ${r.rot}`);
 	assert.ok(Math.abs(r.rho) < 1e-9, `rho sollte 0 sein, war ${r.rho}`);
 });
+
+// ─── Mischfall: rho kontinuierlich ────────────────────────────────────
 
 test('Mischfall 1:b -> 2:1 (b=4) hat kontinuierliches rho in (0,1)', () => {
 	const b = 4;
@@ -90,6 +120,8 @@ test('Mischfall 1:b -> 2:1 (b=4) hat kontinuierliches rho in (0,1)', () => {
 		assert.ok(r.rho > 0 && r.rho < 1, `weight=${w}: rho=${r.rho} sollte in (0,1) sein`);
 	}
 });
+
+// ─── weight=0: reine Streckung, keine Drehung ─────────────────────────
 
 test('weight=0 -> keine Drehung (reine Flächenkonstanz-Streckung)', () => {
 	for (const [sw, sh, ew, eh] of [
@@ -104,7 +136,9 @@ test('weight=0 -> keine Drehung (reine Flächenkonstanz-Streckung)', () => {
 	}
 });
 
-test('Endpunkte exakt == alter linearer Lerp', () => {
+// ─── Endpunkte: exakt wie alter Lerp bei weight=0 ─────────────────────
+
+test('Endpunkte bei weight=0: exakt == alter linearer Lerp', () => {
 	const cases = [
 		[1, 4, 4, 1],
 		[1, 0.1, 0.5, 0.5],
@@ -113,18 +147,17 @@ test('Endpunkte exakt == alter linearer Lerp', () => {
 	];
 	for (const [sw, sh, ew, eh] of cases) {
 		for (const t of [0, 1]) {
-			const m = morphRect(sw, sh, ew, eh, t, 0.5);
-			const old = linearLerp(sw, sh, ew, eh, t);
+			const m = morphRect(sw, sh, ew, eh, t, 0);
 			assert.ok(
-				Math.abs(m.pw - old.pw) < 1e-9 && Math.abs(m.ph - old.ph) < 1e-9,
-				`t=${t} (${sw},${sh})->(${ew},${eh}): morphRect(${m.pw},${m.ph}) != lerp(${old.pw},${old.ph})`,
+				Math.abs(m.pw - (sw * (1 - t) + ew * t)) < 1e-9 &&
+					Math.abs(m.ph - (sh * (1 - t) + eh * t)) < 1e-9,
+				`t=${t} (${sw},${sh})->(${ew},${eh}): morphRect(${m.pw},${m.ph}) != lerp`,
 			);
 		}
 	}
-	// t=0: rot immer 0
-	const r0 = morphRect(1, 4, 4, 1, 0, 1);
-	assert.ok(Math.abs(r0.rot) < 1e-9);
 });
+
+// ─── C1-Stetigkeit ────────────────────────────────────────────────────
 
 test('C1-Stetigkeit: morphRect stetig in t (kein Sprung)', () => {
 	const eps = 1e-4;
