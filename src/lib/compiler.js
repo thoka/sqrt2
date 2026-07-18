@@ -9,7 +9,22 @@ import {
 	makeCompactedLogicalRectLookup,
 	computeCompactionFitStates,
 } from './bank-core.js';
+import { layoutCentered } from './recursive-layout.js';
+
+// TEIL C (REST-PRECISION-PLAN): Zoom nutzt kompaktierte Geometrie, damit der
+// kleinste sichtbare Rest auch bei extremem Zoom groß genug skaliert wird.
+// Die Kompaktierungs-Wegpunkte werden dafür IMMER berechnet (unabhängig vom
+// compactionEnabled Render-Modus) - der Zoom-Framing braucht sie zwingend.
+// TEIL D ERSETZT den Render-/Zoom-Konsum dieser Wegpunkte (siehe
+// GLOBAL_TEIL_D_ZOOM_SPLINE weiter unten) - die Berechnung selbst bleibt
+// hier additiv bestehen (u.a. weiter von zoom-robust.test.js geprüft),
+// TargetBankCanvas.svelte konsumiert sie nach der Umstellung nicht mehr.
+const ZOOM_COMPACTION_TRANSITION_TICKS = 3;
 import { buildMonotoneSpline, buildDampedFilterBundle } from './smoothing.js';
+
+// TEIL D (REST-PRECISION-PLAN): Zoom-Rand, analog ZOOM_MARGIN weiter unten -
+// kleiner Puffer, damit der Rest nicht exakt am Pixelrand klebt.
+const TEIL_D_ZOOM_MARGIN = 0.05;
 
 // TEIL B (REST-PRECISION-PLAN): robuste Differenz zweier Stück-Positionen
 // über den gemeinsamen Vorfahren. Statt der rohen, bereits gerundeten
@@ -17,7 +32,7 @@ import { buildMonotoneSpline, buildDampedFilterBundle } from './smoothing.js';
 // benachbarten Stücken) werden die kurzen, gutkonditionierten
 // localOffsetX/Y-Ketten vom tiefsten gemeinsamen Vorfahren aufsummiert.
 // parentMap: id -> piece. Reine Funktion, worker-tauglich (keine Closures).
-export function relativePosition(p, q, parentMap) {
+export function relativePosition(p, q, parentMap, BASE) {
 	// Pfad von p bzw. q zur Wurzel (inkl. localOffsetX/Y je Knoten).
 	let pathP = [];
 	for (let cur = p; cur; cur = parentMap.get(cur.parent_id)) pathP.push(cur);
@@ -33,17 +48,29 @@ export function relativePosition(p, q, parentMap) {
 	// pathP/pathQ sind blatt->wurzel geordnet (path[0] = Blatt). i / j
 	// zeigen auf den tiefsten gemeinsamen Vorfahren (LCA) selbst; die Knoten
 	// UNTERHALB des LCA sind path[0..i] bzw. path[0..j].
-	let dx = 0,
-		dy = 0;
-	for (let k = 0; k <= i; k++) {
-		dx += pathP[k].localOffsetX;
-		dy += pathP[k].localOffsetY;
+	//
+	// Jeder Knoten traegt den ganzzahligen Rasterindex localOffsetX/Y
+	// (0..BASE-1, O(1), siehe bank-core.js). Die echte Position eines
+	// Knotens ist die Faltung von WURZEL (e=letztes) nach BLATT (e=0):
+	//   x = ((...(i_root)/BASE + i_{L-2})/BASE + ... + i_0)/BASE
+	// also  fx = (fx + localOffset[e]) / BASE  von WURZEL nach BLATT - das
+	// gewichtet das BLATT (direkt am Ort) mit BASE^-1 (groesster Beitrag),
+	// den ROOT mit BASE^-L (kleinster), exakt und ohne Float-Ausloeschung,
+	// rein Float (kein BigInt). Wir falten JEDE Kette bis zur WURZEL; die
+	// gemeinsamen oberen Ebenen beider Stuecke sind identisch und heben
+	// sich in rel.dx = foldP - foldQ exakt weg.
+	function fold(path) {
+		let fx = 0,
+			fy = 0;
+		for (let e = path.length - 1; e >= 0; e--) {
+			fx = (fx + path[e].localOffsetX) / BASE;
+			fy = (fy + path[e].localOffsetY) / BASE;
+		}
+		return { fx, fy };
 	}
-	for (let k = 0; k <= j; k++) {
-		dx -= pathQ[k].localOffsetX;
-		dy -= pathQ[k].localOffsetY;
-	}
-	return { dx, dy };
+	let a = fold(pathP);
+	let b = fold(pathQ);
+	return { dx: a.fx - b.fx, dy: a.fy - b.fy };
 }
 
 // compileSystemData(): der TEURE, rein numerische Teil (worker-tauglich).
@@ -59,7 +86,6 @@ export function compileSystemData(config) {
 		transformMode,
 		bankZoomThresholdPowers: BANK_ZOOM_THRESHOLD_POWERS,
 		zoomSpeedCoef,
-		compactionEnabled,
 		compactionTransitionTicks,
 	} = config;
 
@@ -72,7 +98,15 @@ export function compileSystemData(config) {
 	// (Z: Zerschneiden) BASE Stücke der nächsten Ebene pro Rand-Zelle -
 	// siehe bank-core.js für Details.
 	let cellMode = transformMode === 'Z' ? 'subdivide' : 'morph';
-	let { sim, events } = buildSystem(BASE, N_MAX, 'fixed', cellMode);
+	// TEIL D (REST-PRECISION-PLAN): transitionTicks wird an buildSystem
+	// durchgereicht, damit bank-core.js das `te`-Feld jedes Blatt-Stücks bei
+	// der Entnahme mit der TATSÄCHLICH konfigurierten Übergangsdauer
+	// einfriert (fällt bank-core.js's eigener Default nicht implizit anders
+	// aus als der Rest dieses Kompilierlaufs).
+	let compactionParams = {
+		transitionTicks: compactionTransitionTicks >= 0 ? compactionTransitionTicks : undefined,
+	};
+	let { sim, events } = buildSystem(BASE, N_MAX, 'fixed', cellMode, compactionParams);
 	let axes = sim.axes;
 	let TOTAL_STEPS = sim.TOTAL_STEPS;
 	let bank_pieces = sim.bank_pieces;
@@ -176,6 +210,21 @@ export function compileSystemData(config) {
 			// vollständig animiert/verifiziert - absichtlich noch nicht
 			// weiter gefixt, siehe Gesprächsverlauf.
 			let group = events.slice(idx, idx + e.count);
+			// BUG GEFUNDEN (im Gespräch, "Teile fliegen exakt bei den gerenderten
+			// Reststücken los"-Test): `t_cut = global_time - 0.5` zog die Zeit
+			// RETROAKTIV vor den bereits vergebenen Zeitpunkt des VORHERIGEN
+			// Events zurück, wenn dieses (der count===1-Zweig) global_time zuvor
+			// nur um 0.15 erhöht hatte (kein SHELL_GAP, da S unverändert) - der
+			// Puffer von 0.5 war größer als der vorherige Vorschub. Das brach die
+			// von buildTickTimeMapping() geforderte Monotonie (Kommentar weiter
+			// oben) UND ließ piece.te (aus einem SPÄTEREN Tick der Gruppe
+			// abgeleitet) auf einen Zeitpunkt VOR piece.taken_time des VORHERIGEN,
+			// eigenständigen Stücks fallen - layoutBox() pruned ein Stück dann,
+			// bevor es überhaupt als genommen gilt (`t>=te` vor `t<=taken_time`
+			// erreicht). Fix: ERST global_time um denselben Betrag vorziehen, der
+			// gleich wieder abgezogen wird - t_cut landet dadurch garantiert auf
+			// dem alten (bereits monoton fortgeschrittenen) global_time, nie davor.
+			global_time += 0.5;
 			let t_cut = global_time - 0.5;
 			let t_fly = global_time;
 			let t_fuse = global_time + 1.0;
@@ -184,6 +233,13 @@ export function compileSystemData(config) {
 			render_pipeline.push({ type: 'Z_ghost', bp: parent_bp, u: e.u, v: e.v, time_fuse: t_fuse });
 			for (let g of group) {
 				tickTimePairs.push({ tick: g.tick, time: t_cut });
+				// PERFORMANCE-FIX (REST-PRECISION-PLAN, Stand 2026-07-17): markiert
+				// dieses Blatt als Zerschneiden-Gruppenmitglied - finalizeCompiled()
+				// nutzt das, um flightQueryTime auf born_time statt taken_time zu
+				// setzen (Bug 3: alle Geschwister einer Gruppe teilen born_time,
+				// ihre EIGENEN taken_time-Werte unterscheiden sich sonst und
+				// lassen sie sichtbar auseinanderdriften).
+				g.piece.isZMicroLeaf = true;
 				render_pipeline.push({
 					type: 'Z_micro',
 					bp: g.piece,
@@ -204,12 +260,30 @@ export function compileSystemData(config) {
 	// CUT_BORN_LEAD-Versatz wird in finalizeCompiled() angewandt (benötigt
 	// die Closure von buildTickTimeMapping). Hier nur die Tick-Paare + die
 	// rohen taken_time/cut_time/born_time (noch in Tick-Einheiten) mitführen.
-	let raw_bank_pieces = bank_pieces.map((p) => ({
-		...p,
-		taken_time: p.taken_time,
-		cut_time: p.cut_time,
-		born_time: p.born_time,
-	}));
+	let raw_bank_pieces = bank_pieces.map((p) => ({ ...p }));
+
+	// BUG GEFUNDEN (im Gespräch, Bank/Rest-Divergenz-Diagnose): `{...p}` ist
+	// nur ein FLACHER Kopie - `children` bleibt dieselbe Array-Referenz und
+	// zeigt weiter auf die ALTEN (Vor-Map-)Stück-Objekte, NICHT auf die
+	// gerade frisch erzeugten `raw_bank_pieces`-Objekte. finalizeCompiled()
+	// konvertiert weiter unten taken_time/cut_time/born_time/te NUR auf den
+	// TOP-LEVEL-Array-Elementen (`for (let p of bank_pieces) p.taken_time =
+	// ...`) - jeder Konsument, der stattdessen über `piece.children`
+	// traversiert (layoutBox() in recursive-layout.js, also die BANK-
+	// Visualisierung), sah dadurch NIE die konvertierten Zeiten, sondern
+	// permanent die rohen Tick-Werte, während jeder Konsument, der
+	// bank_pieces FLACH iteriert (restByK der Rest-Widgets rechts) die
+	// korrekt konvertierten Werte sah. Das ist die tatsächliche Ursache der
+	// in DEBUG-INSPECT-SPEC.md dokumentierten Bank/Rest-Divergenz - keine
+	// Zeit-Drift zwischen zwei Uhren, sondern zwei verschiedene Objektgraphen
+	// für dieselben logischen Stücke. render_pipeline-Einträge (`bp: e.piece`
+	// weiter oben) verweisen ebenso auf die ALTEN Objekte und brauchen
+	// denselben Fix. Beide werden hier auf EINEN konsistenten Objektgraphen
+	// umgehängt (dieselben Objekte wie im Flach-Array), bevor irgendetwas
+	// per postMessage/structuredClone den Worker verlässt.
+	let byId = new Map(raw_bank_pieces.map((p) => [p.id, p]));
+	for (let p of raw_bank_pieces) p.children = p.children.map((c) => byId.get(c.id));
+	for (let entry of render_pipeline) entry.bp = byId.get(entry.bp.id);
 
 	// Auto-Zoom-Checkpoints (rein numerisch): pro Schale S der Exponent.
 	let auto_zoom_checkpoints = [];
@@ -238,14 +312,16 @@ export function compileSystemData(config) {
 		eventTimesTicks = Array.from(new Set(sampled));
 	}
 
-	// Kompaktierung (nur numerisch; Closure-Bau in finalizeCompiled()).
-	let compaction_waypoints = null;
-	if (compactionEnabled) {
-		let transitionTicks = compactionTransitionTicks;
-		if (!(transitionTicks >= 0)) transitionTicks = 3;
-		compaction_waypoints = computeCompactionWaypoints(bank_pieces, local_max_time, transitionTicks);
-	}
+	// Kompaktierung: computeCompactionWaypoints enthält mapX/mapY-Funktionen,
+	// die NICHT per postMessage (structuredClone) zum Main-Thread übertragen
+	// werden können. Daher werden hier NUR die Parameter vorbereitet, die
+	// eigentliche Berechnung passiert in finalizeCompiled() auf dem Main-Thread.
+	let compactionTransitionTicksClean = compactionTransitionTicks;
+	if (!(compactionTransitionTicksClean >= 0)) compactionTransitionTicksClean = 3;
 
+	// TEIL C: Zoom-Wegpunkte werden in finalizeCompiled() berechnet (nach
+	// Tick→Zeit-Konversion, da computeCompactionWaypoints Animation-Zeiten
+	// braucht). Hier nur den Parameter übergeben.
 	return {
 		axes,
 		TOTAL_STEPS,
@@ -261,8 +337,7 @@ export function compileSystemData(config) {
 		tickTimePairs,
 		auto_zoom_checkpoints,
 		eventTimesTicks,
-		compaction_waypoints,
-		compactionEnabled,
+		compactionTransitionTicks: compactionTransitionTicksClean,
 		MAX_TIME: local_max_time,
 		// Felder, die finalizeCompiled() für die Splines/Filter braucht:
 		BASE,
@@ -294,8 +369,7 @@ export function finalizeCompiled(data) {
 		tickTimePairs,
 		auto_zoom_checkpoints,
 		eventTimesTicks,
-		compaction_waypoints,
-		compactionEnabled,
+		compactionTransitionTicks,
 		zoomSpeedCoef,
 		local_max_time,
 		BANK_ZOOM_THRESHOLD_POWERS,
@@ -320,7 +394,36 @@ export function finalizeCompiled(data) {
 		p.taken_time = isFinite(p.taken_time) ? ttm.tickToTime(p.taken_time) : Infinity;
 		p.cut_time = isFinite(p.cut_time) ? ttm.tickToTime(p.cut_time) - CUT_BORN_LEAD : Infinity;
 		p.born_time = p.born_time === 0 ? 0 : ttm.tickToTime(p.born_time) - CUT_BORN_LEAD;
+		// TEIL D (REST-PRECISION-PLAN): te ist wie taken_time/cut_time/born_time
+		// bisher ein roher Tick-Wert (siehe bank-core.js) - dieselbe Brücke
+		// überträgt es in die Animationszeit, auf der recursive-layout.js im
+		// Render-Pfad ausgewertet wird (kein separates Zeit-Mapping nötig,
+		// siehe REST-PRECISION-PLAN Teil D "Zeitachse").
+		p.te = isFinite(p.te) ? ttm.tickToTime(p.te) : Infinity;
+		// PERFORMANCE-FIX (REST-PRECISION-PLAN, Stand 2026-07-17): additiv, der
+		// Zeitpunkt, an dem TargetBankCanvas.svelte die Herkunfts-Position
+		// dieses Stücks für die Flug-Animation einfrieren soll - EINMAL hier
+		// hergeleitet (dieselbe Regel, die bankOriginState() bisher bei JEDEM
+		// Frame neu ausgewertet hat: geteilte Stücke UND Z_micro-Blätter nutzen
+		// born_time, gewöhnliche Blätter taken_time), statt bei jedem Aufruf neu
+		// berechnet zu werden. Muss NACH der obigen taken_time/born_time-
+		// Konversion stehen (braucht die bereits umgerechneten Werte).
+		p.flightQueryTime = p.isZMicroLeaf || p.children.length > 0 ? p.born_time : p.taken_time;
+		p.flightOrigin = null;
 	}
+
+	// TEIL C: Zoom-Wegpunkte IMMER berechnet (unabhängig vom Render-Modus),
+	// damit der Bank-Zoom die kompaktierte Geometrie framen kann. Nutzt die
+	// zeitlich weiche Kompaktierung (computeSegmentBlend) als einzige
+	// Glätte-Quelle - kein lokales Komprimieren bei Geburt. MUSS nach der
+	// Tick→Zeit-Konversion oben passieren (computeCompactionWaypoints braucht
+	// Animation-Zeiten, nicht Ticks).
+	let zoom_waypoints = computeCompactionWaypoints(
+		bank_pieces,
+		local_max_time,
+		ZOOM_COMPACTION_TRANSITION_TICKS,
+	);
+	let zoom_rect_lookup = makeCompactedLogicalRectLookup(zoom_waypoints);
 
 	// Auto-Zoom-Ziel (Ziel-Seite): pro Schale S der Exponent der tiefsten in
 	// dieser Schale neu sichtbaren Ziffern-Stelle - wächst mit der Animation
@@ -367,59 +470,68 @@ export function finalizeCompiled(data) {
 	// PATCH V39: Kein Sicherheitsrand mehr (war 0.2) - der Zoom beim
 	// Startzustand (volles [0,1]-Quadrat) ist damit exakt 1.0, nachweislich
 	// der garantierte MINIMALE Zoom über die gesamte Laufzeit.
-	const ZOOM_MARGIN = 0;
+	// TEIL C: kleiner Rand, damit der kleinste sichtbare Rest nicht exakt am
+	// Pixelrand klebt (er bleibt groß genug sichtbar).
+	const ZOOM_MARGIN = 0.05;
 
 	// eventTimes sind jetzt echte Zeit-Werte (Tick -> Zeit via ttm).
 	let eventTimes = eventTimesTicks.map((tk) => ttm.tickToTime(tk));
 
-	// PATCH V35: Zoom-Schwellwert aus dem Algorithmus-Spiel-Tool
-	// übernommen. Stücke, die mehr als BANK_ZOOM_THRESHOLD_POWERS Potenzen
-	// von BASE kleiner sind als das größte gerade sichtbare Stück, fließen
-	// NICHT ins Zoom-Framing ein (werden aber weiter gezeichnet) -
-	// verhindert, dass ein einzelner winziger Einzelgänger den Zoom aufhält.
-	const kThresholdDiff = 2 * BANK_ZOOM_THRESHOLD_POWERS;
-
-	// TEIL B (REST-PRECISION-PLAN): robuste Bounding-Box via lokale
-	// Vorfahren-Rezentrierung. Bei Tiefe 22 kollabiert die Box aus rohen
-	// Float64-x-Werten (Auslöschung: zwei benachbarte, tief geschachtelte
-	// Stücke liegen innerhalb der ~15-17 signifikanten Stellen, ihr
-	// Differenz->0 -> halfW->0 -> z->Infinity/NaN). Rettung: statt
-	// p.x - q.x (zwei bereits gerundete O(1)-Werte) abzuziehen, wird die
-	// Differenz aus den kurzen, gutkonditionierten localOffsetX/Y-Ketten
-	// vom gemeinsamen Vorfahren aufsummiert (siehe relativePosition()).
-	const parentMap = new Map(bank_pieces.map((p) => [p.id, p]));
+	// TEIL C (REST-PRECISION-PLAN): mit kompaktierter Geometrie werden ALLE
+	// sichtbaren Stücke berücksichtigt (kein kThresholdDiff-Filter nötig -
+	// die Kompaktierung klumpt die Stücke räumlich zusammen, sodass der
+	// Rahmen automatisch kompakt bleibt). Anker = größte Fläche (schwerste
+	// Gruppe) für ruhige Kamera, wie buildCompactionMap().
+	//
+	// TEIL B: robuste Bounding-Box ( Float-Auslöschung bei Tiefe 22+ ):
+	// die kompaktierten Rects (zoom_rect_lookup) sind Float-sicher, da sie
+	// auf computeSegmentBlend basieren (keine absoluten p.x).
 	let bank_zoom_states = new Array(eventTimes.length);
 	for (let i = 0; i < eventTimes.length; i++) {
 		let t = eventTimes[i];
 		let area = 0;
 		let visibleNow = bank_pieces.filter(
-			(p) => t >= p.born_time && t < p.cut_time && t < p.taken_time,
+			(p) => t >= p.born_time && t < p.cut_time && t <= p.taken_time,
 		);
-		let kMin = visibleNow.length > 0 ? Math.min(...visibleNow.map((p) => p.k)) : 0;
-		// Nur die Stücke, die ins Framing einfließen (kThresholdDiff-Filter).
-		let framing = visibleNow.filter(
-			(p) => !(BANK_ZOOM_THRESHOLD_POWERS > 0 && p.k > kMin + kThresholdDiff),
-		);
-		if (framing.length === 0) {
+		if (visibleNow.length === 0) {
 			bank_zoom_states[i] = { z: 1, cx: 0.5, cy: 0.5, offsetX: 0, offsetY: 0, area: 1 };
 			continue;
 		}
-		// Anker = erstes Framing-Stück; alle anderen Positionen werden
-		// ROBUST relativ zu ihm (via localOffset-Ketten) bestimmt. Nur EIN
-		// absoluter x/y-Wert (der des Ankers) fließt ein - kein Abzug
-		// zweier gerundeter O(1)-Koordinaten.
-		let anchor = framing[0];
+		// Anker = schwerste Gruppe (max w*h) für ruhige Kamera.
+		// Kompaktierte Geometrie via zoom_rect_lookup (C¹ via computeSegmentBlend).
+		let anchor = visibleNow[0];
+		let anchorRect = null;
+		let bestMass = -1;
+		for (let p of visibleNow) {
+			area += p.w * p.h;
+			let r = zoom_rect_lookup(p, t);
+			if (r && r.w * r.h > bestMass) {
+				bestMass = r.w * r.h;
+				anchor = p;
+				anchorRect = r;
+			}
+		}
+		if (!anchorRect) {
+			bank_zoom_states[i] = { z: 1, cx: 0.5, cy: 0.5, offsetX: 0, offsetY: 0, area: 1 };
+			continue;
+		}
 		let minRelX = 0,
 			maxRelX = 0,
 			minRelY = 0,
 			maxRelY = 0;
-		for (let p of framing) {
-			area += p.w * p.h; // Fläche zählt IMMER (auch ausgeblendete), nur fürs Framing irrelevant
-			let rel = relativePosition(p, anchor, parentMap);
-			let x0 = rel.dx,
-				x1 = rel.dx + p.w;
-			let y0 = rel.dy,
-				y1 = rel.dy + p.h;
+		for (let p of visibleNow) {
+			let r = zoom_rect_lookup(p, t);
+			if (!r) continue;
+			// Kompaktierte Position relativ zum Anker (Anker bei 0,0).
+			// NICHT durch anchorRect.w teilen — im alten Code war relW in
+			// [0,1]-Einheiten (anchor hatte relW=1 via BASE^0), analog
+			// hier: Breite in kompaktierten Einheiten direkt verwenden.
+			let relW = r.w;
+			let relH = r.h;
+			let x0 = r.x - anchorRect.x;
+			let y0 = r.y - anchorRect.y;
+			let x1 = x0 + relW;
+			let y1 = y0 + relH;
 			if (x0 < minRelX) minRelX = x0;
 			if (x1 > maxRelX) maxRelX = x1;
 			if (y0 < minRelY) minRelY = y0;
@@ -427,9 +539,9 @@ export function finalizeCompiled(data) {
 		}
 		let cx_frame = (minRelX + maxRelX) / 2;
 		let cy_frame = (minRelY + maxRelY) / 2;
-		// Absoluter Mittelpunkt: Anker-Position + robuster relativer Versatz.
-		let cx = anchor.x + cx_frame;
-		let cy = anchor.y + cy_frame;
+		// Mittelpunkt IM RELATIVSYSTEM des Ankers (Anker sitzt bei 0,0).
+		let cx = cx_frame;
+		let cy = cy_frame;
 		let halfW = Math.max((maxRelX - minRelX) / 2, 1e-9) * (1 + ZOOM_MARGIN);
 		let halfH = Math.max((maxRelY - minRelY) / 2, 1e-9) * (1 + ZOOM_MARGIN);
 		let z = Math.min(0.5 / halfW, 0.5 / halfH);
@@ -455,37 +567,57 @@ export function finalizeCompiled(data) {
 		BANK_ZOOM_TAU,
 	);
 
-	// Kompaktierung ("Zeilen/Spalten ausblenden", siehe bank-core.js TEIL 2)
-	// - nur berechnet, wenn die Einstellung aktiv ist (nicht kostenlos bei
-	// tiefer Rekursion). Ersetzt bei aktiver Kompaktierung den obigen
-	// bankT-basierten Auto-Zoom für die Bank-Darstellung vollständig (siehe
-	// project() in renderFrame()) - beide Modi sind bewusst gegenseitig
-	// exklusiv, analog zum Algorithmus-Spiel-Tool.
-	let GLOBAL_COMPACTION_WAYPOINTS = [];
-	let GLOBAL_COMPACTION_LOGICAL_LOOKUP = null;
-	let GLOBAL_COMPACTION_FIT_SPLINE = null;
-	if (compactionEnabled) {
-		// transitionTicks einstellbar (siehe README Abschnitt 6.2 "Siebte
-		// Voraussetzung") - Default hier niedriger als der Bibliotheks-
-		// Default in bank-core.js (weniger Wartezeit bis eine Lücke
-		// sichtbar schließt).
-		GLOBAL_COMPACTION_WAYPOINTS = compaction_waypoints;
-		// Schnell/exakt: "wo steht jedes Stück im kompaktierten Layout"
-		// (computeSegmentBlend()-basiert, für die Nichtüberlappungs-
-		// Garantie - siehe bank-core.js).
-		GLOBAL_COMPACTION_LOGICAL_LOOKUP = makeCompactedLogicalRectLookup(GLOBAL_COMPACTION_WAYPOINTS);
-		// Gedämpft: "wie wird das Layout aufs [0,1]-Fenster gezoomt" -
-		// dieselbe (einstellbare) Zeitkonstante wie beim regulären
-		// Bank-Zoom oben, UNABHÄNGIG von den schnellen Logical-Rects.
-		// Sicherheit bleibt erhalten, weil JEDE gemeinsame affine
-		// Skalierung+Verschiebung Nichtüberlappung bewahrt, siehe
-		// computeCompactionFitStates()-Kommentar.
-		GLOBAL_COMPACTION_FIT_SPLINE = buildDampedFilterBundle(
-			computeCompactionFitStates(GLOBAL_COMPACTION_WAYPOINTS),
-			['z', 'offsetX', 'offsetY'],
-			BANK_ZOOM_TAU,
-		);
-	}
+	// TEIL D (REST-PRECISION-PLAN): Kamera aus dem rekursiven Box-in-Boxes-
+	// Modell statt aus den (Teil C-)Kompaktierungs-Wegpunkten oben - ERSETZT
+	// bank_zoom_states/GLOBAL_BANK_ZOOM_SPLINE als Quelle für den Render-Pfad
+	// (siehe TargetBankCanvas.svelte). layoutCentered() liefert pro Checkpoint
+	// Moment/Masse (statt einer diskreten Anker-Wahl) UND zentriert das
+	// sichtbare Ergebnis ungewichtet im Bank-Raum (Gesprächsverlauf) -
+	// computeZoomFrame() leitet daraus z/cx/cy/offsetX/offsetY ab. MUSS
+	// dieselbe Zentrierung wie der Render-Pfad (TargetBankCanvas.svelte) und
+	// findRect() verwenden, sonst laufen Kamera und tatsächlich gerenderte
+	// Position auseinander. Genau wie beim alten Bank-Zoom braucht die
+	// KAMERA selbst KEINE Wegpunkt-Exaktheit (nur die zugrundeliegende
+	// Geometrie muss stimmen) - dieselbe BANK_ZOOM_TAU-Dämpfung wie oben,
+	// aus denselben eventTimes-Checkpoints (kein zweites Sampling-Schema).
+	let root = bank_pieces[0];
+	let teil_d_zoom_states = eventTimes.map(
+		(t) => layoutCentered(root, t, null, undefined, TEIL_D_ZOOM_MARGIN).zoom,
+	);
+	let GLOBAL_TEIL_D_ZOOM_SPLINE = buildDampedFilterBundle(
+		eventTimes.map((t, i) => ({ t, ...teil_d_zoom_states[i] })),
+		['z', 'cx', 'cy', 'offsetX', 'offsetY'],
+		BANK_ZOOM_TAU,
+	);
+
+	// Kompaktierung (immer berechnet): "Zeilen/Spalten ausblenden", siehe
+	// bank-core.js TEIL 2. Ersetzt den bankT-basierten Auto-Zoom für die
+	// Bank-Darstellung vollständig (siehe project() in renderFrame()).
+	// Berechnung hier (Main-Thread), NICHT in compileSystemData() (Worker):
+	// computeCompactionWaypoints liefert mapX/mapY-Funktionen, die via
+	// postMessage (structuredClone) nicht übertragbar sind.
+	let GLOBAL_COMPACTION_WAYPOINTS = computeCompactionWaypoints(
+		bank_pieces,
+		local_max_time,
+		compactionTransitionTicks,
+	);
+	// Schnell/exakt: "wo steht jedes Stück im kompaktierten Layout"
+	// (computeSegmentBlend()-basiert, für die Nichtüberlappungs-
+	// Garantie - siehe bank-core.js).
+	let GLOBAL_COMPACTION_LOGICAL_LOOKUP = makeCompactedLogicalRectLookup(
+		GLOBAL_COMPACTION_WAYPOINTS,
+	);
+	// Gedämpft: "wie wird das Layout aufs [0,1]-Fenster gezoomt" -
+	// dieselbe (einstellbare) Zeitkonstante wie beim regulären
+	// Bank-Zoom oben, UNABHÄNGIG von den schnellen Logical-Rects.
+	// Sicherheit bleibt erhalten, weil JEDE gemeinsame affine
+	// Skalierung+Verschiebung Nichtüberlappung bewahrt, siehe
+	// computeCompactionFitStates()-Kommentar.
+	let GLOBAL_COMPACTION_FIT_SPLINE = buildDampedFilterBundle(
+		computeCompactionFitStates(GLOBAL_COMPACTION_WAYPOINTS),
+		['z', 'offsetX', 'offsetY'],
+		BANK_ZOOM_TAU,
+	);
 
 	return {
 		axes,
@@ -505,10 +637,15 @@ export function finalizeCompiled(data) {
 		GLOBAL_BANK_ZOOM_TIMES: eventTimes,
 		GLOBAL_BANK_ZOOM: bank_zoom_states,
 		GLOBAL_BANK_ZOOM_SPLINE,
-		COMPACTION_ENABLED: compactionEnabled,
+		// TEIL D: Kamera-Spline aus dem rekursiven Modell (ersetzt
+		// GLOBAL_BANK_ZOOM_SPLINE/GLOBAL_COMPACTION_FIT_SPLINE im Render-Pfad).
+		GLOBAL_TEIL_D_ZOOM_SPLINE,
 		GLOBAL_COMPACTION_WAYPOINTS,
 		GLOBAL_COMPACTION_LOGICAL_LOOKUP,
 		GLOBAL_COMPACTION_FIT_SPLINE,
+		// TEIL C: Zoom-Wegpunkte + Rect-Lookup für den Zoom-Pfad.
+		zoom_waypoints,
+		zoom_rect_lookup,
 		MAX_TIME: local_max_time,
 		BASE: data.BASE,
 	};
@@ -583,12 +720,14 @@ export function computeLiveL(compiled, time, BASE) {
 	let N_l = GLOBAL_L_PREFIX[Step];
 
 	// R exakt: Summe über sichtbare Bank-Stücke, Nenner AREA_SCALE.
-	// Sichtbar: born_time <= t < cut_time UND t < taken_time (noch nicht
-	// ins Ziel entnommen). Partitioniert das Einheitsquadrat ohne Überlapp.
+	// Sichtbar: born_time <= t < cut_time UND t <= taken_time (bei GENAU
+	// taken_time ist das Stück noch in Design-Größe sichtbar, siehe
+	// leafEffectiveSize() in recursive-layout.js). Partitioniert das
+	// Einheitsquadrat ohne Überlapp.
 	const BASE_BIG = BigInt(BASE_OUT);
 	let N_R = 0n;
 	for (let p of bank_pieces) {
-		if (time >= p.born_time && time < p.cut_time && time < p.taken_time) {
+		if (time >= p.born_time && time < p.cut_time && time <= p.taken_time) {
 			N_R += AREA_SCALE / BASE_BIG ** BigInt(p.k);
 		}
 	}

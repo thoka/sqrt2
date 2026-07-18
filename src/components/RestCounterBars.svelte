@@ -4,7 +4,7 @@
 	// updateHUD() in sqrt2.html (die Zahlentafel l/l²/R bleibt dort, siehe
 	// unten). Reine Funktion von <compiledStore> (bank_pieces/depth) +
 	// <playbackStore.time>: zählt pro Exponent k, wieviele Bank-Stücke
-	// gerade sichtbar sind (born_time <= t < cut_time UND < taken_time), und
+	// gerade sichtbar sind (born_time <= t < cut_time UND t <= taken_time), und
 	// rendert je Exponent eine Zeile. Liest/schreibt KEINEN Store selbst -
 	// nur lesend abgeleitet, damit es als eines von mehreren, beliebig
 	// austauschbaren Rest-Widgets (siehe RestCounterGrid) neben dem
@@ -44,7 +44,7 @@
 		let arr = new Array(Math.min(2 * nmax + 1, 50)).fill(0);
 		if (!c) return arr;
 		for (let p of c.bank_pieces) {
-			if (p.k < arr.length && time >= p.born_time && time < p.cut_time && time < p.taken_time)
+			if (p.k < arr.length && time >= p.born_time && time < p.cut_time && time <= p.taken_time)
 				arr[p.k]++;
 		}
 		return arr;

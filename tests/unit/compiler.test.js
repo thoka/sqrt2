@@ -7,6 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { compileSystem, computeLiveL } from '../../src/lib/compiler.js';
+import { findRect } from '../../src/lib/recursive-layout.js';
 
 const BASE_CONFIG = {
 	base: 10,
@@ -94,11 +95,108 @@ test('transformMode S vs. Z erzeugt unterschiedliche Bank-Belegungen bei sonst g
 	assert.notStrictEqual(rS.bank_pieces.length, rZ.bank_pieces.length);
 });
 
-test('Kompaktierung deaktiviert: alle GLOBAL_COMPACTION_*-Felder sind leer/null', () => {
-	let r = compileSystem({ ...BASE_CONFIG, compactionEnabled: false });
-	assert.deepStrictEqual(r.GLOBAL_COMPACTION_WAYPOINTS, []);
-	assert.strictEqual(r.GLOBAL_COMPACTION_LOGICAL_LOOKUP, null);
-	assert.strictEqual(r.GLOBAL_COMPACTION_FIT_SPLINE, null);
+test('flightQueryTime: jedes Stück bekommt einen definierten Wert (born_time bei geteilten/Z_micro-Blättern, sonst taken_time)', () => {
+	// PERFORMANCE-FIX (REST-PRECISION-PLAN, Stand 2026-07-17): flightQueryTime
+	// wird jetzt EINMALIG beim Kompilieren hergeleitet (finalizeCompiled()),
+	// statt bei jedem Frame in bankOriginState() neu berechnet zu werden - die
+	// Regel selbst bleibt unverändert (siehe TargetBankCanvas.svelte).
+	let r = compileSystem({ ...BASE_CONFIG, transformMode: 'Z' });
+	for (let p of r.bank_pieces) {
+		let expected = p.isZMicroLeaf || p.children.length > 0 ? p.born_time : p.taken_time;
+		assert.strictEqual(p.flightQueryTime, expected);
+		assert.strictEqual(p.flightOrigin, null);
+	}
+});
+
+test('flightQueryTime: Z_micro-Geschwister einer Zerschneiden-Gruppe teilen denselben Wert (Bug-3-Regression)', () => {
+	// Ohne diese Gleichheit driften Geschwister sichtbar auseinander (siehe
+	// REST-PRECISION-PLAN, Bug 3) - jetzt eine statische Eigenschaft des
+	// Kompilats statt eines pro Aufruf neu hergeleiteten Werts.
+	let r = compileSystem({ ...BASE_CONFIG, transformMode: 'Z', depth: 4 });
+	let byParent = new Map();
+	for (let p of r.bank_pieces) {
+		if (!p.isZMicroLeaf) continue;
+		if (!byParent.has(p.parent_id)) byParent.set(p.parent_id, []);
+		byParent.get(p.parent_id).push(p);
+	}
+	let groupsChecked = 0;
+	for (let siblings of byParent.values()) {
+		if (siblings.length < 2) continue;
+		groupsChecked++;
+		let first = siblings[0].flightQueryTime;
+		for (let s of siblings) assert.strictEqual(s.flightQueryTime, first);
+	}
+	assert.ok(groupsChecked > 0, 'Testvoraussetzung: mindestens eine Zerschneiden-Gruppe erwartet');
+});
+
+// Regression: compileSystemData() baute `raw_bank_pieces` per `bank_pieces.map((p)
+// => ({...p}))` - ein FLACHER Kopie, der `children` (und render_pipeline[].bp)
+// weiter auf die ALTEN, nie konvertierten Objekte zeigen ließ, während
+// finalizeCompiled() taken_time/cut_time/born_time/te NUR auf den NEUEN
+// TOP-LEVEL-Array-Elementen konvertiert. Jeder Konsument, der über
+// piece.children traversiert (layoutBox() -> die BANK-Visualisierung) sah
+// dadurch dauerhaft rohe Tick-Werte statt der konvertierten Zeiten, während
+// die flach iterierenden Rest-Widgets (RestCounterBars/Grid) die korrekten
+// Werte sahen - das war die tatsächliche Ursache der in DEBUG-INSPECT-
+// SPEC.md dokumentierten Bank/Rest-Divergenz (keine Zeit-Drift zwischen zwei
+// Uhren, sondern zwei verschiedene Objektgraphen für dieselben Stücke).
+// findRect() traversiert exakt über piece.children - dieser Test verifiziert
+// darüber direkt die "fliegt exakt bei der gerenderten Rest-Position los"-
+// Garantie für JEDES tatsächliche Flug-Ereignis, nicht nur für bank_pieces
+// isoliert.
+function assertFliesFromRenderedPosition(config) {
+	let r = compileSystem(config);
+	let bank_root = r.bank_pieces[0];
+	assert.ok(r.render_pipeline.length > 0, 'Testvoraussetzung: es gibt Flug-Ereignisse');
+	for (let entry of r.render_pipeline) {
+		let bp = entry.bp;
+		assert.strictEqual(
+			typeof bp.flightQueryTime,
+			'number',
+			`Stück ${bp.id}: flightQueryTime fehlt - render_pipeline.bp zeigt nicht auf dasselbe (konvertierte) Objekt wie bank_pieces`,
+		);
+		let rect = findRect(bank_root, bp.flightQueryTime, bp.id);
+		assert.ok(
+			rect,
+			`Stück ${bp.id} (k=${bp.k}) muss bei flightQueryTime=${bp.flightQueryTime} im Baum sichtbar sein - sonst startet die Flug-Animation ersatzweise bei (0,0) statt an der tatsächlich gerenderten Rest-Position`,
+		);
+		assert.ok(
+			Math.abs(rect.w - bp.w) < 1e-9 && Math.abs(rect.h - bp.h) < 1e-9,
+			`Stück ${bp.id}: gefundene Größe (${rect.w}x${rect.h}) weicht von der Design-Größe (${bp.w}x${bp.h}) ab`,
+		);
+	}
+}
+
+test('Teile fliegen exakt bei den gerenderten Reststücken los (transformMode S)', () => {
+	assertFliesFromRenderedPosition({ ...BASE_CONFIG, transformMode: 'S', compactionEnabled: true });
+});
+
+// Bekannte Lücke, NICHT gefixt (siehe DEBUG-INSPECT-SPEC.md Abschnitt 5): ein
+// Stück mit cut_time === born_time (im selben Tick geboren UND sofort
+// weitergeschnitten, nur in Zerschneiden-Gruppen des Z-Modus) hat KEIN
+// gültiges t, an dem findRect() es als sich selbst findet - kein
+// Grenzfall-Off-by-eine-Instanz wie bei den drei gefixten Bugs, sondern eine
+// architektonische Lücke in flightQueryTime selbst. `todo`, damit der Rest
+// der Suite grün bleibt, aber die Lücke sichtbar/nachverfolgbar bleibt.
+test(
+	'Teile fliegen exakt bei den gerenderten Reststücken los (transformMode Z)',
+	{
+		todo: 'cut_time===born_time-Stücke haben kein gültiges flightQueryTime, siehe DEBUG-INSPECT-SPEC.md Abschnitt 5',
+	},
+	() => {
+		assertFliesFromRenderedPosition({
+			...BASE_CONFIG,
+			transformMode: 'Z',
+			compactionEnabled: true,
+		});
+	},
+);
+
+test('Kompaktierung wird immer berechnet: Waypoints und Lookup sind immer vorhanden', () => {
+	let r = compileSystem({ ...BASE_CONFIG });
+	assert.ok(r.GLOBAL_COMPACTION_WAYPOINTS.length > 0);
+	assert.strictEqual(typeof r.GLOBAL_COMPACTION_LOGICAL_LOOKUP, 'function');
+	assert.strictEqual(typeof r.GLOBAL_COMPACTION_FIT_SPLINE.at, 'function');
 });
 
 test('Kompaktierung aktiviert: Waypoints und Lookup werden gebaut', () => {

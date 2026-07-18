@@ -90,8 +90,8 @@ test('computeCompactionAt: Sichtbarkeitsfenster (born_time/cut_time/taken_time) 
 		piece(0.5, 0, 0.5, 0.5, { born_time: 20, cut_time: Infinity, taken_time: Infinity }), // noch nicht geboren
 	];
 	let comp = computeCompactionAt(bank_pieces, 5);
-	// Nur das erste Stück ist bei t=5 sichtbar -> totalOccupied nur davon.
-	assert.ok(Math.abs(comp.totalW - 0.5) < 1e-9);
+	// Nur das erste Stück ist bei t=5 sichtbar -> totalOccupied = 0.5.
+	assert.ok(Math.abs(comp.totalW - 0.5) < 1e-9, `totalW=${comp.totalW}`);
 });
 
 // ---------------------------------------------------------------------------
@@ -175,30 +175,26 @@ test('computeCompactionWaypoints: transitionTicks streckt den Wegpunkt-Abstand n
 // kompaktierte Bereich beginnt daher NICHT mehr zwingend bei 0.
 // ---------------------------------------------------------------------------
 
-test('compactedLogicalRectAt: bei einem einzigen Stück (automatisch die schwerste/einzige Gruppe) bleibt es an seiner ROHEN Position - bewegt sich gar nicht', () => {
+test('compactedLogicalRectAt: bei einem einzigen Stück bleibt es an seiner ROHEN Position', () => {
 	let bank_pieces = [
 		piece(0.2, 0.2, 0.3, 0.6, { born_time: 0, cut_time: Infinity, taken_time: Infinity }),
 	];
 	let waypoints = computeCompactionWaypoints(bank_pieces, 1);
 	let r = compactedLogicalRectAt(bank_pieces[0], waypoints[0]);
-	// Einziges Stück -> ist automatisch der Anker (größte, hier einzige
-	// Masse) -> bleibt exakt an seiner rohen Position, keine Verschiebung.
-	assert.ok(Math.abs(r.x - 0.2) < 1e-9);
-	assert.ok(Math.abs(r.y - 0.2) < 1e-9);
-	assert.ok(Math.abs(r.w - 0.3) < 1e-9);
-	assert.ok(Math.abs(r.h - 0.6) < 1e-9);
+	// Einziges Stück -> Anker, keine Verschiebung, rohe Koordinaten.
+	assert.ok(Math.abs(r.x - 0.2) < 1e-9, `x=${r.x}`);
+	assert.ok(Math.abs(r.y - 0.2) < 1e-9, `y=${r.y}`);
+	assert.ok(Math.abs(r.w - 0.3) < 1e-9, `w=${r.w}`);
+	assert.ok(Math.abs(r.h - 0.6) < 1e-9, `h=${r.h}`);
 });
 
 test('compactedLogicalRectAt: die schwerere von zwei Gruppen bleibt an ihrer rohen Position, die leichtere rückt lückenlos heran', () => {
-	// "heavy" (Fläche 0.5) links, "light" (Fläche 0.1) rechts mit Lücke dazwischen.
 	let heavy = piece(0, 0, 0.5, 1);
 	let light = piece(0.8, 0, 0.1, 1);
 	let waypoints = computeCompactionWaypoints([heavy, light], 1);
 	let rHeavy = compactedLogicalRectAt(heavy, waypoints[0]);
 	let rLight = compactedLogicalRectAt(light, waypoints[0]);
-	// heavy bleibt exakt an seiner rohen Position (Anker).
 	assert.ok(Math.abs(rHeavy.x - 0) < 1e-9, `heavy sollte an x=0 bleiben, war ${rHeavy.x}`);
-	// light rückt lückenlos an heavy heran (berührt dessen rechten Rand).
 	assert.ok(
 		Math.abs(rLight.x - (rHeavy.x + rHeavy.w)) < 1e-9,
 		`light sollte heavy berühren: ${rLight.x} != ${rHeavy.x + rHeavy.w}`,
@@ -234,8 +230,8 @@ test('applyCompactionFit: kombiniert mit computeCompactionFitStates ergibt wiede
 	let r = applyCompactionFit(logical, fit);
 	// Einziges Stück füllt totalW/totalH exakt -> h*z sollte exakt 1 sein
 	// (füllt die Bildhöhe komplett, lange Seite ist h=0.6).
-	assert.ok(Math.abs(r.h - 1) < 1e-9);
-	assert.ok(Math.abs(r.w - 0.3 * fit.z) < 1e-9);
+	assert.ok(Math.abs(r.h - 1) < 1e-9, `h=${r.h}`);
+	assert.ok(Math.abs(r.w - 0.3 * fit.z) < 1e-9, `w=${r.w}`);
 });
 
 test('computeCompactionFitStates: offsetX/offsetY zentrieren auf minX+totalW/2 (NICHT mehr zwingend totalW/2 - der Anker kann irgendwo liegen)', () => {
@@ -640,4 +636,42 @@ test('getSmoothedCompactedLogicalRect: die schwerere Seite (B) bleibt dauerhaft 
 		Math.abs(rAEnd.x + rAEnd.w - rBRaw.x) < 1e-6,
 		`A sollte B nach dem Übergang berühren: A endet bei ${rAEnd.x + rAEnd.w}, B beginnt bei ${rBRaw.x}`,
 	);
+});
+
+// Seitenverhältnis-Test: Bank-Stücke können Verhältnisse 1:1, 1:base oder
+// base:1 haben (Quadrat-Unterteilung in base-N-System). Der kompaktierte
+// Fit (uniformer z) muss dieses Seitenverhältnis EXAKT erhalten - ein
+// Indikator für einen Bug wäre ein Unterschied zwischen logical.w/logical.h
+// und r.w/r.h (z.B. durch separate scaleX/scaleY statt einheitliches z).
+test('Integration: kompaktierte Stücke behalten ihr Seitenverhältnis (uniformer z)', () => {
+	let { sim, local_max_time } = buildSystem(10, 6, 'fixed', 'subdivide');
+	let waypoints = computeCompactionWaypoints(sim.bank_pieces, local_max_time);
+	let logicalLookup = makeCompactedLogicalRectLookup(waypoints);
+	let fitSpline = buildDampedFilterBundle(
+		computeCompactionFitStates(waypoints),
+		['z', 'offsetX', 'offsetY'],
+		local_max_time * 2,
+	);
+
+	let sampleTimes = [local_max_time / 3, (local_max_time * 2) / 3, local_max_time];
+	for (let t of sampleTimes) {
+		let fit = fitSpline.at(t);
+		let visible = sim.bank_pieces.filter(
+			(p) => t >= p.born_time && t < p.cut_time && t < p.taken_time,
+		);
+		for (let p of visible) {
+			let logical = logicalLookup(p, t);
+			let r = applyCompactionFit(logical, fit);
+			let logicalRatio = logical.w / logical.h;
+			let fittedRatio = r.w / r.h;
+			assert.ok(
+				Math.abs(fittedRatio - logicalRatio) < 1e-9,
+				`Seitenverhältnis verändert: logical ${logicalRatio.toFixed(9)} → fitted ${fittedRatio.toFixed(9)} bei t=${t}: ` +
+					`piece(${p.x},${p.y},${p.w},${p.h}) → ` +
+					`logical(${logical.x.toFixed(6)},${logical.y.toFixed(6)},${logical.w.toFixed(6)},${logical.h.toFixed(6)}) → ` +
+					`fit(z=${fit.z.toFixed(6)}) → ` +
+					`r(${r.x.toFixed(6)},${r.y.toFixed(6)},${r.w.toFixed(6)},${r.h.toFixed(6)})`,
+			);
+		}
+	}
 });

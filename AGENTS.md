@@ -43,6 +43,18 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
   vorherigen Commit. Betrifft JEDE Änderung (Bugfix, Refactor, Docs, Config).
   Nur phasen-zugehörige Dateien (`git add` einzeln, nicht `-A`), Message kurz
   im Repo-Stil. **Nicht** pushen/amenden, keine leeren Commits, keine Secrets.
+- **Playwright-E2E muss funktionieren:** Keine Arbeit an Renderer/Canvas/Zoom
+  ohne funktionierendes Playwright. Wenn `pnpm test:e2e` hängt oder fehlschlägt,
+  ist das das ERSTE Problem das gelöst wird. Root-Cause + Fix in
+  `docs/E2E-PLAYWRIGHT-SPEC.md` (gelöst): diese Sandbox (WSL2 mit gespiegeltem
+  Networking, z.B. für Tailscale) liefert für Verbindungen zu geschlossenen
+  Loopback-Ports kein RST/ECONNREFUSED, sondern hängt auf SYN-SENT.
+  Playwrights `config.webServer`-Verfügbarkeitscheck setzt dafür keinen
+  Socket-Timeout und hängt ewig, bevor der Server-Prozess überhaupt startet.
+  Fix: kein `webServer` in `playwright.config.js`, stattdessen
+  `globalSetup: tests/e2e/global-setup.js` startet den Preview-Server selbst
+  und pollt mit `fetch()` + `AbortSignal.timeout` (bricht zuverlässig ab statt
+  auf den TCP-Fehler zu warten).
 - **Tests für alle Stufen:** Jede Stufe eines Features braucht eigene Tests
   (Unit und/oder e2e). Stufe ohne Tests = nicht abgeschlossen.
   Logik: `tests/unit/*.test.js` + `tests/e2e/*.test.js`. Connection-Service
@@ -93,15 +105,32 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
    (s.o.) ließ den Actions-Workflow dauerhaft fehlschlagen. Neuer Stand via
    `GITHUB_PAGES=true pnpm build` + `./scripts/deploy-pages.sh`. Live:
    `https://thoka.github.io/sqrt2/`.
+9. **Fixe Float-Schwellen in `bank-core.js`/`recursive-layout.js` sind
+   verdächtig:** zwei reale Bugs (Tiefe 30, siehe `REST-PRECISION-PLAN.md`
+   "Stand 2026-07-18") kamen von festen `1e-9`-Konstanten, die auf mit der
+   Tiefe schrumpfende Größen (`w`/`h`, Bounding-Box) angewendet wurden - ab
+   `k≈9` wird die Schwelle größer als die verglichenen Werte selbst. Vor
+   einer neuen Konstante dieser Art: (1) schrumpft der verglichene Wert mit
+   `k`/Tiefe? (2) gibt es eine exakte, tiefenunabhängige Alternative
+   (Integer-Zähler wie `k_v`/`k_h`, oder ist der Floor durch einen
+   vorhandenen Guard ohnehin überflüssig)? Reine Divisionsketten (`w`/`h`
+   selbst) sind NICHT betroffen (präzise bis `k≈300` bei Basis 10).
 
 ## Stolpersteine (nur diese Sandbox)
 
 - `mise trust mise.toml` einmalig (sonst wird `[env]`-PATH ignoriert).
 - **npm blockiert:** `scripts/bin/npm` gibt Fehler aus; `.envrc` blendet
   `scripts/bin` per `PATH_add` ein (Shell-Funktionen reichen nicht).
-- **E2E stale dist:** `playwright.config.js` nutzt jetzt `port: 0`
-  (zufällig) + `reuseExistingServer:false`; trotzdem vor `pnpm test:e2e`
-  frisch bauen (`pnpm build`), sonst testet Playwright gegen alten Stand.
+- **E2E Server:** `playwright.config.js` nutzt `vite preview --port 4173
+  --strictPort` + `use.baseURL: http://localhost:4173/`. Vor `pnpm test:e2e`
+  IMMER frisch bauen (`pnpm build`), sonst testet Playwright gegen alten
+  Stand. (Früher `--port 0` + fehlende baseURL → Timeout/invalid URL.)
+- **Zoom/Präzision bei hoher Tiefe:** `p.x`/`p.y` (absolut) sind ab Tiefe ~15
+  durch Float-Auslöschung unzuverlässig (z.B. anchor.x = 7.5 statt 0.6). Die
+  Bank-Zoom-Bounding-Box baut daher KOMPLETT relativ zum Anker über
+  `localOffsetX/Y` (ganzzahlige Rasterindizes) + `relativePosition()` -
+  KEINE absoluten `p.x` im Zoom-Pfad verwenden. Siehe
+  `docs/REST-PRECISION-PLAN.md`.
 - **direnv zsh `emulate sh`:** in `.envrc` `mise hook-env` nutzen (nur
   `export`-Zeilen), nicht `mise activate`.
 - **Lokale Ports:** pro Klon einmalig `./scripts/init-local-ports.sh`
@@ -117,6 +146,15 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
   schon im Original-Code reproduzierbar, NICHT durch eigene Änderungen
   verursacht. Bei `node --test tests/unit/*.test.js` diese Datei ausschließen
   (oder die Matrix deckeln), sonst blockiert die ganze Suite.
+- **Compiler-Wandzeit Basis 10 (gemessen, Stand 2026-07-18):** `buildSystem`
+  ist O(TOTAL_STEPS²) — Basis 10 wird ab Tiefe ~20 im Sekundenbereich
+  unbenutzbar (Tiefe 20 ≈ 37 s, 22 ≈ 59 s, superlinear), Tiefe 40 praktisch
+  nicht messbar. Basis 2 schafft Tiefe 40 in ~200 ms (Knotenzahl ~1600).
+  Ursache: `isolationScore()` in `bank-core.js` ist O(Knoten) pro Entnahme.
+  Belegt den Compiler-Handlungsbedarf (Split/Cache/inkrementelle Tiefe,
+  siehe `docs/COMPILER-LAYERING-PLAN.md` A–C + E.2). Bei Basis-10-Tests
+  **vorsichtig einzeln mit hartem `timeout`** herantasten, nicht voll
+  benchmarken.
 
 ## Migration
 

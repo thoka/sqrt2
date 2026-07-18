@@ -21,7 +21,17 @@
 	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
 	import { applyCompactionFit } from '../lib/bank-core.js';
+	import { layoutCentered, findRect, commonAncestor } from '../lib/recursive-layout.js';
 	import { configStore, playbackStore, compiledStore } from '../lib/stores.js';
+	import {
+		setDebugCanvas,
+		setDebugFrame,
+		setDebugBankTransform,
+		setDebugBankTime,
+		setDebugBankDrawnRest,
+		setDebugBankDrawnDetail,
+		isDebugEnabled,
+	} from '../lib/debugAgent.js';
 
 	const COLORS = [
 		'#cbd5e1',
@@ -49,16 +59,15 @@
 
 	let GLOBAL_N_ARR = [];
 	let GLOBAL_SHELL_START = [];
-	let GLOBAL_BANK_ZOOM = [];
-	let GLOBAL_BANK_ZOOM_TIMES = [];
-	let GLOBAL_BANK_ZOOM_SPLINE = null;
 	let BANK_ZOOM_THRESHOLD_POWERS = 0;
 	let GLOBAL_AUTO_ZOOM_CHECKPOINTS = [];
 	let GLOBAL_AUTO_ZOOM_SPLINE = null;
-	let COMPACTION_ENABLED = false;
-	let GLOBAL_COMPACTION_WAYPOINTS = [];
-	let GLOBAL_COMPACTION_LOGICAL_LOOKUP = null;
-	let GLOBAL_COMPACTION_FIT_SPLINE = null;
+	// TEIL D (REST-PRECISION-PLAN): rekursives Box-in-Boxes-Modell ersetzt die
+	// Kompaktierungs-Wegpunkte (Teil C) als BANK-Rendering-/Zoom-Quelle -
+	// bank_root ist der Wurzel-Knoten von bank_pieces (id 0), aus dem
+	// layoutBox() pro Frame live die sichtbaren Rects + Moment/Masse berechnet.
+	let GLOBAL_TEIL_D_ZOOM_SPLINE = null;
+	let bank_root = null;
 
 	// === Dynamic Layout & HUD-State ===
 	let DYN_TARGET_W = 1.0;
@@ -127,13 +136,8 @@
 			GLOBAL_SHELL_START = compiled.GLOBAL_SHELL_START;
 			GLOBAL_AUTO_ZOOM_CHECKPOINTS = compiled.GLOBAL_AUTO_ZOOM_CHECKPOINTS;
 			GLOBAL_AUTO_ZOOM_SPLINE = compiled.GLOBAL_AUTO_ZOOM_SPLINE;
-			GLOBAL_BANK_ZOOM_TIMES = compiled.GLOBAL_BANK_ZOOM_TIMES;
-			GLOBAL_BANK_ZOOM = compiled.GLOBAL_BANK_ZOOM;
-			GLOBAL_BANK_ZOOM_SPLINE = compiled.GLOBAL_BANK_ZOOM_SPLINE;
-			COMPACTION_ENABLED = compiled.COMPACTION_ENABLED;
-			GLOBAL_COMPACTION_WAYPOINTS = compiled.GLOBAL_COMPACTION_WAYPOINTS;
-			GLOBAL_COMPACTION_LOGICAL_LOOKUP = compiled.GLOBAL_COMPACTION_LOGICAL_LOOKUP;
-			GLOBAL_COMPACTION_FIT_SPLINE = compiled.GLOBAL_COMPACTION_FIT_SPLINE;
+			GLOBAL_TEIL_D_ZOOM_SPLINE = compiled.GLOBAL_TEIL_D_ZOOM_SPLINE;
+			bank_root = bank_pieces.length > 0 ? bank_pieces[0] : null;
 			MAX_TIME = compiled.MAX_TIME;
 
 			let key = compileRelevantKey(c);
@@ -170,11 +174,6 @@
 		}
 		let nextDigitMargin = Math.pow(b_eff, -(N_MAX + 1));
 		DYN_TARGET_W = sumA + nextDigitMargin;
-	}
-
-	function getBankTransform(time) {
-		if (GLOBAL_BANK_ZOOM.length === 0) return { z: 1, offsetX: 0, offsetY: 0, area: 1 };
-		return GLOBAL_BANK_ZOOM_SPLINE.at(time);
 	}
 
 	function getSmoothedAutoZoomExp(time) {
@@ -245,23 +244,45 @@
 		const V_SCALE_BANK = 1.0;
 
 		const BANK_X_OFFSET = SQRT2 + 0.1;
-		const bankT = getBankTransform(u_time);
-		const compactionFit =
-			COMPACTION_ENABLED && GLOBAL_COMPACTION_FIT_SPLINE
-				? GLOBAL_COMPACTION_FIT_SPLINE.at(u_time)
-				: null;
-		let displayBankZoom = compactionFit ? compactionFit.z : bankT.z;
-		bankZoomLabel.innerText = formatZoomFactor(displayBankZoom);
+
+		// TEIL D (REST-PRECISION-PLAN): BANK-Seite kommt jetzt ausschließlich aus
+		// dem rekursiven Box-in-Boxes-Modell (recursive-layout.js), EINE
+		// Traversierung pro Frame (layoutCentered liefert Rects UND Moment/
+		// Masse zusammen - kein doppeltes Layout). layoutCentered() statt
+		// layoutBox() direkt: zentriert das sichtbare Ergebnis ungewichtet
+		// im [0,1]-Bank-Raum statt es an der unteren linken Ecke kleben zu
+		// lassen (Gesprächsverlauf) - MUSS mit derselben Zentrierung
+		// arbeiten wie findRect() und die Kamera-Spline-Vorberechnung in
+		// compiler.js. Die Kamera (teilDCamera) ist gedämpft
+		// (GLOBAL_TEIL_D_ZOOM_SPLINE, siehe compiler.js) - die Rects selbst
+		// bleiben exakt/ungedämpft.
+		let bank_out = [];
+		let { frame: bank_frame } = bank_root
+			? layoutCentered(bank_root, u_time, bank_out)
+			: { frame: { w: 0, h: 0, mass: 0, momentX: 0, momentY: 0 } };
+		let teilDCamera = GLOBAL_TEIL_D_ZOOM_SPLINE
+			? GLOBAL_TEIL_D_ZOOM_SPLINE.at(u_time)
+			: { z: 1, cx: 0.5, cy: 0.5, offsetX: 0, offsetY: 0 };
+		bankZoomLabel.innerText = formatZoomFactor(teilDCamera.z);
 		bankAreaLabel.innerText =
-			(bankT.area * 100).toLocaleString('de-DE', {
-				maximumFractionDigits: bankT.area < 0.01 ? 4 : 1,
+			(bank_frame.mass * 100).toLocaleString('de-DE', {
+				maximumFractionDigits: bank_frame.mass < 0.01 ? 4 : 1,
 			}) + '%';
+
+		// Debug-Telemetrie: Bank-Zoom-Transform fuer den Inspect-Kanal melden.
+		// Die Bank-Drawn-Reste selbst werden NICHT hier in einem eigenen
+		// project()-Pass ermittelt (das verdoppelte die teure Projektion für
+		// JEDES sichtbare Stück in JEDEM Frame, auch ohne ?debug=1 - Regression,
+		// siehe DEBUG-INSPECT-SPEC.md) - stattdessen unten als Nebeneffekt der
+		// ohnehin laufenden Render-Schleife, NUR wenn isDebugEnabled().
+		setDebugBankTransform(teilDCamera.z, teilDCamera.cx, teilDCamera.cy);
+		const debugOn = isDebugEnabled();
 
 		ctx.save();
 		ctx.translate(50, H - 50);
 		ctx.scale(1, -1);
 
-		function project(x, y, w, h, isTarget, piece) {
+		function project(x, y, w, h, isTarget, bankRect, camera = teilDCamera) {
 			if (isTarget) {
 				let final_x = x * V_SCALE_TARGET;
 				let final_y = y * V_SCALE_TARGET;
@@ -269,35 +290,74 @@
 				let final_h = h * V_SCALE_TARGET;
 				return [final_x * scale, final_y * scale, final_w * scale, final_h * scale];
 			}
-			if (COMPACTION_ENABLED && piece && GLOBAL_COMPACTION_LOGICAL_LOOKUP && compactionFit) {
-				let logical = GLOBAL_COMPACTION_LOGICAL_LOOKUP(piece, u_time);
-				let r = applyCompactionFit(logical, compactionFit);
-				let final_x = BANK_X_OFFSET + r.x * V_SCALE_BANK;
-				let final_y = r.y * V_SCALE_BANK;
-				let final_w = r.w * V_SCALE_BANK;
-				let final_h = r.h * V_SCALE_BANK;
-				return [final_x * scale, final_y * scale, final_w * scale, final_h * scale];
-			}
-			let zx = x * bankT.z + bankT.offsetX;
-			let zy = y * bankT.z + bankT.offsetY;
-			let zw = w * bankT.z;
-			let zh = h * bankT.z;
-			let final_x = BANK_X_OFFSET + zx * V_SCALE_BANK;
-			let final_y = zy * V_SCALE_BANK;
-			let final_w = zw * V_SCALE_BANK;
-			let final_h = zh * V_SCALE_BANK;
+			if (!bankRect) return [0, 0, 0, 0];
+			let r = applyCompactionFit(bankRect, camera);
+			let final_x = BANK_X_OFFSET + r.x * V_SCALE_BANK;
+			let final_y = r.y * V_SCALE_BANK;
+			let final_w = r.w * V_SCALE_BANK;
+			let final_h = r.h * V_SCALE_BANK;
 			return [final_x * scale, final_y * scale, final_w * scale, final_h * scale];
+		}
+
+		// Herkunfts-Position eines fliegenden Stücks: EIN fester Zeitpunkt
+		// reicht (keine kontinuierlich mitlaufende Bank-Position nötig, siehe
+		// Gesprächsverlauf) - ein geschnittenes (nicht-Blatt) Stück ist im
+		// GESAMTEN Intervall [born_time,cut_time) konstant in Design-Größe,
+		// ein entnommenes Blatt ist bei taken_time noch exakt in Design-Größe
+		// (die Hold-Phase hat noch nicht zu schrumpfen begonnen). WICHTIG: die
+		// KAMERA muss an DEMSELBEN eingefrorenen Zeitpunkt ausgewertet werden,
+		// nicht bei der aktuellen u_time (teilDCamera) - sonst wird das
+		// eingefrorene Rect mit einem SPÄTEREN (typischerweise stärker
+		// gezoomten) Kamerastand kombiniert und erscheint in falscher Größe
+		// (Bug, im Gespräch gefunden: "Teile fliegen nicht in der richtigen
+		// Größe los").
+		//
+		// Z_micro braucht eine ZUSÄTZLICHE Regel: die bis zu BASE Geschwinger
+		// einer Zerschneiden-Gruppe (derselbe Schnitt, gemeinsames time_cut/
+		// time_fly/time_fuse) MÜSSEN alle am SELBEN Zeitpunkt abgefragt werden
+		// - sonst driften sie relativ zueinander auseinander, weil ihr
+		// gemeinsamer Vorfahre zwischenzeitlich durch UNABHÄNGIGE Kompaktierung
+		// anderswo im Baum weiterrückt (jedes Geschwister hat ein anderes
+		// EIGENES taken_time). born_time ist für die GANZE Gruppe identisch
+		// (alle Kinder desselben Schnitts) - im Gespräch gefunden: ohne diese
+		// Regel clusterten/überlappten die fliegenden Geschwister sichtbar.
+		// PERFORMANCE-FIX (REST-PRECISION-PLAN, Stand 2026-07-17): der
+		// Normalfall braucht hier gar keine Berechnung mehr - bp.flightOrigin
+		// wurde bereits als Nebeneffekt der bank_out-Schleife oben eingefroren,
+		// sobald u_time bp.flightQueryTime (= dieselbe t-Regel wie vormals hier
+		// inline: born_time bei geteilten/Z_micro-Stücken, sonst taken_time)
+		// erreicht hat. Nur wenn direkt in einen Zeitpunkt GESPRUNGEN wird
+		// (Scrubbing), an dem die bank_out-Schleife dieses Stück nie besucht
+		// hat, bleibt flightOrigin leer - dann (und NUR dann) einmaliger
+		// historischer Fallback über findRect(), dessen Ergebnis ebenfalls
+		// gecacht wird (kein wiederholter Aufruf in Folge-Frames).
+		function bankOriginState(p) {
+			if (!bank_root) return null;
+			let bp = p.bp;
+			// bp.flightOrigin: null = noch nicht versucht, false = versucht und
+			// NICHT gefunden (z.B. Stück zu flightQueryTime bereits geprunt -
+			// seltener, aber realer Fall, siehe Fund unten), sonst das Ergebnis.
+			// `false` MUSS genauso gecacht werden wie ein Treffer - sonst würde
+			// genau dieser (seltene, aber nicht einmalige) Fehlschlag jeden
+			// einzelnen Frame erneut den vollen findRect()-Fallback auslösen und
+			// den Fix für GENAU diese Stücke wirkungslos machen.
+			if (bp.flightOrigin !== null) return bp.flightOrigin || null;
+			let t = bp.flightQueryTime;
+			let rect = findRect(bank_root, t, bp.id);
+			if (!rect) {
+				bp.flightOrigin = false;
+				return null;
+			}
+			let camera = GLOBAL_TEIL_D_ZOOM_SPLINE
+				? GLOBAL_TEIL_D_ZOOM_SPLINE.at(t)
+				: { z: 1, cx: 0.5, cy: 0.5, offsetX: 0, offsetY: 0 };
+			bp.flightOrigin = { rect, camera };
+			return bp.flightOrigin;
 		}
 
 		let [t_x, t_y, t_w, t_h] = project(0, 0, SQRT2 / V_SCALE_TARGET, SQRT2 / V_SCALE_TARGET, true);
 		ctx.strokeStyle = 'rgba(255,255,255,0.1)';
 		ctx.strokeRect(t_x, t_y, t_w, t_h);
-
-		if (!COMPACTION_ENABLED) {
-			let [b_x, b_y, b_w, b_h] = project(0, 0, 1.0, 1.0, false);
-			ctx.strokeStyle = 'rgba(255,255,255,0.1)';
-			ctx.strokeRect(b_x, b_y, b_w, b_h);
-		}
 
 		let [base_x, base_y, base_w, base_h] = project(
 			dyn_prefA[0],
@@ -313,14 +373,53 @@
 		const edgeFilter = EDGE_BLUR_PX > 0 ? `blur(${EDGE_BLUR_PX}px)` : 'none';
 		gridPath.rect(base_x, base_y, base_w, base_h);
 
-		for (let p of bank_pieces) {
-			if (u_time >= p.born_time && u_time < p.cut_time && u_time < p.taken_time) {
-				let [px, py, pw, ph] = project(p.x, p.y, p.w, p.h, false, p);
-				if (pw < 0.2 && ph < 0.2) continue;
-				ctx.fillStyle = COLORS[p.k % COLORS.length];
-				ctx.fillRect(px, py, pw, ph);
-				gridPath.rect(px, py, pw, ph);
+		// Debug: welche Rest-Stuecke (k -> Anzahl) zeichnet die Bank gerade?
+		// Nebeneffekt DIESER Schleife (kein zweiter Durchlauf über bank_out) -
+		// dadurch per Konstruktion identisch zu dem, was tatsächlich gezeichnet
+		// wird (derselbe project()-Aufruf, derselbe Sichtbarkeits-Schwellwert).
+		const drawn = debugOn ? {} : null;
+		const drawnDetail = debugOn ? [] : null;
+		// Debug: tiefster gemeinsamer Elternrest (LCA) ALLER gerade
+		// gezeichneten Rest-Stücke - dessen Exponent (k) wird unten als
+		// Overlay eingeblendet. Wir sammeln die gezeichneten Blätter und
+		// reduzieren sie paarweise über die Baum-Struktur (parent_id).
+		const drawnPieces = debugOn ? [] : null;
+
+		for (let r of bank_out) {
+			// PERFORMANCE-FIX (REST-PRECISION-PLAN, Stand 2026-07-17): Nebeneffekt
+			// dieser ohnehin schon laufenden Schleife (besucht jedes aktive Stück
+			// sowieso einmal pro Frame) - sobald ein Stück seinen eingefrorenen
+			// Abflug-Zeitpunkt (flightQueryTime) erreicht hat, wird seine Position
+			// EINMALIG festgehalten (bankOriginState() liest danach nur noch
+			// diesen Wert, statt jeden Frame neu über findRect() zu traversieren).
+			if (
+				r.piece.flightQueryTime !== null &&
+				u_time >= r.piece.flightQueryTime &&
+				!r.piece.flightOrigin
+			) {
+				r.piece.flightOrigin = { rect: { x: r.x, y: r.y, w: r.w, h: r.h }, camera: teilDCamera };
 			}
+			let [px, py, pw, ph] = project(0, 0, 0, 0, false, r);
+			if (pw < 0.2 && ph < 0.2) continue;
+			ctx.fillStyle = COLORS[r.piece.k % COLORS.length];
+			ctx.fillRect(px, py, pw, ph);
+			gridPath.rect(px, py, pw, ph);
+			if (debugOn) {
+				const k = r.piece.k;
+				drawn[k] = (drawn[k] || 0) + 1;
+				drawnDetail.push({
+					k,
+					taken: r.piece.taken_time,
+					cut: r.piece.cut_time,
+					born: r.piece.born_time,
+				});
+				drawnPieces.push(r.piece);
+			}
+		}
+		if (debugOn) {
+			setDebugBankDrawnRest(drawn);
+			setDebugBankDrawnDetail(drawnDetail);
+			drawCommonAncestorExponent(ctx, drawnPieces, 50 + BANK_X_OFFSET * V_SCALE_BANK * scale + 8);
 		}
 
 		for (let p of render_pipeline) {
@@ -368,13 +467,15 @@
 				ty = ty + (tw > th ? 0 : p.i * target_h);
 			}
 
+			let origin = bankOriginState(p);
 			let [start_x, start_y, start_w, start_h] = project(
-				p.bp.x,
-				p.bp.y,
-				p.bp.w,
-				p.bp.h,
+				0,
+				0,
+				0,
+				0,
 				false,
-				p.bp,
+				origin?.rect,
+				origin?.camera,
 			);
 			let [end_x, end_y, end_w, end_h] = project(tx, ty, target_w, target_h, true);
 
@@ -438,6 +539,26 @@
 		autoZoomNote.style.display = isActive ? 'block' : 'none';
 	}
 
+	// Debug-Overlay: Exponent (k) des tiefsten gemeinsamen Elternrestes der
+	// aktuell gezeichneten Reste. Wird über dem Bank-Bereich eingeblendet.
+	function drawCommonAncestorExponent(ctx, pieces, bankScreenX) {
+		let lca = commonAncestor(pieces, new Map(bank_pieces.map((p) => [p.id, p])));
+		let label = lca ? `gem. Elternrest: k = ${lca.k}` : 'gem. Elternrest: –';
+		ctx.save();
+		ctx.setTransform(1, 0, 0, 1, 0, 0);
+		let fontPx = 14 * RENDER_SCALE;
+		ctx.font = `${fontPx}px monospace`;
+		ctx.textBaseline = 'top';
+		let x = Number.isFinite(bankScreenX) ? bankScreenX : 60 * RENDER_SCALE;
+		let y = 12 * RENDER_SCALE;
+		let w = ctx.measureText(label).width;
+		ctx.fillStyle = 'rgba(0,0,0,0.6)';
+		ctx.fillRect(x - 4, y - 3, w + 8, fontPx + 6);
+		ctx.fillStyle = '#ffd166';
+		ctx.fillText(label, x, y);
+		ctx.restore();
+	}
+
 	function formatZoomFactor(f) {
 		if (f < 10)
 			return (
@@ -477,11 +598,13 @@
 		if (!isPlaying) return;
 		let dt = (now - lastTime) / 1000.0;
 		lastTime = now;
+		setDebugFrame(dt);
 
 		if (animPause > 0) {
 			animPause -= dt;
 		} else {
 			u_time += dt * ANIM_SPEED * animDirection;
+			setDebugBankTime(u_time);
 			if (u_time >= MAX_TIME) {
 				u_time = MAX_TIME;
 				animDirection = -1;
@@ -501,6 +624,7 @@
 
 	onMount(() => {
 		ctx = canvasEl.getContext('2d');
+		setDebugCanvas(canvasEl);
 		bankZoomLabel = document.getElementById('bankZoomLabel');
 		bankAreaLabel = document.getElementById('bankAreaLabel');
 		autoZoomMarker = document.getElementById('autoZoomMarker');
