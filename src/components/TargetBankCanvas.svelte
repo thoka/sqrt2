@@ -87,6 +87,7 @@
 	let LINE_WIDTH_PX = 0.3;
 	let ANIM_PAUSE_DURATION = 1.5;
 	let ANIM_SPEED = 2.0;
+	let bankRenderEnabled = true; // Diagnose-Schalter: Bank-Canvas (inkl. Flug) einfrieren
 
 	// === Canvas ===
 	let canvasEl = $state();
@@ -118,6 +119,7 @@
 			LINE_WIDTH_PX = c.lineWidth;
 			ANIM_PAUSE_DURATION = c.pauseDuration;
 			ANIM_SPEED = c.playSpeed;
+			bankRenderEnabled = c.bankRenderEnabled;
 
 			let compiled = get(compiledStore);
 			if (!compiled) {
@@ -217,6 +219,7 @@
 
 	function renderFrame() {
 		if (!ctx) return; // 2D-Kontext fehlt (z.B. jsdom/SSR) - Rendering überspringen
+		if (!bankRenderEnabled) return; // Diagnose-Schalter: Bank-Canvas (inkl. Flug) einfrieren
 		ctx.setTransform(1, 0, 0, 1, 0, 0);
 		ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
 		if (render_pipeline.length === 0) return;

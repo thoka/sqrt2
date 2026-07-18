@@ -168,6 +168,43 @@ Rest-Drift-Garantie zu brechen:
 Sprünge + Kamera-dz). Bestätigt: Massen-Sprünge bis 2.0/Frame (C0),
 Kamera-dz = 0 im Fenster.
 
+## Flug-Stottern: Korrelation mit HUD-Update (neue Hypothese)
+
+Der Haupt-Hebel fuer das **Flug**-Stottern ist NICHT der Blatt-Exit
+(s.o.), sondern die **Zwei-Uhren-Architektur** + die teure HUD-Aktualisierung:
+
+- Canvas `loop()` (`TargetBankCanvas.svelte:570`) laeuft EIGENEN
+  `requestAnimationFrame`, advance `u_time` und zeichnet **jeden Frame**
+  inkl. der Flug-Animation (`render_pipeline`, Zeilen 418-510).
+- `App.svelte:207` abonniert `playbackStore` -> `updateHUD(u_time)`.
+  `loop()` schreibt JEDEN Frame `playbackStore.set({time})`
+  (`TargetBankCanvas.svelte:591`) -> die HUD wird **pro Frame** neu
+  berechnet: `computeLiveL` + `innerHTML`-Rewrite + **MathJax
+  `typesetPromise`** (teuer, blockiert den Main-Thread).
+- Korrelation: HUD-Aenderungen cluster GENAU dann, wenn Schalen
+  abschliessen (Ziffern wechseln) = wenn Fluege passieren. Das blockierende
+  MathJax-Typeset stallt den rAF-`loop` -> die Flug-Animation ruckelt.
+  Zwei Uhren, selbe Zeitquelle, aber verschiedene Kosten/Takte.
+
+### Schalter eingebaut (Diagnose, noch NICHT die eigentliche Fix)
+Zwei Checkboxen im Animation-Tab (`ControlPanel.svelte`) + configStore-
+Felder + URL-Parameter, um die Quelle zu isolieren:
+- **`hudUpdateEnabled`** (URL `hud=0`): gatet `updateHUD` in
+  `App.svelte` (playback-Subscribe + applyConfig). Bei `0` wird die
+  Zahlentafel nicht neu typsettet -> MathJax blockiert den Loop nicht mehr.
+- **`bankRenderEnabled`** (URL `bankrender=0`): gatet `renderFrame` in
+  `TargetBankCanvas.svelte` (fruehes Return). Bei `0` friert der
+  Bank-Canvas (inkl. Flug) ein.
+
+Test-Kriterium zur Isolierung:
+- `hud=0` -> Flug wird ruhig => HUD/MathJax IST die Quelle.
+- `bankrender=0`, `hud=1` -> HUD aktualisiert sich, Bank steht =>
+  bestaetigt die Entkopplung.
+- Danach echter Fix: HUD-Update vom rAF-Loop ENTKOPPELN (z.B. HUD nur
+  bei tatsaechlichem Ziffernwechsel neu typsetten, oder auf eigenen
+  langsamen Timer/Idle-Callback legen), statt pro Frame ueber
+  `playbackStore.set`.
+
 ## Architektur: drei Oberflächen, eine Komponente
 
   - **Exponat selbst** (`#settingsPanel`-Overlay, Hover-Reveal): nur während

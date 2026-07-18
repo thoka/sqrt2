@@ -405,6 +405,32 @@
 				oninput={onInputFloat('pauseDuration', 1.5)}
 			/>
 		</label>
+
+		<div class="muted-note" style="margin-top:10px;">Diagnose (Stotter-Untersuchung):</div>
+		<label
+			class="control-group"
+			style="margin-top:4px; flex-direction: row; align-items: center; gap: 8px;"
+		>
+			<input
+				type="checkbox"
+				style="width: auto;"
+				checked={$configStore.hudUpdateEnabled}
+				onchange={onChangeChecked('hudUpdateEnabled')}
+			/>
+			Zahlendarstellung Update (l/l²/R)
+		</label>
+		<label
+			class="control-group"
+			style="margin-top:4px; flex-direction: row; align-items: center; gap: 8px;"
+		>
+			<input
+				type="checkbox"
+				style="width: auto;"
+				checked={$configStore.bankRenderEnabled}
+				onchange={onChangeChecked('bankRenderEnabled')}
+			/>
+			Update der Bank (Canvas + Flug)
+		</label>
 	{/if}
 
 	{#if showTab('Admin') && activeTab === 'Admin'}

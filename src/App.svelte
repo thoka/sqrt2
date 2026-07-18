@@ -153,7 +153,7 @@
 	}
 
 	function applyConfig() {
-		updateHUD(u_time);
+		if (get(configStore).hudUpdateEnabled) updateHUD(u_time);
 	}
 
 	onMount(() => {
@@ -206,7 +206,7 @@
 		configStore.subscribe(applyConfig);
 		playbackStore.subscribe((p) => {
 			u_time = p.time;
-			updateHUD(u_time);
+			if (get(configStore).hudUpdateEnabled) updateHUD(u_time);
 		});
 
 		// Widget-Auswahl (displayStore): zeigt entweder Balken- ODER Grid-Widget.
