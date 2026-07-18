@@ -103,8 +103,10 @@ Konkret (gemessen mit einem Node-Diagnostic ueber `compileSystem` + feines
   taken_time"). Ebenso der `cut_time`-Umschalt in `layoutBox` (`:86`):
   Blatt->geteilt ist ein harter Wechsel, keine Ueberblendung.
 
-  **KORREKTUR (User-Klaerung):** dieses "hart" ist ein MISSVERSTAENDNIS,
-  kein gewolltes Verhalten. Richtig: die Sichtbarkeit muss AUSGESCHALTET
+  **KORREKTUR (User-Klaerung):** dieses "hart" ist KEIN
+  Missverstaendnis im Sinne einer Geschmacksfrage, sondern ein ECHTER BUG:
+  die aktuelle Spezifikation sieht das Ausblenden der Luecke NICHT als
+  harten C0-Sprung vor. Richtig: die Sichtbarkeit muss AUSGESCHALTET
   werden, ABER die Luecke (das Rechteck) soll WEICH VERSCHWINDEN - also ein
   C1-Ease-Out vom Design-Mass bei `taken_time` auf 0, statt eines C0-Sprungs.
   Das Fenster dafuer existiert bereits: `te = taken_time + delaySnapshot +
@@ -117,14 +119,15 @@ Konkret (gemessen mit einem Node-Diagnostic ueber `compileSystem` + feines
 
 ### Einordnung gegen CLAUDE.md "stetige Ableitung"
 CLAUDE.md fordert fuer ALLE automatisierten Bewegungen C1 (kein Sprung in
-Wert ODER Steigung). Der harte Blatt-Exit verletzt das - und war KEINE
-bewusste Ausnahme, sondern ein Missverstaendnis (s.o.). Der im Kopfkommentar
-genannte Grund ("kein Ease-Out brachte laut Messung keine Rest-Drift-
-Besserung") bezog sich auf ein frueheres Ausblenden BIS `te` (zu lang, zu
-spaet); ein kurzer, auf `[taken_time, te]` begrenzter Ease-Out ist damit
-nicht widerlegt. Der Konflikt bei `base=2/depth=40` + dicht getakteten
-Entnahmen: aus den C0-Einzelsprüngen werden tausende pro Sekunde ->
-sichtbares Ruckeln.
+Wert ODER Steigung). Der harte Blatt-Exit verletzt das - und zwar als
+ECHTER BUG: die Spezifikation sieht das Ausblenden der Luecke NICHT als
+harten C0-Sprung vor (s.o., User-Klaerung). Er war auch KEINE bewusste
+Ausnahme. Der im Kopfkommentar genannte Grund ("kein Ease-Out brachte
+laut Messung keine Rest-Drift-Besserung") bezog sich auf ein frueheres
+Ausblenden BIS `te` (zu lang, zu spaet); ein kurzer, auf
+`[taken_time, te]` begrenzter Ease-Out ist damit nicht widerlegt. Der
+Konflikt bei `base=2/depth=40` + dicht getakteten Entnahmen: aus den
+C0-Einzelsprüngen werden tausende pro Sekunde -> sichtbares Ruckeln.
 
 ### HARTE RAND-BEDINGUNG beim Weich-Ausblenden (nicht vergessen)
 Die inklusive Grenze `t <= taken_time` MUSS erhalten bleiben: bei GENAU
@@ -141,17 +144,17 @@ dieselbe inklusive Grenze nutzen.
 ### Richtungsentscheidung (noch NICHT umgesetzt)
 Um "Interpolation der Zeit glatt genug" zu machen, OHNE die
 Rest-Drift-Garantie zu brechen:
-1. **Blatt-Exit weich ausblenden (PRIMAER-HEBEL):** `leafEffectiveSize()`
+ 1. **Blatt-Exit weich ausblenden (BUG-FIX, PRIMAER-HEBEL):** `leafEffectiveSize()`
    (`recursive-layout.js:54`) statt hartem 0 nach `taken_time` einen C1-
    Ease-Out von Design-Groesse auf 0 im Fenster `[taken_time, te]` geben
    (siehe Haerte-Rand-Bedingung oben: bei `t == taken_time` volle Groesse,
    Ausblenden erst fuer `t > taken_time`). Das ist die eigentliche
-   Fehlerkorrektur zum "Missverstaendnis hart" - nicht der Kamera-Spline.
-   `te` existiert bereits (`taken_time + delaySnapshot + transitionTicks`),
-   das Fenster ist also schon da; nur die Interpolation fehlt. Danach
-   Bank/Rest-Drift erneut vermessen (der alte "kein Ease-Out half"-Befund
-   bezog sich auf Ausblenden BIS `te`, nicht auf ein kurzes
-   `[taken_time, te]`-Fenster).
+   Fehlerkorrektur zum "hart ohne Ease = echter Bug, nicht spezifiziert"
+   (s.o.) - nicht der Kamera-Spline. `te` existiert bereits
+   (`taken_time + delaySnapshot + transitionTicks`), das Fenster ist also
+   schon da; nur die Interpolation fehlt. Danach Bank/Rest-Drift erneut
+   vermessen (der alte "kein Ease-Out half"-Befund bezog sich auf
+   Ausblenden BIS `te`, nicht auf ein kurzes `[taken_time, te]`-Fenster).
 2. `u_time` nicht linear, sondern ueber eine C1-Zeit-Transformation
    vorruecken lassen, die bei Ereignisdichten automatisch "ausdünnt"
    (Vermeidung von Häufungs-Sprüngen) - entspräche der "stetigen
@@ -335,3 +338,9 @@ Anforderungen:
         als pro-Frame-Typesetter ungeeignet (Ursache des Flug-Stotterns,
         via `hud=0` bestätigt). `updateHUD()` behält die BigInt-Mathematik
         aus `computeLiveL`, nur die Darstellungsschicht wird getauscht.
+  - [ ] **BUG: Lücke hart ausblenden (kein Ease)** - `leafEffectiveSize()`
+        (`recursive-layout.js:54`) springt bei `taken_time` hart auf 0 statt
+        C1-Ease-Out im Fenster `[taken_time, te]`. Ist ein echter Bug, NICHT
+        spezifikationsgemäß (s. "KORREKTUR (User-Klaerung)" + Richtungs-
+        entscheidung #1 oben). Inklusive `t <= taken_time`-Grenze wahren
+        (`flightQueryTime`!), danach Bank/Rest-Drift re-messen.
