@@ -107,7 +107,7 @@
 		width: 12px;
 		height: 12px;
 		border-radius: 50%;
-		background: #3b82f6;
+		background: #94a3b8;
 		cursor: pointer;
 	}
 	.compact-slider::-moz-range-thumb {
@@ -115,7 +115,7 @@
 		height: 12px;
 		border-radius: 50%;
 		border: none;
-		background: #3b82f6;
+		background: #94a3b8;
 		cursor: pointer;
 	}
 	.compact-speed {
