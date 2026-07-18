@@ -246,6 +246,49 @@ auf schwacher Hardware zum Thema wird. Das LCA-Debug-Overlay
 (`commonAncestor`, nur `?debug=1`) ist von dieser Frage unberührt - sein
 Kostenanteil ist ohnehin µs-Bereich und Debug-only.
 
+### E.1 Basis 2, bis Iterationsstufe 40 (gemessen)
+
+**Methodik (Herantasten statt Groß-Benchmark):** erst `buildSystem`-Wandzeit
++ Knotenzahl je Tiefe einzeln geprobt (Tiefen 4→40, hartes `timeout`), um zu
+sehen WO es teuer wird, bevor die volle Layout-Messung lief. Das ist die
+empfohlene Vorgehensweise für alle weiteren Läufe (Basis/Tiefe hochtasten,
+nicht blind eine riesige Reihe starten - kann bei anderer Basis schnell
+explodieren).
+
+`buildSystem`-Wandzeit Basis 2: unter 11 ms bis Tiefe 28, dann 106 ms
+(Tiefe 32), 137 ms (36), 200 ms (40) - unkritisch. **Ganz anders als Basis 10**
+(dort ~18 000 Knoten schon bei Tiefe 16).
+
+Layout-Cache-Messung Basis 2 (gleiche Kennzahlen wie oben, 4 Frames/Tick):
+
+| Tiefe | Knoten | avg visited/Frame | avg needed/Frame | Speedup |
+| ----: | -----: | ----------------: | ---------------: | ------: |
+|     8 |     73 |                29 |                4 |    7,9× |
+|    16 |    159 |                51 |                6 |    9,2× |
+|    24 |    437 |               106 |                9 |   11,3× |
+|    32 |    879 |               148 |               13 |   11,7× |
+|    40 |  1 609 |               185 |               16 |   11,8× |
+
+**Was das an der Einschätzung ändert:**
+
+- **Basis 2 ist geometrisch VIEL kleiner.** Bei Tiefe 40 nur ~1 600 Knoten
+  und ~185 besuchte/Frame - Basis 10 hat schon bei Tiefe 20 das ~20-fache
+  (35 000 Knoten). Die kleine Basis sättigt lange (bis Tiefe ~12 bleibt die
+  Bank bei 73 Knoten, weil √2 in Basis 2 nur langsam neue Stellen fordert).
+- **Der Cache-Faktor ist bei Basis 2 KLEINER (~8-12× statt ~40-55×).** Grund:
+  weniger Kinder pro Schnitt (2 statt 10) → jeder geänderte Blatt-Pfad macht
+  einen größeren Anteil des ohnehin schmalen aktiven Baums aus, `needed`
+  liegt relativ höher. Der Layout-Cache lohnt bei Basis 2 also noch WENIGER
+  als bei Basis 10.
+- **Gesamtfazit E bleibt bestehen und wird sogar verstärkt:** der
+  Layout-Render-Cache ist für BEIDE Basen keine Priorität. Bei Basis 2 ist
+  die absolute Last (185 Knoten selbst bei Tiefe 40) trivial.
+- **Offen bleibt der Compiler-Wandzeit-Vergleich bei Basis 10 / Tiefe > 20**
+  (nicht Basis 2 - dort ist buildSystem billig). Der eigentliche
+  O(TOTAL_STEPS²)-Schmerz (Abschnitt A/F) tritt bei GROSSER Basis + Tiefe
+  auf, nicht bei Basis 2. Für Basis 2 ist damit kein Compiler-Handlungsbedarf
+  erkennbar.
+
 ## F. Compiler bei hohen Iterationsstufen: offene Richtungen (Recherche)
 
 Der Compiler ist der reale Bottleneck bei hoher Tiefe (siehe
@@ -293,26 +336,21 @@ inkrementelle Tiefe als Fundament).
 
 ## TODO: Messungen für Basis=2 und bis Iterationsstufe 40 wiederholen
 
-Die Messungen in Abschnitt E (und die Compiler-Einschätzung in F) beruhen
-bisher NUR auf **Basis 10, Tiefe ≤ 20**. Beide Parameter können die
-Einschätzung verschieben - offen zu prüfen:
+Die ursprüngliche Messung in Abschnitt E beruhte NUR auf **Basis 10,
+Tiefe ≤ 20**. Stand der Nachmessungen:
 
-- **Basis = 2 wiederholen.** Kleinere Basis = weniger Kinder pro Schnitt
-  (2 statt 10), dafür deutlich TIEFERE Bäume bei gleicher Ziffernzahl. Das
-  ändert das Verhältnis visited/needed (Abschnitt E) potenziell stark: der
-  Rekursionspfad wird länger, die Verzweigung schmaler - der Cache-Faktor
-  könnte anders ausfallen, ebenso das Pruning-Verhalten.
-- **Bis Iterationsstufe 40 messen** (statt bei 20 aufhören). Das O(TOTAL_STEPS²)-
-  Wachstum des Compilers (Abschnitt A / `ASYNC-COMPILE-PLAN.md`) macht sich
-  erst bei sehr hoher Tiefe voll bemerkbar; auch die absolute
-  Layout-Knotenzahl (Abschnitt E, "absolute Ersparnis klein") kann bei
-  Tiefe 40 in einen Bereich kommen, in dem der Render-Cache doch relevant
-  wird. Vorsicht beim Skript-Lauf: Laufzeit/Speicher steigen stark - ggf.
-  `framesPerTickApprox` senken und Tiefe 40 separat/einzeln messen (der
-  bestehende Lauf lief bei Basis 10 schon bei Tiefe 20 in Timeouts, siehe
-  `scripts/measure-layout-cache.mjs`).
+- [x] **Basis = 2, bis Iterationsstufe 40** - erledigt, siehe Abschnitt E.1.
+      Ergebnis: geometrisch viel kleiner (Tiefe 40 ≈ 1 600 Knoten),
+      Cache-Faktor kleiner (~8-12×), `buildSystem` billig (≤ 200 ms). Kein
+      Handlungsbedarf für Basis 2.
+- [ ] **Basis = 10, Tiefe > 20 - Compiler-WANDZEIT** (nicht nur Knotenzahl)
+      messen. Hier tritt das O(TOTAL_STEPS²)-Wachstum (Abschnitt A/F) voll
+      auf. VORSICHTIG herantasten (siehe Methodik in E.1): erst
+      `buildSystem`-Zeit je Tiefe einzeln mit hartem `timeout` proben, bevor
+      eine volle Reihe läuft - bei Basis 10 explodiert die Stückzahl schnell
+      (z.B. hängt `tests/unit/compiler-split.test.js` bei base 16/depth 15,
+      siehe AGENTS.md GOTCHA).
 
-Reproduktion: `scripts/measure-layout-cache.mjs` um `BASE = 2` und die
-Tiefen-Reihe bis 40 erweitern; die Compiler-Wandzeit (nicht nur Knotenzahl)
-separat für Basis 2 / Tiefe 40 messen. Danach die Tabellen und die
-Priorisierung in E/F ggf. neu bewerten.
+Reproduktion: `node scripts/measure-layout-cache.mjs [BASE] [tiefen...]`
+(nimmt Basis + Tiefen als CLI-Argumente). Für die Compiler-Wandzeit reicht
+ein kleines `buildSystem`-Timing-Skript wie beim Herantasten in E.1.

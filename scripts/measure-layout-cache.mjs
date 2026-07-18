@@ -16,7 +16,13 @@
 //             deren voll/0-Zustand sich ggue. dem VORIGEN Frame geaendert hat.
 //   speedup = visited / needed.
 //
-// Aufruf: node scripts/measure-layout-cache.mjs
+// Aufruf:
+//   node scripts/measure-layout-cache.mjs                 -> Default (Basis 10)
+//   node scripts/measure-layout-cache.mjs 2 8 16 24 32 40 -> Basis 2, gegebene Tiefen
+//
+// VORSICHT bei hoher Basis + Tiefe: die Stückzahl kann explodieren. Erst
+// vorsichtig herantasten (kleine Tiefen, hartes `timeout`), dann hochgehen -
+// siehe docs/COMPILER-LAYERING-PLAN.md Abschnitt E.1 (Methodik).
 
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -25,7 +31,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const { buildSystem } = await import(join(__dirname, '../src/lib/bank-core.js'));
 const { layoutBox } = await import(join(__dirname, '../src/lib/recursive-layout.js'));
 
-const BASE = 10;
+const argv = process.argv.slice(2).map(Number).filter(Number.isFinite);
+const BASE = argv.length > 0 ? argv[0] : 10;
+const CLI_DEPTHS = argv.length > 1 ? argv.slice(1) : null;
 
 // voll/0-Zustand eines Blattes zum Zeitpunkt t (binaer, siehe
 // leafEffectiveSize: voll solange t <= taken_time, danach 0). born_time/te-
@@ -125,20 +133,24 @@ function measure(depth, framesPerTickApprox = 4) {
 	};
 }
 
+const depths = CLI_DEPTHS || [6, 8, 10, 12, 14, 16, 18, 20];
+console.log(`BASE=${BASE}`);
 console.log('depth | nodes | ticks | frames | maxVisited | avgVisited | avgNeeded | speedup');
 console.log('------|-------|-------|--------|------------|------------|-----------|--------');
-for (const d of [6, 8, 10, 12, 14, 16, 18, 20]) {
+for (const d of depths) {
 	const r = measure(d);
 	console.log(
 		`${String(r.depth).padStart(5)} | ${String(r.nodes).padStart(5)} | ${String(r.nTicks).padStart(5)} | ${String(r.nFrames).padStart(6)} | ${String(r.maxVisited).padStart(10)} | ${String(r.avgVisited).padStart(10)} | ${String(r.avgNeeded).padStart(9)} | ${String(r.speedup).padStart(6)}x`,
 	);
 }
 
-console.log('\nSensitivitaet framesPerTick (depth=16):');
-console.log('fpt | avgVisited | avgNeeded | speedup');
-for (const fpt of [1, 2, 4]) {
-	const r = measure(16, fpt);
-	console.log(
-		`${String(fpt).padStart(3)} | ${String(r.avgVisited).padStart(10)} | ${String(r.avgNeeded).padStart(9)} | ${String(r.speedup).padStart(6)}x`,
-	);
+if (!CLI_DEPTHS) {
+	console.log('\nSensitivitaet framesPerTick (depth=16):');
+	console.log('fpt | avgVisited | avgNeeded | speedup');
+	for (const fpt of [1, 2, 4]) {
+		const r = measure(16, fpt);
+		console.log(
+			`${String(fpt).padStart(3)} | ${String(r.avgVisited).padStart(10)} | ${String(r.avgNeeded).padStart(9)} | ${String(r.speedup).padStart(6)}x`,
+		);
+	}
 }
