@@ -12,20 +12,16 @@
 	import { displayStore } from './lib/displayStore.js';
 	import { parseConfigFromUrl, parsePlaybackFromUrl } from './lib/urlState.js';
 	import { initSync } from './lib/syncedStore.js';
-	import { computeLiveL } from './lib/compiler.js';
+	import { initDebugAgent } from './lib/debugAgent.js';
 
 	import ControlPanel from './components/ControlPanel.svelte';
 	import PlaybackBar from './components/PlaybackBar.svelte';
 	import RestCounterBars from './components/RestCounterBars.svelte';
 	import RestCounterGrid from './components/RestCounterGrid.svelte';
 	import TargetBankCanvas from './components/TargetBankCanvas.svelte';
-
-	// Schaltet die Wort-Präfixe ("Länge ", "Fläche ", "Rest ") im Zahlen-Panel
-	// oben rechts an/aus - Standard aus (nur kurze Symbole l/l²/R).
-	const NUMBER_PANEL_VERBOSE = false;
+	import SpeedSlider from './components/SpeedSlider.svelte';
 
 	let u_time = 0.0;
-	let current_hud_hash = '';
 
 	// === Progress-Anzeige (ASYNC-COMPILE-PLAN, Schritt 6) ===
 	// Erscheint erst nach einer kurzen Schwelle (300 ms), damit schnelle
@@ -49,114 +45,24 @@
 	});
 
 	// === Zahlentafel (l/l²/R) ===
-
-	function updateNumberPanelScale(numberPanel, numberPanelInner) {
-		numberPanelInner.style.transform = 'none';
-		let available = numberPanel.clientWidth;
-		let natural = numberPanelInner.scrollWidth;
-		let scale = Math.min(1, available / natural);
-		numberPanelInner.style.transform = `scale(${scale})`;
-	}
-	function updateHUD(time) {
-		const compiled = get(compiledStore);
-		if (!compiled || !compiled.axes) return;
-		const BASE = get(configStore).base;
-
-		// Laufende Seitenlänge l und Rest R: EXAKT aus der Simulation
-		// abgelesen (keine Wurzel, keine eigene Umrechnung). l = N_l/GRID
-		// ist eine Treppenfunktion über abgeschlossene Schalen, R = N_R/
-		// AREA_SCALE die direkte Zählung des Rests. l² = N_l²/GRID².
-		let { N_l, N_R, GRID, AREA_SCALE } = computeLiveL(compiled, time, BASE);
-
-		// Nachkommastellen: l hat N_MAX Stellen (GRID = BASE^N_MAX),
-		// l²/R haben K_MAX Stellen (AREA_SCALE = BASE^K_MAX).
-		let m = GRID.toString(BASE).length - 1; // = N_MAX
-		let kmax = AREA_SCALE.toString(BASE).length - 1; // = K_MAX
-
-		// === EXAKTE BIGINT-MATHEMATIK (aus N_l/N_R, direkt aus der Simulation) ===
-
-		// Seitenlänge P = N_l / GRID
-		let P_str = N_l.toString(BASE).toUpperCase();
-		if (m > 0) P_str = '0'.repeat(Math.max(0, m + 1 - P_str.length)) + P_str;
-		if (m > 0) P_str = P_str.slice(0, P_str.length - m) + '.' + P_str.slice(P_str.length - m);
-
-		// Fläche P^2 = N_l^2 / GRID^2
-		let P2 = N_l * N_l;
-		let P2_str = P2.toString(BASE).toUpperCase();
-		if (m > 0) {
-			let digits = 2 * m;
-			P2_str = '0'.repeat(Math.max(0, digits + 1 - P2_str.length)) + P2_str;
-			P2_str = P2_str.slice(0, P2_str.length - digits) + '.' + P2_str.slice(P2_str.length - digits);
-		}
-
-		// Rest R = N_R / AREA_SCALE (= 2 - l², aber hier direkt gezählt)
-		let rem_str = N_R.toString(BASE).toUpperCase();
-		if (kmax > 0) {
-			rem_str = '0'.repeat(Math.max(0, kmax + 1 - rem_str.length)) + rem_str;
-			rem_str =
-				rem_str.slice(0, rem_str.length - kmax) + '.' + rem_str.slice(rem_str.length - kmax);
-		}
-
-		// Hängende Nullen abschneiden: die letzte Ziffer soll nie eine 0 sein
-		// (z.B. 1.410 -> 1.41, 1.40 -> 1.4). Betrifft l, l² und R gleichermaßen.
-		const trimTrailing = (s) => (s.includes('.') ? s.replace(/\.?0+$/, '') : s);
-		P_str = trimTrailing(P_str);
-		P2_str = trimTrailing(P2_str);
-		rem_str = trimTrailing(rem_str);
-
-		// Hash über die tatsächlich angezeigten Werte: so wird die Zahlentafel
-		// bei JEDER sichtbaren Änderung neu geschrieben - auch beim Endzustand
-		// (letzte Schale fertig), wo computeLiveL die Zahl noch zur vollen
-		// Annäherung an sqrt(2) aufüllt.
-		let hash = P_str + '|' + P2_str + '|' + rem_str + '|' + BASE;
-		if (hash === current_hud_hash) return;
-		current_hud_hash = hash;
-
-		let lengthLabel = NUMBER_PANEL_VERBOSE ? '\\text{Länge } l' : 'l';
-		let areaLabel = NUMBER_PANEL_VERBOSE ? '\\text{Fläche } l^2' : 'l^2';
-		let restLabel = NUMBER_PANEL_VERBOSE ? '\\text{Rest } R' : 'R';
-		let equation = `\\[ \\begin{aligned}
-        ${lengthLabel} &= ${P_str}_{${BASE}} \\\\
-        ${areaLabel} &= ${P2_str}_{${BASE}} \\\\
-        ${restLabel} &= ${rem_str}_{${BASE}}
-    \\end{aligned} \\]`;
-
-		const numberPanelInner = document.getElementById('numberPanelInner');
-		const numberPanel = document.getElementById('numberPanel');
-		numberPanelInner.innerHTML = equation;
-
-		// MathJax lädt asynchron (das window.MathJax-Objekt wird VOR dem Laden
-		// der Bibliothek gesetzt, typesetPromise gibt es erst danach). Daher:
-		// sobald verfügbar typesetten, sonst vorerst nur skalieren. Ein Wurf
-		// hier würde onMount abbrechen und die Kind-Mounts (Canvas) zerstören.
-		try {
-			if (window.MathJax && typeof window.MathJax.typesetPromise === 'function') {
-				MathJax.typesetPromise([numberPanelInner])
-					.then(() => updateNumberPanelScale(numberPanel, numberPanelInner))
-					.catch(() => updateNumberPanelScale(numberPanel, numberPanelInner));
-			} else if (window.MathJax?.startup?.promise) {
-				window.MathJax.startup.promise.then(() => {
-					if (typeof window.MathJax.typesetPromise === 'function') {
-						MathJax.typesetPromise([numberPanelInner])
-							.then(() => updateNumberPanelScale(numberPanel, numberPanelInner))
-							.catch(() => {});
-					}
-				});
-			} else {
-				updateNumberPanelScale(numberPanel, numberPanelInner);
-			}
-		} catch {
-			updateNumberPanelScale(numberPanel, numberPanelInner);
-		}
-	}
+	// Wird JETZT direkt auf dem BANK-CANVAS gemalt (TargetBankCanvas.svelte
+	// renderFrame -> computeLiveL + formatLiveNumbers + ctx.fillText), nicht
+	// mehr ins DOM geschrieben. Grund: das stuendige DOM-`innerHTML`-
+	// Umschreiben inkl. erzwungenem Reflow (updateNumberPanelScale
+	// liest scrollWidth/clientWidth) verursachte nach dem MathJax-Entzug
+	// NEUE Ruckler. Canvas-Paint hat keinen Reflow, kein innerHTML.
 
 	function applyConfig() {
-		updateHUD(u_time);
+		// (Zahlentafel lebt jetzt im Canvas - hier nichts mehr zu tun.)
 	}
 
 	onMount(() => {
 		// Fensterübergreifender Sync (BroadcastChannel) - idempotent.
 		initSync();
+		// Debug-Inspect-Kanal (opt-in ?debug=1): legt window.__debugSnapshot()
+		// offen, damit ein Playwright-Peer (connectOverCDP) den inneren Stand
+		// direkt aus dem JS-Kontext liest.
+		initDebugAgent();
 
 		// URL-Sync: configStore/playbackStore aus der URL befüllen, BEVOR die
 		// Komponenten mounten (ControlPanel/PlaybackBar lesen sie direkt).
@@ -196,11 +102,11 @@
 		const bankPanel = document.getElementById('bankPanel');
 		const restGridPanel = document.getElementById('restGridPanel');
 
-		// Zahlentafel + initiales Rendern.
+		// Zahlentafel lebt jetzt im Canvas (TargetBankCanvas.svelte) -
+		// hier nur noch u_time uebernehmen.
 		configStore.subscribe(applyConfig);
 		playbackStore.subscribe((p) => {
 			u_time = p.time;
-			updateHUD(u_time);
 		});
 
 		// Widget-Auswahl (displayStore): zeigt entweder Balken- ODER Grid-Widget.
@@ -239,7 +145,6 @@
 
 <div id="canvasMount"></div>
 
-<div id="numberPanel"><div id="numberPanelInner"></div></div>
 <div id="bankPanel"><div id="bankPanelMount"></div></div>
 <div class="overlay-panel" id="restGridPanel"><div id="restGridMount"></div></div>
 
@@ -256,4 +161,5 @@
 
 <div id="bottomBar">
 	<div id="playbackBarMount"></div>
+	<div id="speedControl"><SpeedSlider variant="compact" /></div>
 </div>

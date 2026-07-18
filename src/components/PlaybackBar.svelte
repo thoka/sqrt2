@@ -12,6 +12,12 @@
 	// bleibt ebenfalls in sqrt2.html - diese Komponente rendert nur die drei
 	// Kind-Elemente hinein, id="timeSlider" bleibt erhalten, weil die
 	// bestehende CSS (#timeSlider::-webkit-slider-thumb etc.) darauf zielt.
+	//
+	// INTERFACE-TODO "Korrektur: Geschwindigkeitsregler": die Geschwindigkeit
+	// (playSpeed) ist KEIN Bestandteil dieser unteren Leiste mehr - sie lebt
+	// in den Controls (ControlPanel / Fernsteuerung) und als dezenter, schmaler
+	// Regler rechts vor dem Bank-Zähler im Hauptfenster. Hier bleiben nur
+	// Play/Pause + Zeit-Positionsregler (immer sichtbar).
 	import { playbackStore, compiledStore } from '../lib/stores.js';
 
 	function togglePlaying() {

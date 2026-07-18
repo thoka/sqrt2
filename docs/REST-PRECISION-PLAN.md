@@ -289,7 +289,7 @@ wird.
   ändert die Struktur von `compileSystemData()`/`finalizeCompiled()`, nur
   deren Inhalte werden exakter/robuster.
 
-## Stand (2026-07-16) - Teil A + Teil B committet
+## Stand (2026-07-17) - Teil A + Teil B committet, Teil C in Arbeit
 
 - **Teil A erledigt** (`src/lib/compiler.js` + `src/App.svelte`):
   `l` kommt aus `GLOBAL_L_PREFIX`, einer BigInt-Präfixsumme
@@ -300,19 +300,747 @@ wird.
   plan-konform `N_l=0`. Nenner `GRID = BASE^N_MAX`, `AREA_SCALE =
   BASE^K_MAX` (K_MAX > N_MAX, weil subdivide k > N_MAX erzeugt).
 - **Teil B erledigt** (`src/lib/bank-core.js` + `src/lib/compiler.js`):
-  neue Felder `localOffsetX/Y` an Basis- und Kind-Stücken; exportierte
-  `relativePosition(p, q, parentMap)` summiert die `localOffset`-Ketten ab
-  dem LCA (Pfad ist blatt→wurzel, Indizes `0..i`) statt `p.x - q.x` →
-  vermeidet Float-Auslöschung bei Tiefe 22. Die Zoom-Bounding-Box in
-  `finalizeCompiled` nutzt `relativePosition` mit dem ersten Framing-Stück
-  als Anker; nur EIN absoluter x/y-Wert fließt ein.
-- **Tests:** `tests/unit/compiler.test.js` (21 Teil-A-Tests, alle grün) +
-  `tests/unit/zoom-robust.test.js` (7 Teil-B-Tests, alle grün). Vollständige
-  Unit-Suite 115/115 (ein VORHANDENER Hang in `compiler-split.test.js`
-  bei base 16 / depth 15 ist unabhängig von diesem Plan - schon im
-  Original-Code reproduzierbar, Stückzahl explodiert). `pnpm check`,
-  `pnpm build` und alle 14 E2E-Tests grün (inkl. "Canvas zeigt zwei weisse
-  Quadrate").
-- **Nächster Schritt:** nichts Offenes an diesem Plan. Offen im Projekt:
-  Phase 6 (Politur) sowie der `compiler-split.test.js`-Hang (separat
-  fixen: base 16 / depth 15 auf ein vertretbares Maß deckeln).
+  `localOffsetX/Y` sind ganzzahlige Rasterindizes `i` (0..BASE-1) des Child
+  im Parent - O(1) bei jeder Tiefe. `relativePosition(p, q, parentMap, BASE)`
+  faltet `(fx + localOffset) / BASE` von Blatt nach Wurzel → exakte relative
+  Position in [0,1], ohne Float-Auslöschung. Zoom-Bounding-Box komplett
+  relativ zum Anker, keine absoluten `p.x`.
+- **Teil C in Arbeit** (`src/lib/compiler.js`, `tests/unit/zoom-robust.test.js`):
+  Zoom nutzt kompaktierte Geometrie (`zoom_rect_lookup` via
+  `computeCompactionWaypoints`). Anker = schwerste Gruppe (max `w*h`) für
+  ruhige Kamera. Alle sichtbaren Stücke im Rahmen (kein kThresholdDiff-Filter
+  — mit Kompaktierung irrelevant). `ZOOM_MARGIN = 0.05`. Gemessen: Rest-
+  Fläche/Fenster = 35–70% bei base 2/10, Tiefe 20–50. Tests umgeschrieben
+  auf neue Invarianten (Rest-Fläche ≥10%, Sichtbarkeit im kompaktierten Raum).
+  Noch nicht committet.
+- **Sichtbarkeit verifiziert bis Tiefe 50:** Rest-Fläche (nach Kompaktierung)
+  macht 35–70% der Frame-Fläche aus (base 2/10, Tiefe 20–50). `compileSystem`
+  skaliert problemlos bis Tiefe 50+ (Stückzahl ~67k, <10s).
+- **Tests:** `tests/unit/compiler.test.js` (21 Teil-A-Tests) +
+  `tests/unit/zoom-robust.test.js` (Teil-B + Teil-C-Tests). Noch nicht alle
+  grün (Teil-C-Tests in Arbeit).
+- **Nächster Schritt:** Teil-C-Tests zum Laufen bringen, `pnpm check` +
+  `pnpm build` + E2E, dann committen. Offen: Verhalten bei Tiefe 60+
+  (Stückzahl ~67k) prüfen.
+
+## Teil C: Rest auch bei extremem Zoom groß genug sichtbar (Zoom nutzt kompaktierte Geometrie)
+
+### Befund
+
+Teil B löst die **Float-Auslöschung** (robuste [0,1]-Box bei Tiefe 50+).
+Das eigentliche Sichtbarkeitsproblem des Users ("ab einem bestimmten
+Zoom-Level sieht man keinen Rest mehr") hat eine zweite Ursache: das
+**externe Kompaktieren** (bisheriger Render-Modus via `computeCompactionAt`
+/ `getSmoothedCompactedLogicalRect`) ist bei hoher Tiefe wegen Float-
+Genauigkeit zusammengebrochen — die kompaktierten Koordinaten wurden
+NaN/Infinity, der Rest verschwand vollständig.
+
+Teil C behebt das, indem die **kompaktierte Geometrie direkt in den Zoom-
+Pfad eingebaut** wird (statt als separater Render-Modus). Der Zoom framt
+die kompaktierten Rects (Lücken entnommener Stücke geschlossen), Float-sicher
+via `relativePosition()` (Teil B). Die Fläche des Rests (nach Kompaktierung)
+bleibt dadurch bei jeder Tiefe als nennenswerter Bruchteil des Fensters
+sichtbar — gemessen: **35–70% der Fensterfläche** bei base 2/10, Tiefe
+20–50.
+
+### Warum die Rest-Fläche und nicht die Kleinste-Stück-Größe?
+
+Der User präzisierte: "rest genug sichtbar heißt: die den Rest
+umschließende Fläche (nach Kompaktierung) soll einen gewissen Bruchteil des
+Fensters ausmachen." Es geht also nicht darum, ob das kleinste einzelne
+Stück (z.B. Tiefe 60) auf ≥1px skaliert wird — sondern ob die Gesamtfläche
+aller sichtbaren Reste nach Kompaktierung einen wahrnehmben Teil des
+Fensters ausfüllt. Das ist die relevante Metrik, weil:
+
+- Die Kompaktierung schließt Lücken (Positionen), nicht Größen. Ein Stück
+  auf Tiefe 60 ist 10^47-mal kleiner als eines auf Tiefe 13 — das bleibt
+  so, egal wie kompakt die Position ist.
+- Aber die Gesamtfläche aller Reste ist gross genug (35–70%), weil die
+  vielen kleinen Stücke zusammen addieren.
+- Das alte externe Kompaktieren ist bei hoher Tiefe zusammengebrochen
+  (Float), wodurch die Fläche auf 0% fiel. Teil C fixt das.
+
+### Architektur
+
+Die Kompaktierung (`buildCompactionMap` / `computeCompactionAt` /
+`getSmoothedCompactedLogicalRect` in `bank-core.js`) schließt die Lücken
+entnommener Stücke bereits zeitlich WEICH (C¹ via `computeSegmentBlend`) und
+masse-/trägheitsgewichtet (Anker = schwerste Gruppe, siehe CLAUDE.md
+"Layout-Umordnungen"). Sie wird bisher NUR als separater Render-Modus
+genutzt, nicht als **Koordinatenbasis des Zooms**.
+
+Teil C baut die Zoom-Bounding-Box aus den kompaktierten Rects statt aus den
+rohen relativen Koordinaten. Konkret:
+
+1. Pro Zoom-Checkpoint `t` wird via `computeCompactionWaypoints()` (bereits
+   C¹, Wegpunkte bei jeder Sichtbarkeitsänderung) das kompaktierte, geglättete
+   Logical-Rect jedes Restsücks geholt: `makeCompactedLogicalRectLookup(wp)(p, t)`
+   → `{x,y,w,h}` im kompaktierten Raum. C¹ via `computeSegmentBlend` —
+   keine zweite Kompressionsfunktion.
+2. Der Zoom-Rahmen wird aus DIESEN kompaktierten Rects gebaut, **relativ zum
+   Anker im kompaktierten Raum** (rein Float, keine absoluten `p.x`):
+   - Anker = schwerste sichtbare Gruppe (max `w*h`) für ruhige Kamera
+     (CLAUDE.md "Layout-Umordnungen", User-Vorgabe).
+   - `relW = r.w / anchorRect.w`, `x0 = (r.x - anchorRect.x) / anchorRect.w`.
+   - `minRelX/maxRelX/...` über alle sichtbaren Stücke (KEIN kThresholdDiff-
+     Filter — mit Kompaktierung werden ALLE Stücke berücksichtigt, der
+     Parameter ist irrelevant).
+3. `z = 0.5 / halfW` mit `halfW` = halbe Spanne des kompaktierten Clusters.
+   Die Gesamtfläche des Rests (sum(w*h) im kompaktierten Raum) macht
+   35–70% der Frame-Fläche aus — der Rest ist sichtbar.
+4. `ZOOM_MARGIN = 0.05` für einen kleinen Rand am Pixelrand.
+5. Zeitliche C¹-Glätte: Rect-Glätte via `computeSegmentBlend` (Nicht-
+   Überlappungs-Garantie) + Zoom-Dämpfung via `buildDampedFilterBundle()`
+   (träge Kamera, kein Zappeln).
+
+### Umsetzungsschritte
+
+1. `compiler.js`: `computeCompactionWaypoints(bank_pieces, maxTick,
+   ZOOM_COMPACTION_TRANSITION_TICKS)` **immer** berechnet (unabhängig vom
+   `compactionEnabled` Render-Modus) — der Zoom braucht die kompaktierten
+   Rects zwingend.
+2. `zoom_rect_lookup = makeCompactedLogicalRectLookup(zoom_waypoints)` —
+   Performance-optimierter Lookup (berechnet `times` nur einmal).
+3. In der Zoom-Schleife: Anker = schwerste Gruppe (max `w*h`), Rects via
+   `zoom_rect_lookup(p, t)`, Rahmen relativ zum Anker im kompaktierten Raum.
+4. `kThresholdDiff` wird nicht mehr gebraucht (kompaktierte Geometrie
+   ersetzt den Filter). Bestehender Code kann entfernt/ignoriert werden.
+
+### Testkriterien
+
+Erweiterung von `tests/unit/zoom-robust.test.js`:
+
+1. **Rest-Fläche sichtbar:** bei base 2/10 und Tiefe 20/30/40/50 ist die
+   Gesamtfläche aller sichtbaren Reste (nach Kompaktierung) als Bruchteil
+   der Frame-Fläche ≥ 10%. Gemessen: `sum(w*h) / (frameW * frameH)` im
+   Anker-relativen Koordinatensystem. Bestätigt: 35–70% (Messung).
+2. **Sichtbarkeit im kompaktierten Raum:** alle sichtbaren Stücke (kein
+   Filter) müssen nach Zoom-Transformation in [0,1] liegen. Keine NaN/
+   Infinity in z, cx, cy, offsetX/Y.
+3. **Weiche Transition:** z/Rahmen-Center ändern sich C¹-stetig über die
+   Zeit (via `computeSegmentBlend` + `buildDampedFilterBundle`).
+4. **Regression:** bestehende Teil-B-Tests (relativePosition, isolationScore,
+   z endlich) bleiben grün.
+5. Vollständige Unit-Suite + `pnpm check` + `pnpm build` + E2E grün.
+6. **Wichtig (AGENTS.md):** jede Änderung am Zoom-Pfad braucht `pnpm build`
+   + E2E — JS-Fehler crashen die ganze Seite und bleiben in node-Tests
+   unsichtbar.
+
+### Nächster Schritt (nach Umsetzung)
+
+Offen: Verhalten bei Tiefe 60+ (Stückzahl ~67k) prüfen — ob die
+Kompaktierungs-Waypoints dort performance-mäßig tragen und die Rest-Fläche
+über 10% bleibt.
+
+## Teil D: Rekursives Box-in-Boxes-Modell ersetzt Wegpunkte/externe Kompaktierung
+
+Konsolidiert aus einer Diskussion zu `docs/NEW-REST-MODEL-SPEC.md` (Ausgangs-
+Vorschlag des Users, dort unverändert als Rohfassung stehen gelassen). Status:
+**Entwurf, mit User besprochen, noch nicht implementiert.** Ersetzt (nicht
+ergänzt) die Rendering-/Kompaktierungs-Schicht aus Teil C, sobald umgesetzt.
+
+### Befund
+
+- `bank_pieces` (`bank-core.js`) ist bereits genau der Baum, den ein
+  rekursives Box-in-Boxes-Modell braucht: jeder Schnitt teilt einen Parent in
+  genau `BASE` gleich große Kinder entlang **einer** Achse
+  (`is_vert_cut`, `bank-core.js:169-176`) - kein Umbau des Kernalgorithmus
+  nötig, nur additive Felder (wie schon Teil B).
+- Die zweistufige Architektur aus Teil C (Wegpunkte vorberechnen via
+  `computeCompactionWaypoints`, dann pro Frame interpolieren/lookup via
+  `makeCompactedLogicalRectLookup`) hat zwei strukturelle Nachteile, die ein
+  Live-Modell nicht hat:
+  - **Ordnungstreue** (CLAUDE.md Bug-Klasse 2) muss dort extern über
+    `computeSegmentBlend()` erzwungen werden. Wertet man effektive
+    Größe/Position dagegen als geschlossene Funktion von `t` aus, bei der
+    alle Geschwister einer Box zum selben `t` per Präfixsumme ihrer
+    effektiven Größen positioniert werden, ist Überlappung durch
+    Konstruktion unmöglich - keine externe Garantie nötig.
+  - **Live-Parameteränderung ohne Neukompilat** (z.B.
+    `GAP_CLOSE_DELAY_TICKS` zur Laufzeit verstellen) ist mit vorberechneten
+    Wegpunkten grundsätzlich nicht möglich, weil der Parameter im
+    Wegpunkt-Raster fest eingebacken ist. Bei reiner Live-Auswertung ist er
+    nur ein Formel-Parameter - Änderung wirkt im nächsten Frame.
+- **Vorbedingung für Live-Auswertung bei ~67k Stücken (Tiefe 50+):** die zu
+  jedem Zeitpunkt `t` tatsächlich "aktive" Teilmenge des Baums (nicht
+  `beendet`, nicht `nicht gestartet`) ist strukturell klein (User-
+  Beobachtung) - Pruning (siehe Architektur) macht die Kosten pro Frame
+  unabhängig von der Gesamtgröße von `bank_pieces`.
+
+### Architektur
+
+**Datenmodell - additiv auf `bank_pieces`, keine zweite Struktur** (User-
+Vorgabe: "wir wollen definitiv nicht zwei Weisheiten"):
+
+| Spec-Feld | Herkunft |
+|---|---|
+| `ts` | `born_time` (vorhanden) |
+| `td` | `cut_time` (vorhanden) |
+| `te` (Blatt) | **neu**, beim Entnehmen einmalig berechnet + eingefroren (siehe unten) |
+| `te` (geteilt) | rekursiv `max(te_child)` über alle Kinder, sobald bekannt |
+| `wd`/`hd` | `w`/`h` (vorhanden, ändern sich nach Erzeugung nie) |
+| `k` | `k` (vorhanden) |
+| `dir` | **neu**, 1 Feld: beim Schnitt am Parent speichern (bisher nur implizit über `localOffsetX` vs. `localOffsetY` der Kinder ablesbar) |
+
+**Zeitachse:** dieselbe Tick-Achse wie die Simulation, aus Symmetriegründen
+(User-Entscheidung) - kein separates Animationszeit-Mapping für dieses
+Modell nötig; die vorhandene `buildTickTimeMapping`-Brücke bleibt für andere
+Zwecke unangetastet nutzbar, falls später doch gebraucht.
+
+**Zustandsmaschine pro Box, als reine Funktion von `t`:**
+
+- `t < ts`: nicht gestartet → effektive Größe 0.
+- `ts <= t < td` (bzw. bis zum eigenen Exit bei Blättern): gestartet, nicht
+  geteilt → effektive Größe = designte Größe (`wd`/`hd`), **sofort ab `ts`**,
+  kein Fade-in (User-Entscheidung: "sofort, kann später noch markiert
+  werden" - siehe Offene Punkte).
+- `td <= t < Exit`: geteilt → effektive Größe rekursiv aus Kindern (Summe in
+  Laufrichtung `dir`, Maximum quer dazu).
+- **Exit eines Blatts, 3 Phasen** (ersetzt einfaches "wird ausgeblendet" aus
+  dem Ausgangsvorschlag - notwendig für "Lücke bleibt eine Zeit lang
+  erkennbar", User-Vorgabe):
+  1. `[taken_time, taken_time + delaySnapshot)`: effektive Größe bleibt auf
+     designtem Wert stehen (Lücke sichtbar, keine Kompaktierung).
+  2. `[taken_time + delaySnapshot, te)`: C¹-Ease designte Größe → 0
+     (Nullsteigung an beiden Enden - vorhandenes `smoothing.js`-Bauteil
+     wiederverwenden, keine neue Kernel-Formel).
+  3. `t >= te`: `beendet`, effektive Größe 0, Teilbaum wird ab hier für alle
+     künftigen Frames übersprungen (Pruning).
+  `delaySnapshot`/die Transition-Länge werden **beim Entnehmen einmalig aus
+  den dann aktuellen `GAP_CLOSE_DELAY_TICKS`/Transition-Konstanten
+  eingefroren** und als Feld am Stück gespeichert (User-Vorgabe: "einfrieren
+  wäre super") - eine spätere Laufzeit-Änderung der globalen Konstante wirkt
+  dadurch nur auf künftige Entnahmen, nie rückwirkend auf bereits laufende
+  Ausblendungen (kein Sprung).
+- **Exit einer geteilten Box:** automatisch `beendet`, sobald
+  `te_parent = max(te_child)` erreicht ist - keine Sonderregel, identisch
+  zum Blatt-Exit aus Sicht des Elternknotens (das ist der eigentliche Kern
+  der Kompaktierung, siehe Diskussion: ein leergeräumter Teilbaum verhält
+  sich für seinen Parent exakt wie ein entnommenes Blatt).
+
+**Rendering/Komposition: top-down, nicht bottom-up.** Jeder
+Rekursionsschritt der ohnehin rekursiven Zeichenfunktion multipliziert einen
+lokalen Skalenfaktor (Bereich `[1/BASE, 1]`, wandert Richtung `1`, während
+Geschwister auf dieser Ebene kompaktieren) auf den von oben mitgeführten
+Transform auf. Im Unterschied zu Teil Bs `relativePosition()` (die für
+Paarvergleiche AUSSERHALB einer Top-down-Traversierung eine Ahnen-Kette zur
+Laufzeit suchen musste) wird hier kein Ahnen-Walk gebraucht - der
+Rekursionsabstieg IST der Walk. Jede Ebene bleibt lokal in einem
+gutkonditionierten Zahlenbereich nahe 1 (kein Auslöschungsrisiko) -
+Präzision entsteht durch Komposition vieler harmloser Faktoren statt durch
+eine einzelne Zahl mit riesiger Dynamik. Damit wird Teil Bs
+`relativePosition()`/Ahnen-Suche für den Zoom-Pfad überflüssig, sobald Teil D
+den kompletten Rendering-/Zoom-Pfad übernimmt; `localOffsetX/Y` selbst kann
+als Feld bleiben (harmlos, ggf. für `dir`-Herleitung nützlich).
+
+**Moment/Masse - kontinuierlicher Zoom-Anker statt diskreter Wahl.** Jede
+Box führt neben effektiver Größe zusätzlich ein Moment
+(`Σ effective_size_child · center_child`) und eine Masse
+(`Σ effective_size_child`) in lokalen Einheitskoordinaten mit, exakt
+bottom-up komponiert wie die effektive Größe selbst. Der daraus abgeleitete
+Schwerpunkt (`Moment/Masse`) ersetzt Teil Cs diskrete Anker-Wahl ("schwerste
+sichtbare Gruppe", Zoom-Loop in `compiler.js`) durch einen stetig
+mitgeführten, kontinuierlich wandernden Referenzpunkt für die Kamera - keine
+Sprunggefahr durch Anker-*Wechsel* (welche Gruppe gerade "am schwersten"
+ist), weil diese diskrete Entscheidung entfällt. Formalisiert damit exakt
+CLAUDE.mds Massen-/Trägheits-Regel für Layout-Umordnungen ("große Objekte
+bekommen am wenigsten Beschleunigung") - hier nicht als Sonderregel für eine
+Ebene, sondern strukturell in jeder Rekursionsebene eingebaut.
+
+**Live-Auswertung pro Frame mit Pruning:** die Rekursion steigt nur in einen
+Teilbaum ab, wenn er zum aktuellen `t` weder `beendet` noch `nicht
+gestartet` ist (letzteres hat noch keine Kinder, trivial). Die "aktive
+Front" ist strukturell klein, unabhängig von der Gesamtgröße von
+`bank_pieces` (~67k bei Tiefe 50).
+
+### Offene Punkte (bewusst nicht in diesem Konsolidierungsschritt entschieden)
+
+- **Fade-in bei `ts`:** User-Entscheidung "sofort" (kein Fade-in) -
+  markiert als mögliche spätere Verfeinerung, falls sich beim Bauen ein
+  sichtbarer C⁰/C¹-Sprung zeigt (siehe Testkriterium 4 unten).
+
+### Verhältnis zu Teil A/B/C
+
+- **Teil A** (exakte `l`/`l²`/`R` über BigInt-Ziffernzählung) bleibt komplett
+  unberührt - eigene, unabhängige Quelle (`axes`/`p.k`), keine Berührung mit
+  diesem geometrischen Rendering-Modell.
+- **Teil B** wird für den Zoom-Pfad funktional überflüssig (siehe
+  Architektur oben), muss aber nicht sofort entfernt werden - additive
+  Felder bleiben, nur der Aufrufpfad ändert sich.
+- **Teil C** (Wegpunkte + `zoom_rect_lookup`) wird komplett **ersetzt**, nicht
+  ergänzt - Teil D übernimmt Kompaktierung und Zoom-Framing in einem
+  Mechanismus.
+
+### Umsetzungsschritte (Entwurf, vor Beginn mit User zu bestätigen)
+
+1. `bank-core.js`: `dir`-Feld beim Schnitt ergänzen (additiv,
+   `getPieceFromBank`).
+2. `bank-core.js`: `te`/`delaySnapshot`-Felder beim Entnehmen berechnen
+   (`taken_time` + aktuell gültige `GAP_CLOSE_DELAY_TICKS`/Transition-Länge).
+3. Neues Modul (Kandidat: eigene Datei, z.B. `recursive-layout.js`, um
+   `bank-core.js` nicht weiter aufzublähen): `effectiveSize(box, t)` +
+   `composeTransform(box, t, parentTransform)` als reine, pro Frame neu
+   ausgewertete Funktionen mit Pruning.
+4. `TargetBankCanvas.svelte`: Rendering + Zoom-Framing auf die neue
+   Top-down-Rekursion umstellen, alte Wegpunkt-Aufrufe entfernen.
+5. `compiler.js`: `computeCompactionWaypoints`/`zoom_rect_lookup`-Aufrufe aus
+   `finalizeCompiled` entfernen, sobald Teil D produktiv ist.
+
+### Testkriterien (Entwurf)
+
+1. **Pruning-Korrektheit:** ein Teilbaum, dessen `te` erreicht ist, wird
+   nachweislich nicht mehr rekursiv besucht (Aufruf-Zähler-Test).
+2. **Ordnungstreue automatisch:** für zufällige `t`-Stichproben überlappen
+   Geschwister nie (Regressionstest gegen CLAUDE.md Bug-Klasse 2, hier als
+   Beweis der Konstruktion statt externer Prüfung).
+3. **Eingefrorene Delay-Werte:** `GAP_CLOSE_DELAY_TICKS` zur Laufzeit
+   ändern - bereits laufende Ausblendungen bleiben unverändert (kein
+   Sprung), nur neue Entnahmen nutzen den neuen Wert.
+4. **C¹ an Phasengrenzen:** Ableitung der effektiven Größe an
+   `taken_time + delaySnapshot` und an `te` numerisch prüfen (keine
+   Sprünge); zusätzlich Ableitung an `ts` prüfen und dokumentieren, ob der
+   "sofort"-Ansatz dort tatsächlich sprungfrei bleibt (siehe Offene Punkte).
+5. **Performance:** aktive Knotenzahl pro Frame bei Tiefe 50+ bleibt klein
+   (messen, nicht nur behaupten - analog Teil As Testkriterium 6).
+6. **Präzision:** keine NaN/Infinity über den gesamten Tiefenbereich bis
+   mindestens Tiefe 60 (Nachfolgetest zu Teil Bs Testkriterium 10, diesmal
+   ohne Ahnen-Suche).
+7. **Regressions-Parität:** bei Tiefe 3-8 weichen Positionen/Größen von den
+   heutigen (Teil-C-)Werten innerhalb enger Toleranz ab (visuell keine
+   Überraschung).
+8. **E2E:** Canvas bleibt über die komplette Wiedergabe bei Tiefe 22 visuell
+   stabil (analog Teil B Testkriterium 15).
+9. **Schwerpunkt stetig:** der komponierte Moment/Masse-Schwerpunkt ändert
+   sich C¹-stetig über `t` (keine Sprünge bei Entnahme/Fade einzelner
+   Stücke) - direkter Test der "kein Sprung durch Anker-Wechsel"-Behauptung.
+
+### Nächster Schritt
+
+Diese Skizze mit dem User gegenlesen (insb. Offene Punkte Fade-in/
+Moment-Masse). Der aktuelle Branch-Stand ist laut User "kläglich
+gescheitert" (uncommittete Änderungen an `TargetBankCanvas.svelte`,
+`bank-core.js`, `smoothing.js`, `bank-core-compaction.test.js`) - vor Beginn
+der Umsetzung klären, ob dieser Stand zurückgesetzt wird (ggf. für spätere
+Auswertung gesichert, z.B. als Patch/Branch) und Teil D auf sauberem Stand
+nach committetem Teil C neu aufgesetzt wird.
+
+## Stand (2026-07-17) - Teil D umgesetzt
+
+Der Branch-Stand war beim Start dieser Umsetzung bereits sauber (working
+tree clean, der oben erwähnte gescheiterte Stand existierte nicht mehr) -
+Teil D wurde direkt auf Basis des committeten Teil-C-Stands umgesetzt.
+
+- **Datenmodell** (`bank-core.js`, additiv): `dir` (`'x'`/`'y'`) wird beim
+  Schnitt am Parent gesetzt. `te`/`delaySnapshot`/`transitionSnapshot`
+  werden bei einer Blatt-Entnahme aus dem zu diesem Zeitpunkt gültigen
+  `compactionParams`-Argument eingefroren (`createBankSimulation`/
+  `buildSystem` nehmen dafür neu einen optionalen `compactionParams`-
+  Parameter entgegen, `compiler.js` reicht `compactionTransitionTicks`
+  durch). `computeSubtreeTe()` läuft einmal bottom-up nach Abschluss des
+  gesamten Bank-Laufs und setzt `te` geteilter Stücke auf `max(te)` ihrer
+  Kinder - ein nie entnommenes Blatt (das ist der dauerhafte Rest `R`) hält
+  `te=Infinity` und damit auch den gesamten Vorfahren-Pfad.
+- **Neues Modul `recursive-layout.js`**: `layoutBox(piece, t, originX,
+  originY, out, stats)` - EINE rekursive Top-down-Funktion, die effektive
+  Größe UND Moment/Masse liefert, mit Pruning (`t>=piece.te` bricht sofort
+  ab, kein Abstieg in Kinder) und Ordnungstreue durch Konstruktion
+  (monotoner Präfixsummen-Cursor entlang `dir`, kein externer
+  Überlappungs-Beweis nötig). `computeZoomFrame()` leitet aus Moment/Masse
+  einen kontinuierlichen Kamera-Schwerpunkt ab (ersetzt Teil Cs diskrete
+  "schwerste Gruppe"). `findRect(root, t, pieceId)` beantwortet "wo war
+  dieses Stück zu EINEM festen Zeitpunkt" - für die Flug-Animation reicht
+  das (ein Blatt ist bei `taken_time` noch in Design-Größe, ein geschnittenes
+  Stück ist im gesamten `[born_time,cut_time)` konstant) - KEIN
+  allgemeiner "Position zu jeder Zeit"-Lookup wie das alte
+  `GLOBAL_COMPACTION_LOGICAL_LOOKUP` nötig (Gesprächsverlauf).
+- **Zeitachse**: `te` wird in `finalizeCompiled()` über dieselbe
+  `buildTickTimeMapping`-Brücke wie `taken_time`/`cut_time`/`born_time` in
+  Animationszeit konvertiert - kein zweites Zeit-Mapping.
+- **Kamera**: `GLOBAL_TEIL_D_ZOOM_SPLINE` (`compiler.js`) sampelt
+  `computeZoomFrame(layoutBox(root,t))` an denselben `eventTimes`-
+  Checkpoints wie der alte Bank-Zoom und dämpft mit derselben
+  `BANK_ZOOM_TAU` (`buildDampedFilterBundle`) - die Geometrie selbst bleibt
+  exakt/ungedämpft, nur die Kamera ist träge (wie zuvor).
+- **Rendering** (`TargetBankCanvas.svelte`): `project()`/die BANK-Zeichen-
+  Schleife/die Flug-Animation (`render_pipeline`) nutzen jetzt
+  ausschließlich `layoutBox()` (eine Traversierung pro Frame, liefert Rects
+  + `frame.mass` für die Flächen-Anzeige zusammen) + `findRect()` für
+  Flug-Startpositionen + `GLOBAL_TEIL_D_ZOOM_SPLINE` für die Kamera.
+  `GLOBAL_COMPACTION_LOGICAL_LOOKUP`/`GLOBAL_COMPACTION_FIT_SPLINE`/
+  `GLOBAL_BANK_ZOOM*` werden dort nicht mehr referenziert. Teil B/C bleiben
+  in `bank-core.js`/`compiler.js` additiv bestehen (weiterhin von
+  `zoom-robust.test.js`/`bank-core-compaction.test.js` geprüft) - bewusst
+  nicht gelöscht, siehe CLAUDE.md-Vorsicht beim fragilen Kern.
+- **Tests**: `tests/unit/recursive-layout.test.js` (14 Tests, Testkriterien
+  1-6 + 9 aus der Skizze oben, inkl. `findRect`). Alle bestehenden Suiten
+  bleiben grün (131+ node-Tests, 14 E2E-Tests, `svelte-check`/`eslint`/
+  `knip`/`prettier` clean, `pnpm build` ok).
+- **Visuell verifiziert** (Playwright, Tiefe 22, Basis 10, Zerschneiden-
+  Modus): über die komplette Wiedergabe (`t=0` bis `t=MAX_TIME`) bleibt der
+  Rest sichtbar und füllt den Rahmen (Zoom 1,0×→172×, Fläche 100%→0,0004%,
+  keine Kollabierung, keine Konsolen-Fehler).
+- **Bekannter, unabhängiger Pre-Existing-Bug** (nicht Teil D, nicht
+  gefixt): `tests/unit/compiler-split.test.js`s `configMatrix()` enthält
+  `base=16, depth=15, transformMode='Z'` - diese Kombination hängt in
+  `bank-core.js`s `isolationScore`-Schleife (O(n) pro Entnahme, subdivide-
+  Modus erzeugt bei dieser Kombination sehr viele Stücke) weit über das
+  Test-Timeout hinaus. Per `git stash` gegen den sauberen Ausgangsstand
+  verifiziert: besteht bereits ohne jede Teil-D-Änderung. `node:test`s
+  Timeout kann synchrone CPU-lastige Arbeit nicht unterbrechen. Separates
+  Thema, ggf. eigener Task.
+- **Offener Punkt** (aus der Skizze übernommen, weiterhin nicht behoben):
+  an `born_time` springt die effektive Größe bewusst OHNE Fade-in sofort auf
+  Design-Größe (C⁰-Sprung) - User-Entscheidung, im Test dokumentiert
+  (`recursive-layout.test.js`).
+- **Nächster Schritt**: `git diff` gegenlesen lassen, dann auf Wunsch
+  committen. Mögliche Folgearbeit (nicht Teil dieses Schritts): Teil B/C
+  als toten Code aus `bank-core.js`/`compiler.js` entfernen, sobald der
+  Teil-D-Pfad sich in Produktion bewährt hat; der pre-existing
+  `compiler-split.test.js`-Hang.
+
+## Stand (2026-07-17, Fortsetzung) - drei echte Bugs im Render-Pfad gefunden + gefixt, Handover für neuen Thread
+
+Nach dem oben beschriebenen Stand ("Teil D umgesetzt") hat der User den
+laufenden Branch im Browser angeschaut (Playwright-Screenshots, Tiefe 6,
+Basis 10, Zerschneiden-Modus) und drei reale Bugs im NEUEN Render-Pfad
+gefunden - alle drei mittlerweile gefixt und verifiziert. Dieser Abschnitt
+ist der Handover-Punkt für einen neuen Thread (User-Wunsch: Kontext hier ist
+sehr groß geworden).
+
+### Bug 1: fliegende Stücke starteten in falscher Größe
+
+**Symptom:** beim Losfliegen hatte ein Stück sichtbar die falsche Größe.
+
+**Ursache:** `bankOriginState()` (`TargetBankCanvas.svelte`) fror zwar die
+POSITION eines fliegenden Stücks korrekt an einem festen Zeitpunkt ein
+(`findRect()`), wandte darauf aber die LIVE-Kamera (`teilDCamera`,
+ausgewertet bei der aktuellen `u_time`) an statt der Kamera AM SELBEN
+eingefrorenen Zeitpunkt. Da die Kamera über die Laufzeit kontinuierlich
+reinzoomt, ergab das bei wachsendem Abstand zwischen Einfrier-Zeitpunkt und
+`u_time` eine sichtbar falsche Größe.
+
+**Fix:** `project()` nimmt jetzt einen optionalen `camera`-Parameter
+(Default: die live `teilDCamera`, für die statische Bank-Zeichen-Schleife).
+`bankOriginState()` berechnet die Kamera explizit über
+`GLOBAL_TEIL_D_ZOOM_SPLINE.at(t)` am SELBEN `t`, das auch für `findRect()`
+verwendet wird, und übergibt sie explizit an `project()`.
+
+### Bug 2: sichtbar schrumpfende Stücke wirkten wie "zu frühes Kompaktieren"
+
+**Symptom:** User-Beobachtung: "sieht so aus, als würden die Teile zu
+schnell kompaktiert... werden vor der Zeit wegscaliert."
+
+**Ursache:** Die spezifikationskonforme 3-Phasen-Exit-Logik (Hold →
+C¹-Ease-zu-0 → weg) ließ ein entnommenes Blatt in der Ease-Phase als
+sichtbar schrumpfende Box zeichnen. Das ist zwar exakt das, was der
+ursprüngliche Entwurf beschreibt, sah in der Praxis aber wie ein
+Kompaktierungs-Fehler aus.
+
+**Fix:** `layoutBox()` bekam einen neuen `hideFading`-Parameter (Default
+`false`, um `findRect()` unverändert zu lassen). Mit `hideFading=true` wird
+ein Blatt in der Ease-Phase NICHT mehr in `out` aufgenommen (also nicht
+gezeichnet) - es trägt aber WEITERHIN seine (schrumpfende) Größe zur
+Positionierung der Geschwister bei, die Kompaktierung selbst (Nachbarn
+rücken auf) bleibt also unverändert wirksam. `TargetBankCanvas.svelte` ruft
+`layoutBox(bank_root, u_time, 0, 0, bank_out, undefined, true)` auf. Das
+Stück "poppt" jetzt sofort nach der Hold-Phase weg, statt sichtbar zu
+schrumpfen - genau das war gewünscht.
+
+### Bug 3: Z_micro-Geschwister clusterten/überlappten sichtbar
+
+**Symptom:** beim Aufschneiden einer Rand-Zelle im Zerschneiden-Modus (bis
+zu `BASE` gleichzeitig entstehende Mikro-Stücke) erschienen die fliegenden
+Geschwister als überlappender Klumpen kleiner, teils verschachtelter
+Quadrate statt als sauber ausgerichtete Reihe/Spalte.
+
+**Ursache:** `bankOriginState()` fror die Position jedes Z_micro-Stücks bei
+SEINEM EIGENEN individuellen `taken_time` ein. Die `BASE` Geschwister einer
+Zerschneiden-Gruppe haben aber UNTERSCHIEDLICHE `taken_time` (sie werden
+nacheinander, ein Tick pro Stück, entnommen), während ihr gemeinsamer
+Vorfahre sich ZWISCHENZEITLICH durch VÖLLIG UNABHÄNGIGE Kompaktierung
+anderswo im Baum weiterbewegt (verifiziert per Diagnose-Skript: `rect.x`
+driftete für spätere Geschwister progressiv ab, obwohl ihr `piece.x` in
+Rohkoordinaten identisch war). Jedes Geschwister sah dadurch eine ANDERE
+Momentaufnahme des gemeinsamen Vorfahren.
+
+**Fix:** `bankOriginState(p)` bekommt jetzt den GANZEN `render_pipeline`-
+Eintrag (nicht mehr nur `p.bp`) und nutzt für `p.type === 'Z_micro'` (sowie
+weiterhin für jedes Stück mit Kindern) `bp.born_time` statt `bp.taken_time`
+- `born_time` ist für ALLE Geschwister einer Gruppe identisch (gleicher
+Schnitt), liefert also eine konsistente gemeinsame Momentaufnahme.
+Verifiziert per Diagnose-Skript (siehe Gesprächsverlauf) UND visuell
+(Playwright-Screenshots vor/nach: aus überlappenden Quadraten wurde eine
+sauber ausgerichtete Spalte).
+
+### Verifiziert nach allen drei Fixes
+
+- `tests/unit/recursive-layout.test.js`: 15 Tests (neu:
+  `hideFading`-Regressionstest), alle grün.
+- Volle node-Test-Suite (außer dem separaten, pre-existing
+  `compiler-split.test.js`-Hang): 134 Tests grün.
+- `svelte-check`/`eslint`/`prettier` clean, `pnpm build` ok.
+- Playwright-Screenshots (Tiefe 6, Basis 10, Zerschneiden-Modus,
+  `compaction=1`) über mehrere Zeitpunkte (0%, 2%, 3%, 4%, 6%, 10%, 15%,
+  20%, 30%, 50%, 80%, 100% der Laufzeit) manuell gegengelesen: Bug 2 und 3
+  sichtbar behoben (kein Schrumpf-Ghosting, saubere Geschwister-Ausrichtung
+  statt Überlappung). Bug 1 separat per Diagnose-Skript verifiziert (Rect +
+  Kamera jetzt am selben `t`).
+- **NICHT erneut gelaufen nach den letzten beiden Fixes:** `npx playwright
+  test` (die offizielle E2E-Suite) - der Aufruf wurde vom User unterbrochen
+  (Kontext-Länge), bevor das Ergebnis vorlag. Zuvor (nach Bug 1 + 2, vor Bug
+  3) waren alle 14 E2E-Tests grün. **Erster Schritt im neuen Thread:**
+  `npx playwright test` laufen lassen und Ergebnis prüfen.
+
+### Offener, nicht behobener Punkt: dünne Linien-Artefakte bei nicht-quadratischen Stücken im Flug
+
+Bei Tiefe 6/Basis 10, Zerschneiden-Modus, mittlere Laufzeit (~30-50%):
+vereinzelte dünne Linien-/Strich-Artefakte zwischen Bank- und Zielbereich
+sichtbar (z.B. ein violetter horizontaler Strich, ein paar einzelne Pixel-
+Punkte). Diagnose: betroffen sind u.a. `k=1`-Stücke mit sehr unquadratischem
+Seitenverhältnis (`w,h = 0.1, 1.0` - ein schmaler, hoher Streifen). Aktuelle
+Einschätzung (NICHT tief verifiziert, nur eine Arbeitshypothese): das
+Flug-Rendering (`render_pipeline`-Schleife in `TargetBankCanvas.svelte`)
+interpoliert `x/y/w/h` unabhängig linear zwischen Start- (Bank) und
+Ziel-Rect (Target) - bei stark unterschiedlichem Seitenverhältnis zwischen
+Start und Ziel kann die interpolierte Zwischenform durch einen sehr
+dünnen/gestreckten Zustand laufen. Das scheint eine Eigenschaft der
+BEREITS VOR Teil D bestehenden linearen Box-Interpolation zu sein (in sehr
+frühen Tiefe-22-Screenshots dieser Sitzung, VOR jeder Teil-D-Änderung, waren
+bereits ähnliche dünne Striche zu sehen) - also vermutlich kein
+Teil-D-Regressions-Bug, sondern ein separates, älteres Verhalten. **Nicht
+weiter untersucht** (Zeit-/Kontext-Grenze erreicht) - im neuen Thread bei
+Bedarf gezielt nachgehen: Playwright-Screenshot bei genau diesem Zeitpunkt/
+Tiefe reproduzieren, dann einzelne `render_pipeline`-Einträge mit
+`fly_t`-Werten nahe 0.5 und stark unterschiedlichem Start-/Ziel-
+Seitenverhältnis identifizieren und die tatsächlich gerenderten Pixel-Maße
+prüfen.
+
+### Uncommittete Änderungen (Stand: working tree, noch NICHT committet)
+
+```
+ M docs/REST-PRECISION-PLAN.md
+ M src/components/TargetBankCanvas.svelte
+ M src/lib/bank-core.js
+ M src/lib/compiler.js
+ M src/lib/smoothing.js
+?? src/lib/recursive-layout.js
+?? tests/unit/recursive-layout.test.js
+```
+
+Kein Commit wurde in dieser Sitzung erstellt (User hat nicht danach
+gefragt) - alles oben Beschriebene ist reiner Working-Tree-Stand auf Branch
+`rest-model-teil-d`.
+
+### Nächste Schritte für den neuen Thread (in Reihenfolge)
+
+1. `npx playwright test` laufen lassen (siehe oben, noch offen).
+2. Optional: dem dünnen-Linien-Artefakt nachgehen (siehe Abschnitt oben) -
+   nur falls User das für relevant hält, bisher nur eine Beobachtung, kein
+   bestätigter Bug.
+3. `git diff` mit dem User gegenlesen, dann auf Wunsch committen (bisher
+   nicht committet).
+4. Der pre-existing `compiler-split.test.js`-Hang (siehe oben,
+   `base=16/depth=15/transformMode='Z'` in `configMatrix()`) ist weiterhin
+   ungefixt - separates Thema, dem User zur Priorisierung vorlegen.
+5. Danach ggf. Teil B/C als toten Code entfernen (siehe "Mögliche
+   Folgearbeit" oben) - erst NACHDEM sich der Teil-D-Pfad im Alltag bewährt
+   hat, nicht vorher.
+
+## Stand (2026-07-17, neuer Thread) - Performance-Untersuchung: zwei getrennte O(n)/O(n²)-Probleme gefunden, Fix für eines geplant
+
+Bevor die drei Bugs aus dem letzten Abschnitt weiterverfolgt wurden, kam ein
+User-Befund dazwischen: die Simulation laggt bei hohen Rekursionstiefen
+deutlich spürbar - genau der Fall, für den Teil D gedacht ist. Frage: ist
+das ein prinzipielles Problem des rekursiven Modells, oder etwas
+Behebbares? Per Profiling-Skript (Basis 10, Zerschneiden-Modus, `node`
+direkt gegen `compileSystem()`/`layoutBox()`/`findRect()`) gemessen, nicht
+nur am Code spekuliert. Ergebnis: **zwei unabhängige Probleme**, keins davon
+zwingt zur Aufgabe des rekursiven Box-in-Boxes-Ansatzes.
+
+### Problem 1: Kompilierzeit O(n²) (vorbestehend, unabhängig von Teil D) - vom User hintangestellt
+
+`isolationScore()` (`bank-core.js:119`) durchläuft bei **jeder einzelnen
+Entnahme** das **gesamte** `bank_pieces`-Array, um unter mehreren gleich
+großen Kandidaten den mit den wenigsten aktuell sichtbaren, direkt
+angrenzenden Nachbarn zu finden (verhindert unnötige Löcher beim
+Entnehmen). O(n) Kosten pro Entnahme × O(n) Entnahmen = O(n²) Gesamtkosten.
+Gemessen: 1,1 s (Tiefe 10, 6.141 Stücke) → 7,7 s (Tiefe 16, 18.931 Stücke) →
+38,8 s (Tiefe 22, 41.791 Stücke) Kompilierzeit. Das ist derselbe
+Mechanismus, der bereits als Ursache für den bekannten
+`compiler-split.test.js`-Hang (`base=16/depth=15/transformMode='Z'`)
+dokumentiert ist (siehe Abschnitt "Teil D umgesetzt" oben) - neu ist die
+Erkenntnis, dass das kein Nischenfall ist, sondern die Kompilierzeit
+generell schon ab Tiefe ~20 dominiert. Bei Tiefe 50 (dem in Teil D explizit
+genannten Zielwert) wäre allein das Kompilieren vermutlich im
+Minutenbereich oder schlimmer.
+
+**User-Entscheidung:** hintanstellen, nicht Teil dieses Fix-Schritts.
+Möglicher Ansatz für später: `isolationScore()` über eine räumlich/
+strukturell eingegrenzte Kandidatenmenge (Geschwister + direkt angrenzende
+Zellen) statt Vollscan über alle je erzeugten Stücke.
+
+### Problem 2: `bankOriginState()`/`findRect()` wird pro sichtbarem fliegendem Stück JEDEN FRAME neu berechnet (von Teil D eingeführt) - Fix geplant
+
+`layoutBox()` selbst hält sein Pruning-Versprechen (besuchte Knoten bleiben
+bei 31-71, unabhängig von der Tiefe - gemessen). Das Problem liegt
+woanders: `TargetBankCanvas.svelte:384` (`bankOriginState()`) ruft für
+**jedes** aktuell sichtbare `render_pipeline`-Element `findRect()` auf -
+eine **komplette eigene** `layoutBox()`-Traversierung ab der Wurzel, nur um
+EIN Stück herauszusuchen. Gemessen (Beispiel-Zeitpunkt: 30% der Laufzeit):
+
+| Tiefe | gleichzeitig sichtbare fliegende Stücke | Kosten nur für diesen Teil |
+|---|---|---|
+| 10 | 260 | 3,0 ms |
+| 16 | 855 | 9,1 ms |
+| 22 | 1.935 | 22,2 ms |
+
+Bei Tiefe 22 kostet allein dieser Teil schon mehr als ein
+60-fps-Frame-Budget (16,7 ms) - vor dem eigentlichen Canvas-Zeichnen. Die
+alte Teil-C-Architektur hatte dieses Problem nicht (O(1)-Wegpunkt-Lookup
+über `GLOBAL_COMPACTION_LOGICAL_LOOKUP` statt Baum-Traversierung pro
+Stück) - echte Regression durch Teil D, kein Naturgesetz des rekursiven
+Modells.
+
+**Eigentlicher Fehler:** nicht dass die Traversierung teuer wäre (sie ist
+es nicht, ~0,01-0,1 ms dank Pruning), sondern dass **dieselbe unveränderliche
+Antwort** (die Position eines Stücks an seinem fest eingefrorenen
+Abflug-Zeitpunkt `born_time`/`taken_time` ändert sich nie wieder) **jeden
+Frame neu berechnet** wird, solange das Stück sichtbar bleibt - statt genau
+einmal.
+
+**Geplante Lösung (mit User abgestimmt, additiv auf `bank_pieces`, keine
+zweite Struktur - CLAUDE.md-Grundsatz):**
+
+- Neue additive Felder pro Stück: `flightQueryTime` (der Abfrage-Zeitpunkt,
+  den `bankOriginState()` heute pro Aufruf neu herleitet: `born_time` bei
+  geteilten/Z_micro-Stücken, sonst `taken_time` - wird in `compiler.js` beim
+  Bauen von `render_pipeline` einmalig gesetzt, dort ist die Typ-Unterscheidung
+  ohnehin bekannt) und `flightOrigin` (zunächst leer, einmalig befüllt).
+- Erfassung als **Nebeneffekt der ohnehin schon laufenden `bank_out`-Schleife**
+  (`TargetBankCanvas.svelte:331`, besucht sowieso jedes aktive Stück einmal
+  pro Frame): sobald `u_time >= piece.flightQueryTime` und `flightOrigin`
+  noch leer ist, wird `{x, y, w, h}` (schon berechnet, liegt im
+  Traversierungs-Ergebnis vor) plus die aktuelle Kamera (`teilDCamera`,
+  ebenfalls schon berechnet) in `piece.flightOrigin` eingefroren - **keine
+  zusätzliche Traversierung, kein separates Nachschlagen** im Normalfall.
+- `bankOriginState(p)` wird dadurch zu einem reinen `return p.bp.flightOrigin`
+  - O(1).
+- Z_micro-Geschwister-Konsistenz (Bug 3, siehe oben) bleibt automatisch
+  gewahrt: alle Geschwister einer Zerschneiden-Gruppe teilen denselben
+  `flightQueryTime` (= `born_time`) und werden im selben Frame in `bank_out`
+  besucht - derselbe Schnappschuss für die ganze Gruppe, kein Bug 3 erneut.
+- **Scrub-Sprung-Fallback:** springt die Wiedergabe direkt in einen
+  Zeitpunkt, der `flightQueryTime` schon überschritten hat, ohne dass die
+  Bank-Schleife je bei diesem Stück "vorbeikam" (`bank_out` enthält es evtl.
+  nicht mehr, z.B. schon verblasst/geprunt), bleibt `flightOrigin` leer. Für
+  diesen selteneren Fall bleibt `findRect()` als einmaliger, historischer
+  Fallback bestehen (Ergebnis wird ebenfalls in `flightOrigin` gecacht) -
+  nur nicht mehr im Normalbetrieb pro Frame.
+- Rewind/Vor- und Zurückspulen braucht keine Invalidierung: `flightOrigin`
+  ist eine reine Funktion der statischen Kompilat-Daten (nicht des
+  Wiedergabe-Pfads dorthin), einmal berechnet bleibt der Wert für den
+  gesamten Kompilat-Lebenszyklus gültig.
+
+### Nächster Schritt
+
+Umsetzung wie oben beschrieben: `flightQueryTime` additiv in `compiler.js`
+setzen, `flightOrigin`-Erfassung in die `bank_out`-Schleife in
+`TargetBankCanvas.svelte` einbauen, `bankOriginState()`/`findRect()`-Aufruf
+im `render_pipeline`-Loop entsprechend vereinfachen. Danach erneut bei
+Tiefe 16/22 profilen (dasselbe Skript wie oben) zur Bestätigung, dass die
+Pro-Frame-Kosten jetzt tatsächlich unabhängig von der Tiefe klein bleiben.
+
+**Nachtrag:** umgesetzt in Commit `0b47cea` - `flightQueryTime`/`flightOrigin`
+sind produktiv, `bankOriginState()` ist O(1) im Normalfall. Dieser Abschnitt
+war seither nicht mehr aktualisiert; der obige "Nächster Schritt" ist erledigt.
+
+## Stand (2026-07-18) - zwei reale Geometrie-Bugs gefunden + gefixt (fixe Float-Schwellen brechen bei Tiefe 30)
+
+Ausgangspunkt: User-Beobachtung auf Branch `rest-model-teil-d` (Basis 10,
+Tiefe 30) - bei Tick 6000 kollabierte die X-Auflösung der Reststücke
+sichtbar (Rest wurde zu einem unsichtbaren Haarlinien-Strich), bei Tick 8100 war
+der Rest komplett unsichtbar. Diagnose lief per **Live-CDP-Verbindung** zum
+laufenden User-Chrome (`scripts/debug-cdp.mjs`-Pattern, siehe
+`DEBUG-INSPECT-SPEC.md`) - Snapshot + Screenshot direkt aus dem Browser
+statt Vermutung, plus gezielte Node-Reproduktionsskripte gegen
+`compileSystem()`/`layoutBox()`. Zwei unabhängige, aber strukturell
+identische Bugs gefunden:
+
+### Bug 1: Schnittrichtung kippt bei Tiefe ~9+ (`bank-core.js`)
+
+`getPieceFromBank()` entschied die nächste Schnittachse über
+`best_parent.w > best_parent.h + EPS` mit festem `EPS=1e-9`. Sobald `w`/`h`
+selbst in diese Größenordnung sanken (ab `k≈9`), verschluckte das feste EPS
+die echte Differenz - der Vergleich fiel fälschlich in den
+"ist-ein-Quadrat"-Zweig, die dann frei gewählte Richtung schnitt teils
+dieselbe (bereits kurze) Achse erneut statt der tatsächlich längeren. Der
+Fehler kompoundierte über weitere Tiefen: ein bei Tiefe 21 noch moderates
+1000:1-Stück wurde bei Tiefe 42 zu einem Seitenverhältnis von 10²²:1 -
+obwohl die Konstruktion (Quadrat → BASE Streifen → Quadrat → ...) laut
+Bauplan **ausschließlich** 1:1 oder 1:BASE zulässt. Am konkreten Baum
+nachgewiesen (Vorfahren-Kette von Wurzel bis zum größten Reststück bei Tick
+6319, 22 Ebenen, jedes Geschwister einzeln geprüft).
+
+**Fix (`b880a3f`):** `k_v`/`k_h` als exakte Integer-Schnittzähler pro Achse
+additiv am Stück (`k_v+k_h===k` immer). Die Richtungsentscheidung vergleicht
+jetzt `k_v`/`k_h` direkt - kein Epsilon nötig, funktioniert bei jeder Tiefe
+gleich zuverlässig. `w`/`h` selbst waren nie das Problem (reine
+Divisionsketten, präzise bis weit jenseits der hier relevanten Tiefen) -
+nur die Vergleichsschwelle war falsch skaliert. Verifiziert: alle 16.961
+Stücke einer Testkompilierung (Tiefe 30) haben exakt Verhältnis 1:1 oder
+1:10, keine Ausnahme.
+
+### Bug 2: fixer `1e-9`-Floor in `computeZoomFrame()` (`recursive-layout.js`)
+
+Nach Bug-1-Fix baute sich eine neue, aber viel kleinere Anomalie auf: ab
+einem bestimmten Tick war der Rest komplett unsichtbar. Ursache: derselbe
+Fehlertyp, eine Ebene weiter oben. `halfW`/`halfH` nutzten
+`Math.max(..., 1e-9)` als vermeintlichen Divide-by-Zero-Schutz. Die (nach
+Bug 1 jetzt korrekt proportionierte, aber bei Tiefe 30 weiterhin winzige,
+`~6·10⁻¹²`) echte Bounding-Box lag darunter - der Floor wurde zur AKTIVEN
+Grenze, der Zoom blieb ~150-200× zu schwach, der Rest füllte nur einen
+verschwindenden Bruchteil des Fensters.
+
+**Fix (`d608fbd`):** Floor ersatzlos entfernt. `mass<=0||w<=0||h<=0` wird
+bereits eine Zeile darüber abgefangen; danach gilt immer
+`(cx-boundX)+(boundX+w-cx)===w>0`, mindestens einer der beiden Max-Terme ist
+also zwangsläufig positiv - kein zusätzlicher Floor nötig.
+
+### Lektion (verallgemeinerbar, für künftige Arbeit an `bank-core.js`/`recursive-layout.js`)
+
+**Jede feste absolute Float-Schwelle/Untergrenze in diesem Baum ist
+verdächtig**, sobald sie auf Größen angewendet wird, die mit der
+Rekursionstiefe schrumpfen (`w`/`h`, Bounding-Box-Maße, o.ä.) - beide Bugs
+dieser Sitzung waren genau dieses Muster, an zwei unabhängigen Stellen. Vor
+einer neuen Konstante dieser Art prüfen: (1) wird sie auf einen Wert
+angewendet, der mit `k`/Tiefe kleiner wird? (2) gibt es eine exakte,
+tiefenunabhängige Alternative (Integer-Zähler wie `k_v`/`k_h`, oder ein
+bereits vorhandener Guard, der die Schwelle überflüssig macht, wie bei
+Bug 2)? Reine Multiplikationsketten (`w`/`h` selbst) sind NICHT das Problem
+(präzise bis `k≈300` bei Basis 10) - nur Vergleiche/Floors mit einer festen
+Zahl, die nicht mit der Skala mitschrumpft.
+
+### Verifiziert
+
+- Live-Browser (CDP, Tick 6319 + 8100, Basis 10/Tiefe 30): Rest wieder
+  sichtbar, füllt den Rahmen korrekt.
+- `node --test` (alle Suiten außer dem vorbestehenden, unabhängigen
+  `compiler-split.test.js`-Hang, siehe GOTCHA in `AGENTS.md`): 137/138 grün
+  (der eine Rest ist der bereits vorher als `todo` dokumentierte
+  `transformMode Z`-Grenzfall).
+- `pnpm check`: 0 Fehler (nur vorbestehende Warnings).
+- `pnpm build`: ok.
+- `pnpm test:e2e`: 12/14 grün; die 2 Ausreißer (Kriterium 6/10, Timing-Tests)
+  sind per `git stash`-Vergleich als vorbestehende Sandbox-Flakiness unter
+  Volllast bestätigt (reproduzieren identisch auf unverändertem Code, laufen
+  isoliert beide durch) - keine Regression.
+- Kompilierzeit Tiefe 20 minimal schneller als vorher (4,99s vs. 6,88s) -
+  kein Performance-Verlust durch die zusätzlichen `k_v`/`k_h`-Felder.
+
+### Nächster Schritt
+
+Kein offener Handlungsbedarf aus dieser Sitzung. Mögliche Folgearbeit (nicht
+angefragt, nur notiert): ein expliziter Regressionstest "jedes erzeugte
+Stück hat Seitenverhältnis 1:1 oder 1:BASE" (analog dem Ad-hoc-Check aus
+dieser Sitzung) würde Bug 1 dauerhaft gegen Wiederauftreten absichern - bisher
+nur indirekt über die bestehenden Geometrie-/Sichtbarkeitstests abgedeckt.

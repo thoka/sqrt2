@@ -20,6 +20,10 @@ export const configStore = writable({
 	pauseDuration: 1.5,
 	playSpeed: 2.0,
 	modeAB: 0.0,
+	// Diagnose-Schalter (Stotter-Untersuchung): entkoppeln HUD-/Bank-
+	// Update vom Render-Loop, um die Flug-Stotter-Quelle zu isolieren.
+	hudUpdateEnabled: true, // Zahlendarstellung (l/l²/R) neu berechnen/typsetten
+	bankRenderEnabled: true, // Bank-Canvas (inkl. Flug-Animation) neu zeichnen
 });
 
 export const playbackStore = writable({

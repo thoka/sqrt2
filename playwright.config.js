@@ -11,19 +11,18 @@ export default defineConfig({
 	fullyParallel: true,
 	reporter: [['list'], ['html', { outputFolder: 'playwright-report', open: 'never' }]],
 	use: {
-		// baseURL wird vom webServer (zufaelliger Port) zur Laufzeit gesetzt.
+		// baseURL wird auf den preview-Server (Port 4173) gesetzt.
+		baseURL: 'http://localhost:4173/',
 		headless: true,
 		screenshot: 'only-on-failure',
 		trace: 'retain-on-failure',
 	},
 	projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
-	webServer: {
-		// port: 0 -> Vite waehlt einen freien Port (Kollisionsschutz bei
-		// parallelen Worker/Repos auf einem Host). reuseExistingServer:false,
-		// damit zwei parallele E2E-Runs nicht denselben fremden Server nehmen.
-		command: 'node_modules/.bin/vite preview --port 0',
-		url: 'http://localhost:4173/',
-		reuseExistingServer: false,
-		timeout: 60000,
-	},
+	// Kein config.webServer: Playwrights eingebauter Verfügbarkeits-Check
+	// (isURLAvailable) setzt keinen socketTimeout und hängt in dieser
+	// WSL2-Umgebung für immer, weil Verbindungen zu geschlossenen
+	// Loopback-Ports kein ECONNREFUSED liefern (siehe
+	// docs/E2E-PLAYWRIGHT-SPEC.md). globalSetup startet den Preview-Server
+	// stattdessen selbst und pollt mit fetch()+AbortSignal.timeout.
+	globalSetup: './tests/e2e/global-setup.js',
 });

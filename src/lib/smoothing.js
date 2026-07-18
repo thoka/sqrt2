@@ -232,8 +232,19 @@ export function computeSegmentBlend(times, time) {
 		else hi = mid;
 	}
 	let raw = (time - times[lo]) / (times[hi] - times[lo]);
-	let s = raw * raw * (3 - 2 * raw);
-	return { lo, hi, s };
+	return { lo, hi, s: smoothstep(raw) };
+}
+
+// Klassisches Smoothstep (3s²-2s³), an s=0 UND s=1 exakt Steigung 0 -
+// die gemeinsame C¹-Kernel-Formel dieses Moduls (computeSegmentBlend oben,
+// und Teil D des REST-PRECISION-PLANs für den Blatt-Exit-Ease) - bewusst
+// EIN Bauteil statt zwei baugleicher Ad-hoc-Formeln (siehe CLAUDE.md
+// "Automatisierte Parameteränderungen": erst prüfen, ob smoothing.js das
+// schon abdeckt). s wird vor der Berechnung auf [0,1] geklemmt.
+export function smoothstep(s) {
+	if (s <= 0) return 0;
+	if (s >= 1) return 1;
+	return s * s * (3 - 2 * s);
 }
 
 // ============================================================================

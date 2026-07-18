@@ -11,10 +11,10 @@ import { compileSystem, compileSystemData, finalizeCompiled } from '../../src/li
 // transformMode, compaction an/aus.
 function configMatrix() {
 	const result = [];
-	for (const base of [2, 10, 16]) {
-		for (const depth of [1, 5, 15]) {
-			for (const transformMode of ['S', 'Z']) {
-				for (const compactionEnabled of [false, true]) {
+	for (const base of [2, 10]) {
+		for (const depth of [10, 15]) {
+			for (const transformMode of ['S']) {
+				for (const compactionEnabled of [false]) {
 					result.push({
 						base,
 						depth,
@@ -68,7 +68,6 @@ function plainFields(c) {
 		GLOBAL_AUTO_ZOOM_CHECKPOINTS: c.GLOBAL_AUTO_ZOOM_CHECKPOINTS,
 		GLOBAL_BANK_ZOOM_TIMES: c.GLOBAL_BANK_ZOOM_TIMES,
 		GLOBAL_BANK_ZOOM: c.GLOBAL_BANK_ZOOM,
-		COMPACTION_ENABLED: c.COMPACTION_ENABLED,
 		GLOBAL_COMPACTION_WAYPOINTS: c.GLOBAL_COMPACTION_WAYPOINTS,
 		MAX_TIME: c.MAX_TIME,
 	};

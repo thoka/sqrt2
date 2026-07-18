@@ -39,7 +39,7 @@
 		let time = $playbackStore.time;
 		if (!c) return arr;
 		for (let p of c.bank_pieces) {
-			if (p.k < arr.length && time >= p.born_time && time < p.cut_time && time < p.taken_time)
+			if (p.k < arr.length && time >= p.born_time && time < p.cut_time && time <= p.taken_time)
 				arr[p.k]++;
 		}
 		return arr;
