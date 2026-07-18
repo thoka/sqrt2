@@ -145,7 +145,6 @@
 
 <div id="canvasMount"></div>
 
-<div id="speedControl"><SpeedSlider variant="compact" /></div>
 <div id="bankPanel"><div id="bankPanelMount"></div></div>
 <div class="overlay-panel" id="restGridPanel"><div id="restGridMount"></div></div>
 
@@ -162,4 +161,5 @@
 
 <div id="bottomBar">
 	<div id="playbackBarMount"></div>
+	<div id="speedControl"><SpeedSlider variant="compact" /></div>
 </div>

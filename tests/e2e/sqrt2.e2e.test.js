@@ -298,7 +298,7 @@ test('Routing: / und /remote.html ok, unbekannte Pfade 404', async ({ request, p
 // ein schmaler, dezenter Geschwindigkeitsregler rechts VOR dem Bank-Zähler
 // (#bankPanel) - nicht die ganze Breite. Er muss betätigbar sein und
 // configStore.playSpeed ändern (hier sichtbar im ControlPanel-Readout).
-test('Geschwindigkeit: dezenter Regler im Hauptfenster rechts vor Bank-Zähler, betätigbar', async ({
+test('Geschwindigkeit: dezenter Regler im Hauptfenster rechts neben der Timeline unten, betätigbar', async ({
 	page,
 }) => {
 	await page.goto('/');
@@ -307,14 +307,29 @@ test('Geschwindigkeit: dezenter Regler im Hauptfenster rechts vor Bank-Zähler, 
 	const speed = page.locator('#speedControl input[type="range"]');
 	await expect(speed).toBeVisible();
 
-	// Position rechts VOR dem Bank-Zähler prüfen (nicht die ganze Breite).
+	// Position: innerhalb #bottomBar, RECHTS neben der Timeline
+	// (#playbackBarMount), ganz unten.
 	const geo = await page.evaluate(() => {
 		const sc = document.getElementById('speedControl').getBoundingClientRect();
-		const bp = document.getElementById('bankPanel').getBoundingClientRect();
-		return { speedRight: sc.right, speedW: sc.width, bankX: bp.x, winW: window.innerWidth };
+		const bb = document.getElementById('bottomBar').getBoundingClientRect();
+		const pb = document.getElementById('playbackBarMount').getBoundingClientRect();
+		return {
+			speedLeft: sc.left,
+			speedRight: sc.right,
+			speedTop: sc.top,
+			speedBottom: sc.bottom,
+			bbTop: bb.top,
+			bbBottom: bb.bottom,
+			pbRight: pb.right,
+			speedW: sc.width,
+			winW: window.innerWidth,
+		};
 	});
-	// Regler endet links vom Bank-Zähler.
-	expect(geo.speedRight).toBeLessThanOrEqual(geo.bankX + 1);
+	// Regler liegt vertikal INNERHALB der bottomBar (ganz unten).
+	expect(geo.speedTop).toBeGreaterThanOrEqual(geo.bbTop - 1);
+	expect(geo.speedBottom).toBeLessThanOrEqual(geo.bbBottom + 1);
+	// Regler beginnt RECHTS von der Timeline (playbackBarMount).
+	expect(geo.speedLeft).toBeGreaterThan(geo.pbRight - 1);
 	// Regler nimmt NICHT die ganze Breite ein.
 	expect(geo.speedW).toBeLessThan(geo.winW * 0.5);
 

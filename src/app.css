@@ -107,16 +107,11 @@ canvas {
 	min-width: 0;
 }
 
-/* Dezenter Geschwindigkeitsregler im Hauptfenster: rechts VOR dem Bank-
-   Zähler (#bankPanel, 150px breit an right:20px -> dessen linke Kante liegt
-   ~170px vom rechten Rand). Vertikal zentriert, schmal, optisch wie der
-   Zeitregler (INTERFACE-TODO "Korrektur: Geschwindigkeitsregler"). */
+/* Dezenter Geschwindigkeitsregler im Hauptfenster: rechts NEben der
+   Timeline ganz unten (#bottomBar), schmal, optisch wie der Zeitregler
+   (INTERFACE-TODO "Korrektur: Geschwindigkeitsregler"). */
 #speedControl {
-	position: fixed;
-	top: 50%;
-	right: 180px;
-	transform: translateY(-50%);
-	z-index: 15;
+	flex-shrink: 0;
 	pointer-events: auto;
 	display: flex;
 	align-items: center;

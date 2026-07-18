@@ -32,34 +32,43 @@ Lass uns die Einstellungen / die Remote-Steuerung aufräumen
 
   - **Missverständnis (Phase 1):** `playSpeed` als eigene, ganze Breite
     einnehmende Zeile ÜBER der Zeitleiste im unteren Balken platziert.
-  - **Richtig (neue Anforderung):** Geschwindigkeitsregler UND
-    Zeit-Positionsregler gehören als **kompakte, externe Steuerung** in die
-    *Controls* (Einstellungs-Panel bzw. Fernsteuerung) - unabhängig von der
-    Zeit-Darstellung im Hauptfenster. Im Hauptfenster selbst soll der
-    Geschwindigkeitsregler **genauso dezent** sein wie der Zeitregler:
-    **nicht** die ganze Breite, sondern rechts vor dem Bank-Zähler
-    (Rest-Counter) angeordnet, schmal.
+   - **Richtig (neue Anforderung):** Geschwindigkeitsregler UND
+     Zeit-Positionsregler gehören als **kompakte, externe Steuerung** in die
+     *Controls* (Einstellungs-Panel bzw. Fernsteuerung) - unabhängig von der
+     Zeit-Darstellung im Hauptfenster. Im Hauptfenster selbst soll der
+     Geschwindigkeitsregler **genauso dezent** sein wie der Zeitregler:
+     **nicht** die ganze Breite, sondern **rechts neben der Timeline**
+     (Zeitregler) ganz unten in der `#bottomBar` angeordnet, schmal.
 
-  Hintergrund: mit dieser Änderung bauen wir die *externe* Steuerung über ein
-  weiteres Fenster / ein weiteres User-Gerät auf (Fernsteuerung / `/admin`).
-  Die Controls sind der Ort für alle Regler; das Hauptfenster zeigt die
-  Zeit/Pause dezent und den Geschwindigkeitsregler als schmales Element am
-  rechten Rand vor dem Bank-Zähler.
+   Hintergrund: mit dieser Änderung bauen wir die *externe* Steuerung über ein
+   weiteres Fenster / ein weiteres User-Gerät auf (Fernsteuerung / `/admin`).
+   Die Controls sind der Ort für alle Regler; das Hauptfenster zeigt die
+   Zeit/Pause dezent und den Geschwindigkeitsregler als schmales Element
+   rechts neben der Timeline.
 
-  - **Bug:** der Geschwindigkeitsregler war im unteren Balken nicht
-    betätigbar (überschrieben/inkorrektes Layout durch die Phase-1-Zeile).
-  - **Neu:** `playSpeed` (logarithmisch, Faktor 1 in der Mitte) lebt wieder in
-    den Controls (Grundeinstellungen-Tab bzw. Fernsteuerung), als schmales
-    Widget. Im Hauptfenster liegt ein dezenter, schmaler Geschwindigkeitsregler
-    **rechts vor dem Bank-Zähler** (`#bankPanel`), optisch wie der Zeitregler.
+   - **Bug:** der Geschwindigkeitsregler war im unteren Balken nicht
+     betätigbar (überschrieben/inkorrektes Layout durch die Phase-1-Zeile).
+   - **Neu:** `playSpeed` (logarithmisch, Faktor 1 in der Mitte) lebt wieder in
+     den Controls (Grundeinstellungen-Tab bzw. Fernsteuerung), als schmales
+     Widget. Im Hauptfenster liegt ein dezenter, schmaler Geschwindigkeitsregler
+     **rechts neben der Timeline in der `#bottomBar`**, optisch wie der
+     Zeitregler.
+   - **Bug (behoben):** jede Änderung an `playSpeed` löste einen
+     **vollen Recompile** aus (compileOrchestrator hat auf JEDE
+     configStore-Änderung `runJob` getriggert). `playSpeed` ist ein
+     reine Laufzeit-Einstellung und darf KEINEN Compile auslösen. Fix:
+     compileOrchestrator vergleicht jetzt einen `compileRelevantKey`
+     (base/depth/transformMode/bankZoomThresholdPowers/zoomSpeedCoef/
+     compactionEnabled/compactionTransitionTicks) und startet den Job nur,
+     wenn sich EIN solches Feld ändert.
 
-  ### Test-Kriterien (Geschwindigkeit)
-   - [ ] Controls: ein Geschwindigkeitsregler ist in den Controls vorhanden
+   ### Test-Kriterien (Geschwindigkeit)
+    - [ ] Controls: ein Geschwindigkeitsregler ist in den Controls vorhanden
          und ändert `configStore.playSpeed` live (logarithmisch, Faktor 1 in
          der Mitte, Bereich ~1/20 … 20×).
-   - [ ] Hauptfenster: ein schmaler Geschwindigkeitsregler ist rechts VOR dem
-         Bank-Zähler (`#bankPanel`) sichtbar, nimmt NICHT die ganze Breite ein
-         und ist betätigbar (ändert `playSpeed`).
+    - [ ] Hauptfenster: ein schmaler Geschwindigkeitsregler ist **rechts
+         neben der Timeline** in der `#bottomBar` sichtbar, nimmt NICHT die
+         ganze Breite ein und ist betätigbar (ändert `playSpeed`).
    - [ ] Unabhängigkeit: Änderung der Zeit-Darstellung/des Zeitreglers im
          Hauptfenster beeinflusst den Geschwindigkeitsregler nicht und umgekehrt.
    - [ ] E2E: Geschwindigkeitsregler in der Fernsteuerung (`/remote.html`)
