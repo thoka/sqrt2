@@ -25,6 +25,7 @@
 	import { configStore, playbackStore, compiledStore } from '../lib/stores.js';
 	import { computeLiveL } from '../lib/compiler.js';
 	import { formatLiveNumbers } from '../lib/numberRenderer.js';
+	import { clampDt } from '../lib/timeStep.js';
 	import {
 		setDebugCanvas,
 		setDebugFrame,
@@ -94,6 +95,10 @@
 	let LINE_WIDTH_PX = 0.3;
 	let ANIM_PAUSE_DURATION = 1.5;
 	let ANIM_SPEED = 2.0;
+	// Maximal erlaubter Zeitschritt pro Frame (Sekunden). Ein einzelner
+	// langer Frame (GC/Compile/Tab-Throttle) wird darauf begrenzt, damit
+	// die Simulation keinen sichtbaren Vorwaertssprung macht.
+	const MAX_FRAME_DT = 0.05;
 	let bankRenderEnabled = true; // Diagnose-Schalter: Bank-Canvas (inkl. Flug) einfrieren
 
 	// === Canvas ===
@@ -743,10 +748,16 @@
 		updateOutputs();
 	}
 
+	// dt clamppen: ein einzelner langer Frame (GC-Pause, Compile-
+	// Fertigstellung, Tab-Throttle im Hintergrund) darf KEINEN sichtbaren
+	// Zeitsprung erzeugen. Ohne Clamp wuerde ein solcher Frame u_time auf
+	// einen Schlag um Sekunden vorschieben (Symptom: "Zeit macht ab und zu
+	// einen Sprung nach vorne"). Logik in src/lib/timeStep.js (Unit-getestet).
 	function loop(now) {
 		if (!isPlaying) return;
 		let dt = (now - lastTime) / 1000.0;
 		lastTime = now;
+		dt = clampDt(dt, MAX_FRAME_DT);
 		setDebugFrame(dt);
 
 		if (animPause > 0) {
