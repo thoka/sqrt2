@@ -26,6 +26,7 @@
 	import { computeLiveL } from '../lib/compiler.js';
 	import { formatLiveNumbers } from '../lib/numberRenderer.js';
 	import { clampDt } from '../lib/timeStep.js';
+	import { morphRect } from '../lib/morphRect.js';
 	import {
 		setDebugCanvas,
 		setDebugFrame,
@@ -95,6 +96,7 @@
 	let LINE_WIDTH_PX = 0.3;
 	let ANIM_PAUSE_DURATION = 1.5;
 	let ANIM_SPEED = 2.0;
+	let MORPH_ROT_WEIGHT = 0.5; // Flug-Morph: Drehung vs. Streckung (0..1)
 	// Maximal erlaubter Zeitschritt pro Frame (Sekunden). Ein einzelner
 	// langer Frame (GC/Compile/Tab-Throttle) wird darauf begrenzt, damit
 	// die Simulation keinen sichtbaren Vorwaertssprung macht.
@@ -131,6 +133,7 @@
 			LINE_WIDTH_PX = c.lineWidth;
 			ANIM_PAUSE_DURATION = c.pauseDuration;
 			ANIM_SPEED = c.playSpeed;
+			MORPH_ROT_WEIGHT = c.morphRotWeight;
 			bankRenderEnabled = c.bankRenderEnabled;
 
 			let compiled = get(compiledStore);
@@ -505,38 +508,43 @@
 
 			let px = start_x * (1 - fly_t) + end_x * fly_t;
 			let py = start_y * (1 - fly_t) + end_y * fly_t;
-			let pw = start_w * (1 - fly_t) + end_w * fly_t;
-			let ph = start_h * (1 - fly_t) + end_h * fly_t;
+			// Form + Drehung ueber morphRect (FLIGHT-MORPH-SPEC): Flaeche
+			// konstant, optional 90°-Drehung statt Streckung. Z_micro ist der
+			// bewusste Streckmodus (keine Morph-Form) - dort lineare Kanten.
+			let pw, ph, rot;
+			if (p.type === 'Z_micro') {
+				pw = start_w * (1 - fly_t) + end_w * fly_t;
+				ph = start_h * (1 - fly_t) + end_h * fly_t;
+				rot = 0;
+			} else {
+				let m = morphRect(start_w, start_h, end_w, end_h, fly_t, MORPH_ROT_WEIGHT);
+				pw = m.pw;
+				ph = m.ph;
+				// Morph-Drehung additiv zur evtl. vorhandenen Makro-Rotation.
+				rot = m.rot + (p.rot || 0) * fly_t;
+			}
 
-			if (p.type === 'R_macro') {
-				let center_x = px + pw / 2;
-				let center_y = py + ph / 2;
-				ctx.save();
-				ctx.translate(center_x, center_y);
-				ctx.rotate(p.rot * fly_t);
-				ctx.fillRect(-pw / 2, -ph / 2, pw, ph);
-				if (LINE_WIDTH_PX > 0) {
+			// Einheitlicher Zeichenpfad fuer alle Flug-Typen: zentriert +
+			// rotiert. gridPath (Kanten-Gitter) nur bei achsen-aligned
+			// (rot ~ 0) und voller Deckkraft - sonst nur fillRect.
+			let center_x = px + pw / 2;
+			let center_y = py + ph / 2;
+			ctx.save();
+			ctx.translate(center_x, center_y);
+			if (Math.abs(rot) > 1e-4) ctx.rotate(rot);
+			ctx.fillRect(-pw / 2, -ph / 2, pw, ph);
+			if (LINE_WIDTH_PX > 0) {
+				if (Math.abs(rot) <= 1e-4 && alpha >= 0.999) {
+					gridPath.rect(-pw / 2, -ph / 2, pw, ph);
+				} else if (Math.abs(rot) <= 1e-4 && (alpha > 0.8 || p.type === 'Z_ghost')) {
 					ctx.filter = edgeFilter;
 					ctx.strokeStyle = `rgba(0,0,0, ${alpha * 0.9})`;
 					ctx.lineWidth = LINE_WIDTH_PX;
 					ctx.strokeRect(-pw / 2, -ph / 2, pw, ph);
 					ctx.filter = 'none';
 				}
-				ctx.restore();
-			} else {
-				if (pw > 0.2 && ph > 0.2) {
-					ctx.fillRect(px, py, pw, ph);
-					if (alpha >= 0.999) {
-						gridPath.rect(px, py, pw, ph);
-					} else if (LINE_WIDTH_PX > 0 && (alpha > 0.8 || p.type === 'Z_ghost')) {
-						ctx.filter = edgeFilter;
-						ctx.strokeStyle = `rgba(0,0,0, ${alpha * 0.9})`;
-						ctx.lineWidth = LINE_WIDTH_PX;
-						ctx.strokeRect(px, py, pw, ph);
-						ctx.filter = 'none';
-					}
-				}
 			}
+			ctx.restore();
 			ctx.globalAlpha = 1.0;
 		}
 
