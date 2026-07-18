@@ -98,10 +98,18 @@ Konkret (gemessen mit einem Node-Diagnostic ueber `compileSystem` + feines
   zeitpunkten (C0-Diskontinuitaet). Bei `dt~1.18e-3` ist das ein echter
   Sprung, keine interpolierte Bewegung.
 - Quelle: `leafEffectiveSize()` (`recursive-layout.js:54`) liefert volle
-  Groesse bis `taken_time`, dann **hart 0** (bewusste Design-Entscheidung
-  dort, Zeilen 34-59: "sichtbarer Rest endet HART bei taken_time"). Ebenso
-  der `cut_time`-Umschalt in `layoutBox` (`:86`): Blatt->geteilt ist ein
-  harter Wechsel, keine Ueberblendung.
+  Groesse bis `taken_time`, dann **hart 0** (im Code so stehend, begruendet
+  im Kopfkommentar Zeilen 34-59 mit "sichtbarer Rest endet HART bei
+  taken_time"). Ebenso der `cut_time`-Umschalt in `layoutBox` (`:86`):
+  Blatt->geteilt ist ein harter Wechsel, keine Ueberblendung.
+
+  **KORREKTUR (User-Klaerung):** dieses "hart" ist ein MISSVERSTAENDNIS,
+  kein gewolltes Verhalten. Richtig: die Sichtbarkeit muss AUSGESCHALTET
+  werden, ABER die Luecke (das Rechteck) soll WEICH VERSCHWINDEN - also ein
+  C1-Ease-Out vom Design-Mass bei `taken_time` auf 0, statt eines C0-Sprungs.
+  Das Fenster dafuer existiert bereits: `te = taken_time + delaySnapshot +
+  transitionTicks` (siehe `bank-core.js` computeSubtreeTe). Die glaettende
+  Ueberblendung gehoert in `[taken_time, te]`, NICHT vor `taken_time`.
 - Kamera dagegen: `GLOBAL_TEIL_D_ZOOM_SPLINE.at(t).z` liefert im gesamten
   getesteten Zeitfenster **konstant** (max dz = 0) - die Kamera bewegt sich
   in diesem Ausschnitt gar nicht, waehrend der Inhalt springt. Das ist der
@@ -109,21 +117,41 @@ Konkret (gemessen mit einem Node-Diagnostic ueber `compileSystem` + feines
 
 ### Einordnung gegen CLAUDE.md "stetige Ableitung"
 CLAUDE.md fordert fuer ALLE automatisierten Bewegungen C1 (kein Sprung in
-Wert ODER Steigung). Die Bank-Geometrie ist hier bewusst davon ausgenommen
-(harter Blatt-Exit, begruendet mit "kein Ease-Out brachte laut Messung
-keine Rest-Drift-Besserung"). Das ist der eigentliche Konflikt: bei
-`base=2/depth=40` + vielen, dicht getakteten Entnahmen (hier ~37
-Ereigniszeiten auf `MAX_TIME~9.45` bei depth=10; bei depth=40 entsprechend
-viel dichter) werden aus den C0-Einzelsprüngen tausende pro Sekunde ->
+Wert ODER Steigung). Der harte Blatt-Exit verletzt das - und war KEINE
+bewusste Ausnahme, sondern ein Missverstaendnis (s.o.). Der im Kopfkommentar
+genannte Grund ("kein Ease-Out brachte laut Messung keine Rest-Drift-
+Besserung") bezog sich auf ein frueheres Ausblenden BIS `te` (zu lang, zu
+spaet); ein kurzer, auf `[taken_time, te]` begrenzter Ease-Out ist damit
+nicht widerlegt. Der Konflikt bei `base=2/depth=40` + dicht getakteten
+Entnahmen: aus den C0-Einzelsprüngen werden tausende pro Sekunde ->
 sichtbares Ruckeln.
 
-### Offene Richtungsfrage (noch NICHT umgesetzt)
-Moegliche Hebel, um "Interpolation der Zeit glatt genug" zu machen, OHNE die
+### HARTE RAND-BEDINGUNG beim Weich-Ausblenden (nicht vergessen)
+Die inklusive Grenze `t <= taken_time` MUSS erhalten bleiben: bei GENAU
+`taken_time` ist das Blatt noch in Design-Groesse sichtbar. `flightQueryTime`
+fragt bei gewoehnlichen Blaettern EXAKT `taken_time` ab (siehe
+`bankOriginState()` in TargetBankCanvas.svelte) - sonst startet die
+Flug-Animation bei (0,0) statt an der gerenderten Position, und das
+Testkriterium "Bank-Zaehler == Bank-Visualisierung" bricht in genau diesem
+einen Zeitpunkt. Das Weich-Ausblenden darf also erst FUER `t > taken_time`
+(im Fenster bis `te`) einsetzen; bei `t == taken_time` bleibt die volle
+Groesse. Alle Rest-Widget-/Zahlentafel-Filter (`t < p.taken_time`) muessen
+dieselbe inklusive Grenze nutzen.
+
+### Richtungsentscheidung (noch NICHT umgesetzt)
+Um "Interpolation der Zeit glatt genug" zu machen, OHNE die
 Rest-Drift-Garantie zu brechen:
-1. Die Bank-Geometrie (nicht nur die Kamera) ueber `computeSegmentBlend()`
-   oder `buildDampedFilterBundle()` zeitlich glaetten - aber: der harte
-   Blatt-Exit ist aktuell BEWUSST hart (s.o.), aendert man das, muss die
-   Bank/Rest-Drift erneut vermessen werden.
+1. **Blatt-Exit weich ausblenden (PRIMAER-HEBEL):** `leafEffectiveSize()`
+   (`recursive-layout.js:54`) statt hartem 0 nach `taken_time` einen C1-
+   Ease-Out von Design-Groesse auf 0 im Fenster `[taken_time, te]` geben
+   (siehe Haerte-Rand-Bedingung oben: bei `t == taken_time` volle Groesse,
+   Ausblenden erst fuer `t > taken_time`). Das ist die eigentliche
+   Fehlerkorrektur zum "Missverstaendnis hart" - nicht der Kamera-Spline.
+   `te` existiert bereits (`taken_time + delaySnapshot + transitionTicks`),
+   das Fenster ist also schon da; nur die Interpolation fehlt. Danach
+   Bank/Rest-Drift erneut vermessen (der alte "kein Ease-Out half"-Befund
+   bezog sich auf Ausblenden BIS `te`, nicht auf ein kurzes
+   `[taken_time, te]`-Fenster).
 2. `u_time` nicht linear, sondern ueber eine C1-Zeit-Transformation
    vorruecken lassen, die bei Ereignisdichten automatisch "ausdünnt"
    (Vermeidung von Häufungs-Sprüngen) - entspräche der "stetigen
