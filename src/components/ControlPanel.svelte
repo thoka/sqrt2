@@ -62,6 +62,24 @@
 	function onChangeFloat(field, fallback) {
 		return onInputFloat(field, fallback);
 	}
+
+	// Logarithmischer Schieberegler fuer die Auto-Zoom-Mindestpixelgroesse
+	// (autoZoomMinPx): Bereich 0.01 .. 100 px. Position t in [0,1]
+	// <-> Wert v = MINPX_LO * (MINPX_HI/MINPX_LO)^t.
+	const MINPX_LO = 0.01;
+	const MINPX_HI = 100;
+	const MINPX_SPAN = Math.log(MINPX_HI / MINPX_LO);
+	let minPxPos = $state(0.5);
+	$effect(() => {
+		const v = $configStore.autoZoomMinPx;
+		let t = Math.log(Math.max(MINPX_LO, v) / MINPX_LO) / MINPX_SPAN;
+		minPxPos = Math.max(0, Math.min(1, t));
+	});
+	function onMinPxInput(e) {
+		let t = parseFloat(e.target.value);
+		let v = MINPX_LO * Math.exp(t * MINPX_SPAN);
+		configStore.update((c) => ({ ...c, autoZoomMinPx: v }));
+	}
 	function onChangeChecked(field) {
 		return (e) => configStore.update((c) => ({ ...c, [field]: e.target.checked }));
 	}
@@ -308,15 +326,21 @@
 		</div>
 
 		<label class="control-group" style="margin-top:6px;"
-			>Auto-Zoom: Mindestbreite (px)
+			>Auto-Zoom: Mindestpixelgröße
 			<input
-				type="number"
+				type="range"
 				min="0"
-				max="200"
-				step="1"
-				value={$configStore.autoZoomMinPx}
-				oninput={onInputFloat('autoZoomMinPx', 0)}
+				max="1"
+				step="0.001"
+				bind:value={minPxPos}
+				oninput={onMinPxInput}
 			/>
+			<span class="zoom-readout"
+				>{$configStore.autoZoomMinPx.toLocaleString('de-DE', {
+					minimumFractionDigits: 2,
+					maximumFractionDigits: 2,
+				})} px</span
+			>
 		</label>
 
 		<div class="control-group" style="margin-top:10px;">
