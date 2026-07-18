@@ -56,18 +56,17 @@ test('Kein Pulsieren: pw*ph monoton zwischen A0 und A1', () => {
 });
 
 test('Reine Drehung bei 1:4 -> 4:1 mit weight=1 (Fläche exakt konstant)', () => {
-	// t=0.5: Peak-Drehung, Fläche == A0 == A1 == 4
+	// t=0.5: halbe Drehung (45°), Fläche == A0 == A1 == 4
 	const r = morphRect(1, 4, 4, 1, 0.5, 1);
 	assert.ok(Math.abs(r.pw * r.ph - 4) < 1e-9);
-	// 4*0.5*0.5 = 1 -> rot = PI/2 * 1 * 1 = PI/2 = 90° Peak
-	assert.ok(Math.abs(Math.abs(r.rot) - 90 * DEG) < 1e-6, `rot=${r.rot}`);
+	assert.ok(Math.abs(Math.abs(r.rot) - 45 * DEG) < 1e-6, `rot=${r.rot}`);
 	assert.ok(Math.abs(r.rho - 1) < 1e-9, `rho=${r.rho}`);
-	// t=1: transient -> rot=0, Form == Ziel (gedrehte Zielform)
+	// t=1: volle Drehung (90°), Form == Ziel
 	const r1 = morphRect(1, 4, 4, 1, 1, 1);
 	assert.ok(Math.abs(r1.pw * r1.ph - 4) < 1e-9);
 	assert.ok(Math.abs(r1.pw - 1) < 1e-6, `pw=${r1.pw}`);
 	assert.ok(Math.abs(r1.ph - 4) < 1e-6, `ph=${r1.ph}`);
-	assert.ok(Math.abs(r1.rot) < 1e-9, `rot bei Ankommen sollte 0 sein: ${r1.rot}`);
+	assert.ok(Math.abs(Math.abs(r1.rot) - 90 * DEG) < 1e-6, `rot=${r1.rot}`);
 });
 
 test('Quadrat wird nicht gedreht: (1,1) -> (3,7) weight=1', () => {
@@ -97,15 +96,15 @@ test('weight=0 -> keine Drehung (reine Flächenkonstanz-Streckung)', () => {
 	}
 });
 
-test('Endpunkte exakt: t=0 -> Start, t=1 -> Ziel(achsen-aligned)', () => {
+test('Endpunkte exakt: t=0 -> Start, t=1 -> Ziel mit Drehung', () => {
 	// t=0
 	let r0 = morphRect(1, 4, 4, 1, 0, 1);
 	assert.ok(Math.abs(r0.pw - 1) < 1e-9 && Math.abs(r0.ph - 4) < 1e-9);
 	assert.ok(Math.abs(r0.rot) < 1e-9);
-	// t=1: transient rotation -> rot=0, Form == Ziel (gedrehte Zielform via Seitenverhältnis)
+	// t=1: volle Drehung (90°), Form == Ziel (gedrehte Zielform via Seitenverhältnis)
 	let r1 = morphRect(1, 4, 4, 1, 1, 1);
 	assert.ok(Math.abs(r1.pw - 1) < 1e-9 && Math.abs(r1.ph - 4) < 1e-9);
-	assert.ok(Math.abs(r1.rot) < 1e-9, `rot bei Ankommen sollte 0 sein: ${r1.rot}`);
+	assert.ok(Math.abs(Math.abs(r1.rot) - 90 * DEG) < 1e-6, `rot=${r1.rot}`);
 });
 
 test('C1-Stetigkeit: morphRect stetig in t (kein Sprung)', () => {

@@ -61,13 +61,12 @@ export function morphRect(sw, sh, ew, eh, t, rotWeight) {
 	const ph = Math.sqrt(Math.max(1e-12, A / rMix));
 	const pw = A / ph;
 
-	// Drehwinkel nur, wenn rho > 0; transient (0 bei Start/Ankommen,
-	// Peak bei Mitte) - das Stück kommt achsen-aligned am Ziel an.
+	// Drehwinkel: 0 bei Start -> ±90° beim Ankommen (monoton).
+	// Der Render-Pfad glättet fly_textern via smoothstep.
 	let rot = 0;
 	if (rho > 1e-9) {
 		const dir = rtRot >= rs ? 1 : -1;
-		// 4*sin(pi*t) ist 0 bei t=0 und t=1, Peak 1 bei t=0.5
-		rot = (Math.PI / 2) * rho * dir * 4 * ts * (1 - ts);
+		rot = (Math.PI / 2) * rho * dir * ts;
 	}
 	return { pw, ph, rot, rho };
 }
