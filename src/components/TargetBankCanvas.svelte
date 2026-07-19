@@ -662,17 +662,14 @@
 		// Exakte BigInt-Werte aus der Simulation (Mathe unveraendert).
 		let { N_l, N_R, GRID, AREA_SCALE } = computeLiveL(compiledRef, u_time, BASE);
 		let { P_str, P2_str, rem_str } = formatLiveNumbers(N_l, N_R, GRID, AREA_SCALE, BASE);
-		let zoomStr = formatZoomFactor(zoom);
 		// Jede Zeile: [Label, Wert, Basis-Subscript]. Die Basis wird als
 		// tiefgestellte, kleinere Zahl NACH dem Wert gemalt (kein Inline).
-		// Leerer String als Basis = kein Subscript (z.B. Bank-Zoom).
 		let rows = [
 			['l   = ', P_str, BASE],
 			['l²  = ', P2_str, BASE],
 			['R   = ', rem_str, BASE],
-			['z   = ', zoomStr, ''],
 		];
-		let hash = P_str + '|' + P2_str + '|' + rem_str + '|' + zoomStr + '|' + BASE;
+		let hash = P_str + '|' + P2_str + '|' + rem_str + '|' + zoom + '|' + BASE;
 
 		let W = canvasEl.width;
 		let H = canvasEl.height;
@@ -728,6 +725,17 @@
 				}
 				y += lineH;
 			}
+			// Bank-Zoom: separates Feld weiter unten und weiter rechts,
+			// lange Zahl ohne Exponenten-Darstellung.
+			let zoomFmt =
+				zoom < 10
+					? zoom.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) +
+						'x'
+					: Math.round(zoom).toLocaleString('de-DE') + 'x';
+			let zoomX = x0 + Math.round(lineH * 2.5);
+			let zoomY = y + Math.round(lineH * 0.3);
+			c.font = fontFor(Math.round(fontSize * 0.75));
+			c.fillText(zoomFmt, zoomX, zoomY);
 			hudCache = { hash, w: W, h: H, on: true };
 		}
 		// Gecachtes Bitmap pro Frame auflegen (günstig, kein Reflow/
