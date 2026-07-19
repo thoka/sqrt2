@@ -21,7 +21,6 @@
 	import TargetBankCanvas from './components/TargetBankCanvas.svelte';
 	import SpeedSlider from './components/SpeedSlider.svelte';
 
-	let _u_time = 0.0;
 	let showHelp = $state(false);
 	const SPEED_STEP = 1.3;
 
@@ -104,12 +103,8 @@
 		const bankPanel = document.getElementById('bankPanel');
 		const restGridPanel = document.getElementById('restGridPanel');
 
-		// Zahlentafel lebt jetzt im Canvas (TargetBankCanvas.svelte) -
-		// hier nur noch u_time uebernehmen.
+		// Zahlentafel lebt jetzt im Canvas (TargetBankCanvas.svelte).
 		configStore.subscribe(applyConfig);
-		playbackStore.subscribe((p) => {
-			_u_time = p.time;
-		});
 
 		// Widget-Auswahl (displayStore): zeigt entweder Balken- ODER Grid-Widget.
 		displayStore.subscribe((d) => {
@@ -141,91 +136,89 @@
 		};
 		document.addEventListener('mousemove', onMove);
 
-		// Tastensteuerung (siehe TODO.md "Tastensteuerung")
-		function stepTick(delta) {
-			let compiled = get(compiledStore);
-			let ttm = compiled?.GLOBAL_TTM;
-			if (!ttm) return;
-			let p = get(playbackStore);
-			let tick = Math.round(ttm.timeToTick(p.time)) + delta;
-			tick = Math.max(0, Math.min(ttm.maxTick, tick));
-			playbackStore.update((s) => ({ ...s, time: ttm.tickToTime(tick) }));
-		}
-		function jumpShell(delta) {
-			let compiled = get(compiledStore);
-			if (!compiled?.GLOBAL_SHELL_START) return;
-			let p = get(playbackStore);
-			let starts = compiled.GLOBAL_SHELL_START;
-			let currentShell = 0;
-			for (let i = starts.length - 1; i >= 0; i--) {
-				if (p.time >= starts[i]) {
-					currentShell = i;
-					break;
-				}
-			}
-			let target = currentShell + delta;
-			if (target < 0 || target >= starts.length) return;
-			playbackStore.update((s) => ({ ...s, time: starts[target] }));
-		}
-		function onKeyDown(e) {
-			if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-			// Help-Overlay: jede Taste schliesst es
-			if (showHelp) {
-				showHelp = false;
-				return;
-			}
-			switch (e.code) {
-				case 'Space':
-					e.preventDefault();
-					playbackStore.update((p) => ({ ...p, isPlaying: !p.isPlaying }));
-					break;
-				case 'ArrowLeft':
-					e.preventDefault();
-					stepTick(-1);
-					break;
-				case 'ArrowRight':
-					e.preventDefault();
-					stepTick(1);
-					break;
-				case 'PageUp':
-					e.preventDefault();
-					jumpShell(1);
-					break;
-				case 'PageDown':
-					e.preventDefault();
-					jumpShell(-1);
-					break;
-				case 'Enter':
-					e.preventDefault();
-					playbackStore.update((p) => ({
-						...p,
-						direction: p.direction === 1 ? -1 : 1,
-					}));
-					break;
-				case 'Equal': // +
-					e.preventDefault();
-					configStore.update((c) => ({ ...c, playSpeed: c.playSpeed * SPEED_STEP }));
-					break;
-				case 'Minus': // -
-					e.preventDefault();
-					configStore.update((c) => ({ ...c, playSpeed: c.playSpeed / SPEED_STEP }));
-					break;
-				case 'Slash': // ? (Shift+/)
-					if (e.shiftKey) {
-						e.preventDefault();
-						showHelp = true;
-					}
-					break;
-			}
-		}
-		document.addEventListener('keydown', onKeyDown);
+		// Tastensteuerung: wird ueber <svelte:window> im Template gebunden
+		// (Svelte 5 braucht den Compiler-Transform fuer $state-Reaktivitaet).
 
-		return () => {
-			document.removeEventListener('mousemove', onMove);
-			document.removeEventListener('keydown', onKeyDown);
-		};
+		return () => document.removeEventListener('mousemove', onMove);
 	});
+
+	// Tastensteuerung (siehe TODO.md "Tastensteuerung")
+	function stepTick(delta) {
+		let compiled = get(compiledStore);
+		let ttm = compiled?.GLOBAL_TTM;
+		if (!ttm) return;
+		let p = get(playbackStore);
+		let tick = Math.round(ttm.timeToTick(p.time)) + delta;
+		tick = Math.max(0, Math.min(ttm.maxTick, tick));
+		playbackStore.update((s) => ({ ...s, time: ttm.tickToTime(tick) }));
+	}
+	function jumpShell(delta) {
+		let compiled = get(compiledStore);
+		if (!compiled?.GLOBAL_SHELL_START) return;
+		let p = get(playbackStore);
+		let starts = compiled.GLOBAL_SHELL_START;
+		let currentShell = 0;
+		for (let i = starts.length - 1; i >= 0; i--) {
+			if (p.time >= starts[i]) {
+				currentShell = i;
+				break;
+			}
+		}
+		let target = currentShell + delta;
+		if (target < 0 || target >= starts.length) return;
+		playbackStore.update((s) => ({ ...s, time: starts[target] }));
+	}
+	function onKeyDown(e) {
+		if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+		if (showHelp) {
+			showHelp = false;
+			return;
+		}
+		switch (e.key) {
+			case ' ':
+				e.preventDefault();
+				playbackStore.update((p) => ({ ...p, isPlaying: !p.isPlaying }));
+				break;
+			case 'ArrowLeft':
+				e.preventDefault();
+				stepTick(-1);
+				break;
+			case 'ArrowRight':
+				e.preventDefault();
+				stepTick(1);
+				break;
+			case 'PageUp':
+				e.preventDefault();
+				jumpShell(1);
+				break;
+			case 'PageDown':
+				e.preventDefault();
+				jumpShell(-1);
+				break;
+			case 'Enter':
+				e.preventDefault();
+				playbackStore.update((p) => ({
+					...p,
+					direction: p.direction === 1 ? -1 : 1,
+				}));
+				break;
+			case '+':
+				e.preventDefault();
+				configStore.update((c) => ({ ...c, playSpeed: c.playSpeed * SPEED_STEP }));
+				break;
+			case '-':
+				e.preventDefault();
+				configStore.update((c) => ({ ...c, playSpeed: c.playSpeed / SPEED_STEP }));
+				break;
+			case '?':
+				e.preventDefault();
+				showHelp = true;
+				break;
+		}
+	}
 </script>
+
+<svelte:window onkeydown={onKeyDown} />
 
 <div id="canvasMount"></div>
 
