@@ -579,7 +579,7 @@
 
 		for (let p of render_pipeline) drawPiece(p, true);
 
-		renderHud(ctx, teilDCamera.z);
+		renderHud(ctx, teilDCamera.z, t_x + t_w);
 
 		ctx.restore();
 	}
@@ -651,7 +651,7 @@
 		}
 	}
 
-	function renderHud(ctx, zoom) {
+	function renderHud(ctx, zoom, targetRightEdge) {
 		const enabled = get(configStore).hudUpdateEnabled;
 		const ready = compiledRef && compiledRef.axes;
 		// Anzeige aus: gecachten Zustand zuruecksetzen, nichts malen.
@@ -734,7 +734,7 @@
 					: Math.round(zoom).toLocaleString('de-DE') + 'x';
 			c.font = fontFor(Math.round(fontSize * 0.75));
 			let zoomW = c.measureText(zoomFmt).width;
-			let zoomX = t_x + t_w - zoomW;
+			let zoomX = targetRightEdge - zoomW;
 			let zoomY = y + Math.round(lineH * 0.3);
 			c.fillText(zoomFmt, zoomX, zoomY);
 			hudCache = { hash, w: W, h: H, on: true };
