@@ -87,6 +87,7 @@ export function compileSystemData(config) {
 		bankZoomThresholdPowers: BANK_ZOOM_THRESHOLD_POWERS,
 		zoomSpeedCoef,
 		compactionTransitionTicks,
+		flightRotation,
 	} = config;
 
 	// Beste validierte Kombination fest einprogrammiert (siehe README) -
@@ -219,7 +220,7 @@ export function compileSystemData(config) {
 		if (e.count === 1) {
 			let t_fly = global_time;
 			tickTimePairs.push({ tick: e.tick, time: t_fly });
-			let targetRot = computeTargetRot(e.piece, e.u, e.v, 0.5);
+			let targetRot = computeTargetRot(e.piece, e.u, e.v, flightRotation ? 1 : 0);
 			if (e.is_top) {
 				render_pipeline.push({
 					type: 'S_macro',

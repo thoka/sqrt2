@@ -143,6 +143,7 @@ function compileRelevantKey(c) {
 		c.zoomSpeedCoef,
 		c.compactionEnabled,
 		c.compactionTransitionTicks,
+		c.flightRotation,
 	]);
 }
 let firstSubscribe = true;

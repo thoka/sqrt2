@@ -68,10 +68,10 @@ const CONFIG_FIELDS = [
 		format: (c) => c.modeAB.toFixed(4),
 	},
 	{
-		key: 'morphrot',
-		field: 'morphRotWeight',
-		parse: (v) => Math.max(0, Math.min(1, parseFloat(v) ?? 0.5)),
-		format: (c) => String(c.morphRotWeight),
+		key: 'rotate',
+		field: 'flightRotation',
+		parse: (v) => v !== '0',
+		format: (c) => (c.flightRotation ? '1' : '0'),
 	},
 	{
 		key: 'hud',

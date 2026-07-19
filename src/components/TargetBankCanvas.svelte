@@ -96,7 +96,6 @@
 	let LINE_WIDTH_PX = 0.3;
 	let ANIM_PAUSE_DURATION = 1.5;
 	let ANIM_SPEED = 2.0;
-	let MORPH_ROT_WEIGHT = 0.5; // Flug-Morph: Drehung vs. Streckung (0..1)
 	// Maximal erlaubter Zeitschritt pro Frame (Sekunden). Ein einzelner
 	// langer Frame (GC/Compile/Tab-Throttle) wird darauf begrenzt, damit
 	// die Simulation keinen sichtbaren Vorwaertssprung macht.
@@ -133,7 +132,6 @@
 			LINE_WIDTH_PX = c.lineWidth;
 			ANIM_PAUSE_DURATION = c.pauseDuration;
 			ANIM_SPEED = c.playSpeed;
-			MORPH_ROT_WEIGHT = c.morphRotWeight;
 			bankRenderEnabled = c.bankRenderEnabled;
 
 			let compiled = get(compiledStore);

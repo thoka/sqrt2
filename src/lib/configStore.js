@@ -21,9 +21,8 @@ const DEFAULTS = {
 	pauseDuration: 1.5,
 	playSpeed: 2.0,
 	modeAB: 0.0,
-	// Flug-Morph: wie stark Drehung der Streckung vorgezogen wird (0 = rein
-	// strecken, 1 = max. Drehung wo sinnvoll). Laufzeit-Feld, kein Recompile.
-	morphRotWeight: 0.5,
+	// Flug-Morph: Teile drehen (true) oder nur strecken (false)
+	flightRotation: true,
 	// Diagnose-Schalter (Stotter-Untersuchung): entkoppeln HUD-/Bank-
 	// Update vom Render-Loop, um die Flug-Stotter-Quelle zu isolieren.
 	hudUpdateEnabled: true, // Zahlendarstellung (l/l²/R) neu berechnen/typsetten

@@ -331,17 +331,13 @@
 			Auto-Zoom aktiv - übersteuert den Regler nach oben
 		</div>
 
-		<label class="control-group" style="margin-top:6px;"
-			>Flug-Morph: Drehung
+		<label class="control-group" style="margin-top:6px;">
 			<input
-				type="range"
-				min="0"
-				max="1"
-				step="0.01"
-				value={$configStore.morphRotWeight}
-				oninput={onInputFloat('morphRotWeight', 0.5)}
+				type="checkbox"
+				checked={$configStore.flightRotation}
+				onchange={onChangeChecked('flightRotation')}
 			/>
-			<span class="zoom-readout">{Math.round($configStore.morphRotWeight * 100)} %</span>
+			T pieces drehen
 		</label>
 		<label class="control-group" style="margin-top:6px;"
 			>Auto-Zoom: Mindestpixelgröße

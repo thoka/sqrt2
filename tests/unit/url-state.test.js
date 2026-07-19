@@ -25,6 +25,7 @@ const DEFAULT_CONFIG = {
 	modeAB: 0.0,
 	hudUpdateEnabled: true,
 	bankRenderEnabled: true,
+	flightRotation: true,
 };
 const DEFAULT_PLAYBACK = { time: 0, isPlaying: false, direction: 1 };
 const FAKE_COMPILED = {
@@ -143,6 +144,7 @@ test('buildStateParams() setzt jeden erwarteten URL-Schlüssel', () => {
 		'speed',
 		'transition',
 		'modeab',
+		'rotate',
 		'time',
 		'play',
 		'dir',
