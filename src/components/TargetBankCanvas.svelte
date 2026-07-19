@@ -112,6 +112,7 @@
 	let lastTime = performance.now();
 	let _lastCompileKey;
 	let _suppressPlaybackRender = false;
+	let _initialBankRightEdge = null;
 
 	function compileRelevantKey(c) {
 		return JSON.stringify([
@@ -579,9 +580,16 @@
 
 		for (let p of render_pipeline) drawPiece(p, true);
 
-		// Rechte Kante der Bank-Bounding-Box in Canvas-Pixeln (fuer HUD-Positionierung).
-		let bankRightEdge =
-			(BANK_X_OFFSET + (teilDCamera.cx + bank_frame.w / 2) * V_SCALE_BANK) * scale;
+		// Rechte Kante der Bank-Bounding-Box beim Start (fix, nicht animiert).
+		if (_initialBankRightEdge === null && bank_root) {
+			let initFrame = layoutCentered(bank_root, 0, []);
+			let initCam = GLOBAL_TEIL_D_ZOOM_SPLINE
+				? GLOBAL_TEIL_D_ZOOM_SPLINE.at(0)
+				: { cx: 0.5, cy: 0.5 };
+			_initialBankRightEdge =
+				(BANK_X_OFFSET + (initCam.cx + initFrame.frame.w / 2) * V_SCALE_BANK) * scale;
+		}
+		let bankRightEdge = _initialBankRightEdge ?? 0;
 
 		renderHud(ctx, teilDCamera.z, bankRightEdge);
 
@@ -757,6 +765,7 @@
 		canvasEl.height = window.innerHeight * RENDER_SCALE;
 		canvasEl.style.width = window.innerWidth + 'px';
 		canvasEl.style.height = window.innerHeight + 'px';
+		_initialBankRightEdge = null;
 		renderFrame();
 	}
 
