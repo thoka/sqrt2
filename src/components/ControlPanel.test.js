@@ -72,8 +72,7 @@ test('Remote-Ansicht zeigt nur Grundeinstellungen', () => {
 
 test('Modus-B-Regler (range) aktualisiert configStore.modeAB live bei "input"', () => {
 	const app = mount(ControlPanel, { target: document.body });
-	// Der Zoom-Regler (modeAB) trägt das Label "Zoom"; der SpeedSlider
-	// (Geschwindigkeit) ist ebenfalls ein range-input und kommt vorher im DOM.
+	// Der Zoom-Regler (modeAB) trägt das Label "Zoom".
 	const zoomLabel = [...document.querySelectorAll('.control-group')].find((g) =>
 		g.textContent.startsWith('Zoom'),
 	);
@@ -83,19 +82,6 @@ test('Modus-B-Regler (range) aktualisiert configStore.modeAB live bei "input"', 
 	fire(rangeInput, 'input');
 	flushSync();
 	expect(get(configStore).modeAB).toBe(0.5);
-
-	unmount(app);
-});
-
-test('Kompaktierungs-Checkbox schreibt configStore.compactionEnabled', () => {
-	const app = mount(ControlPanel, { target: document.body });
-	const checkbox = document.querySelector('input[type=checkbox]');
-	expect(checkbox.checked).toBe(false);
-
-	checkbox.checked = true;
-	fire(checkbox, 'change');
-	flushSync();
-	expect(get(configStore).compactionEnabled).toBe(true);
 
 	unmount(app);
 });
