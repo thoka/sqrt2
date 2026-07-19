@@ -726,7 +726,7 @@
 				y += lineH;
 			}
 			// Bank-Zoom: separates Feld weiter unten, rechtsbündig
-			// mit festerem Abstand zur rechten Bank-Kante.
+			// mit der rechten Kante des Ziel-Quadrats.
 			let zoomFmt =
 				zoom < 10
 					? zoom.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) +
@@ -734,7 +734,7 @@
 					: Math.round(zoom).toLocaleString('de-DE') + 'x';
 			c.font = fontFor(Math.round(fontSize * 0.75));
 			let zoomW = c.measureText(zoomFmt).width;
-			let zoomX = (bankPanel.getBoundingClientRect().left - 40) * RENDER_SCALE - 4 - zoomW;
+			let zoomX = t_x + t_w - zoomW;
 			let zoomY = y + Math.round(lineH * 0.3);
 			c.fillText(zoomFmt, zoomX, zoomY);
 			hudCache = { hash, w: W, h: H, on: true };
