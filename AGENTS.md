@@ -151,16 +151,17 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
 - Vite bindet via `server.host:true` an 0.0.0.0: Windows/WSL unter
   `localhost`; Cross-Device via Tailscale (`<host>.<tailnet>.ts.net`).
 - Offene Reste: ungenutzte `GLOBAL_*` in `TargetBankCanvas.svelte` (nur
-  ESLint-Warnungen); Phase 6 (Politur) offen; Bank-Flackern zu
-  debuggen (Todo-Tastensteuerung hilft).
-- **Flight-Morph Rendering (Stand 2026-07-19):** ZeiRendering-Passes
+  ESLint-Warnungen); Phase 6 (Politur) offen.
+- **Flight-Morph Rendering (Stand 2026-07-19):** Zwei Rendering-Passes
   in `TargetBankCanvas.svelte`: (1) liegende Stücke → `gridPath`-Stroke
   (Rahmen Batch), (2) fliegende Stücke → direkt stroke im rotierten
-  Kontext (immer ganz oben). Gedrehte landed Pieces: `gridPath.rect`
-  braucht die visuell korrekten Maße (pw/ph getauscht), nicht die
-  cross-lerpten, weil `gridPath` ohne Rotation gestroked wird.
-  `targetRot` wird beim Compile bestimmt (0, ±PI/2), `flightRotation`
-  (Checkbox, default an) schaltet Drehung globally ab.
+  Kontext (immer ganz oben). `landed = fly_t >= 0.999` (nur am Ende
+  des Flugs, NICHT am Anfang — verhindert Doppel-Draw-Blitz).
+  Gedrehte landed Pieces: `gridPath.rect` braucht die visuell korrekten
+  Maße (pw/ph getauscht), weil `gridPath` ohne Rotation gestroked wird.
+  `targetRot` Compile-Time (0, ±PI/2), `flightRotation` (Checkbox),
+  `flyingAlpha` (Slider, Default 0.59) mit smoothstep-Fade an Flugrändern.
+  Tastensteuerung: Space/Pfeile/PgUp/PgDn/Return/+/-/?, siehe TODO.md.
 - **`tests/unit/compiler-split.test.js` hängt (Timeout 124):** die
   Config-Matrix nutzt base 16 / depth 15 → Stückzahl explodiert (16^15),
   schon im Original-Code reproduzierbar, NICHT durch eigene Änderungen
