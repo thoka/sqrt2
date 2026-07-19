@@ -91,6 +91,12 @@ const CONFIG_FIELDS = [
 		parse: (v) => v !== '0',
 		format: (c) => (c.bankRenderEnabled ? '1' : '0'),
 	},
+	{
+		key: 'labels',
+		field: 'showLabels',
+		parse: (v) => v === '1',
+		format: (c) => (c.showLabels ? '1' : '0'),
+	},
 	// --- Playback-Felder (liegen in playbackStore, nicht configStore) ---
 	// Laufrichtung der Zeit: -1 = rueckwaerts, sonst vorwaerts.
 	{

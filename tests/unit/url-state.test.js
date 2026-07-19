@@ -27,6 +27,7 @@ const DEFAULT_CONFIG = {
 	bankRenderEnabled: true,
 	flightRotation: true,
 	flyingAlpha: 0.59,
+	showLabels: false,
 };
 const DEFAULT_PLAYBACK = { time: 0, isPlaying: false, direction: 1 };
 const FAKE_COMPILED = {
@@ -147,6 +148,7 @@ test('buildStateParams() setzt jeden erwarteten URL-Schlüssel', () => {
 		'modeab',
 		'rotate',
 		'flyalpha',
+		'labels',
 		'time',
 		'play',
 		'dir',

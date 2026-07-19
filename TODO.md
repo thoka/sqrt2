@@ -21,10 +21,10 @@ Offene Punkte, nach Relevanz sortiert. Erledigtes wird durchgestrichen
 - [x] Solange ein slider bewegt wird, soll das verlassen des parents nicht den Dialog schhließen. Das passiert zuerzeit in den Einstellungen.
 
 # Darstellung
-- [ ] einen Konfigurationsoption "Beschriftung an/aus" in den Basiseinstellungen und im Remote einbauen
-- [ ] wenn diese eingeschaltet ist:
-   - [ ] über dem unteren Rand der einzelnen untersten Quadrate im Ziel  (1/basis)^exponent anzeigen , wenn die breite des Rechtecks dazu ausreicht
-   - [ ] neben dem linken Rand der einlenen linkesten Quadrate im Ziel auch die Beschriftung anzeigen, jedoch ausgerechnet. D.h. im Fall von Basis = 2  1 (weises Grundquadrat); 1/2;  1/4; 1/8 etc
+- [x] einen Konfigurationsoption "Beschriftung an/aus" in den Basiseinstellungen und im Remote einbauen
+- [x] wenn diese eingeschaltet ist:
+   - [x] über dem unteren Rand der einzelnen untersten Quadrate im Ziel  (1/basis)^exponent anzeigen , wenn die breite des Rechtecks dazu ausreicht
+   - [x] neben dem linken Rand der einlenen linkesten Quadrate im Ziel auch die Beschriftung anzeigen, jedoch ausgerechnet. D.h. im Fall von Basis = 2  1 (weises Grundquadrat); 1/2;  1/4; 1/8 etc
   Wichtig: nicht mathjax nutzen. ist zu langsam
 
 ## Sync-Isolierung via Pin (BroadcastChannel) — optional

@@ -58,3 +58,19 @@ export function formatLiveNumbers(N_l, N_R, GRID, AREA_SCALE, BASE) {
 
 	return { P_str, P2_str, rem_str };
 }
+
+// Beschriftung der untersten Ziel-Quadrate (TODO.md "Darstellung"): die
+// SYMBOLISCHE Formel "(1/basis)^exponent" - exp=0 (weisses Grundquadrat)
+// vereinfacht zu "1" statt "(1/basis)^0".
+export function formatAxisFormulaLabel(base, exp) {
+	if (exp === 0) return '1';
+	return `(1/${base})^${exp}`;
+}
+
+// Beschriftung der linkesten Ziel-Quadrate: derselbe Wert, aber AUSGERECHNET
+// als exakter Bruch (BigInt, kein Float-Rundungsfehler) - Basis 2: 1, 1/2,
+// 1/4, 1/8, ...
+export function formatAxisValueLabel(base, exp) {
+	if (exp === 0) return '1';
+	return `1/${(BigInt(base) ** BigInt(exp)).toString()}`;
+}

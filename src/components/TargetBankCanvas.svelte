@@ -24,7 +24,11 @@
 	import { layoutCentered, findRect, commonAncestor } from '../lib/recursive-layout.js';
 	import { configStore, playbackStore, compiledStore } from '../lib/stores.js';
 	import { computeLiveL } from '../lib/compiler.js';
-	import { formatLiveNumbers } from '../lib/numberRenderer.js';
+	import {
+		formatLiveNumbers,
+		formatAxisFormulaLabel,
+		formatAxisValueLabel,
+	} from '../lib/numberRenderer.js';
 	import { clampDt } from '../lib/timeStep.js';
 	import { morphRect, computeRotation, rotationAngle } from '../lib/morphRect.js';
 	import {
@@ -98,6 +102,11 @@
 	let ANIM_PAUSE_DURATION = 1.5;
 	let ANIM_SPEED = 2.0;
 	let FLYING_ALPHA = 0.59;
+	// Beschriftung der Ziel-Quadrate (TODO.md "Darstellung"): unten die
+	// symbolische Formel, links der ausgerechnete Wert - siehe drawTargetLabels().
+	let SHOW_LABELS = false;
+	const LABEL_FONT_PX = 12;
+	const LABEL_PAD_PX = 4;
 	// Maximal erlaubter Zeitschritt pro Frame (Sekunden). Ein einzelner
 	// langer Frame (GC/Compile/Tab-Throttle) wird darauf begrenzt, damit
 	// die Simulation keinen sichtbaren Vorwaertssprung macht.
@@ -137,6 +146,7 @@
 			ANIM_SPEED = c.playSpeed;
 			FLYING_ALPHA = c.flyingAlpha;
 			bankRenderEnabled = c.bankRenderEnabled;
+			SHOW_LABELS = c.showLabels;
 
 			let compiled = get(compiledStore);
 			compiledRef = compiled;
@@ -326,6 +336,57 @@
 			let final_w = r.w * V_SCALE_BANK;
 			let final_h = r.h * V_SCALE_BANK;
 			return [final_x * scale, final_y * scale, final_w * scale, final_h * scale];
+		}
+
+		// Beschriftung der Ziel-Quadrate (TODO.md "Darstellung", Konfig-Option
+		// "Beschriftung an/aus"): Text wird INNERHALB des schon gespiegelten
+		// ctx (translate(50,H-50)+scale(1,-1) weiter oben) gezeichnet - daher
+		// lokal um den Ankerpunkt nochmal gespiegelt, sonst stuenden die
+		// Glyphen auf dem Kopf.
+		function drawUprightLabel(x, y, text, align) {
+			ctx.save();
+			ctx.translate(x, y);
+			ctx.scale(1, -1);
+			ctx.textAlign = align;
+			ctx.textBaseline = align === 'left' ? 'middle' : 'alphabetic';
+			ctx.font = `${LABEL_FONT_PX}px ui-monospace, monospace`;
+			ctx.lineWidth = 2.5;
+			ctx.strokeStyle = 'rgba(15,23,42,0.85)';
+			ctx.strokeText(text, 0, 0);
+			ctx.fillStyle = '#f8fafc';
+			ctx.fillText(text, 0, 0);
+			ctx.restore();
+		}
+
+		// Pro Achsen-Index i (= eine Spalte UND eine Zeile im (u,v)-Gitter des
+		// Ziel-Quadrats, siehe recursive-layout.js/bank-core.js axes[]):
+		// - unterste Reihe (v=0): Formel "(1/basis)^exponent" ueber dem
+		//   unteren Rand der Spalte i, NUR wenn deren Breite fuer den Text
+		//   reicht (TODO-Vorgabe).
+		// - linkeste Spalte (u=0): derselbe Wert AUSGERECHNET (exakter Bruch)
+		//   neben dem linken Rand der Zeile i, analog nur bei ausreichender
+		//   Zeilenhoehe (sonst ueberlappende Beschriftung bei tiefen Stufen).
+		function drawTargetLabels() {
+			if (!SHOW_LABELS || TOTAL_STEPS === 0) return;
+			ctx.font = `${LABEL_FONT_PX}px ui-monospace, monospace`;
+			for (let i = 0; i < TOTAL_STEPS; i++) {
+				let exp = axes[i].exp;
+				let [bx, by, bw] = project(dyn_prefA[i], dyn_prefA[0], dyn_axes_w[i], dyn_axes_w[0], true);
+				let formula = formatAxisFormulaLabel(BASE, exp);
+				if (bw >= ctx.measureText(formula).width + LABEL_PAD_PX) {
+					drawUprightLabel(bx + bw / 2, by + LABEL_PAD_PX, formula, 'center');
+				}
+				let [lx, ly, , lh] = project(
+					dyn_prefA[0],
+					dyn_prefA[i],
+					dyn_axes_w[0],
+					dyn_axes_w[i],
+					true,
+				);
+				if (lh >= LABEL_FONT_PX + LABEL_PAD_PX) {
+					drawUprightLabel(lx + LABEL_PAD_PX, ly + lh / 2, formatAxisValueLabel(BASE, exp), 'left');
+				}
+			}
 		}
 
 		// Herkunfts-Position eines fliegenden Stücks: EIN fester Zeitpunkt
@@ -579,6 +640,8 @@
 		}
 
 		for (let p of render_pipeline) drawPiece(p, true);
+
+		drawTargetLabels();
 
 		// Rechte Kante der Bank-Bounding-Box beim Start (fix, nicht animiert).
 		if (_initialBankRightEdge === null && bank_root) {

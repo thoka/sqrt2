@@ -339,6 +339,19 @@
 			Auto-Zoom aktiv - übersteuert den Regler nach oben
 		</div>
 
+		<label
+			class="control-group"
+			style="margin-top:10px; flex-direction: row; align-items: center; gap: 8px;"
+		>
+			<input
+				type="checkbox"
+				style="width: auto;"
+				checked={$configStore.showLabels}
+				onchange={onChangeChecked('showLabels')}
+			/>
+			Beschriftung an/aus
+		</label>
+
 		<div class="control-group" style="margin-top:10px;">
 			<div>
 				Bank-Zoom (automatisch, reale Basis) — <span class="zoom-readout" id="bankZoomLabel"
