@@ -104,11 +104,11 @@
 	</div>
 	<div class="remote-keys">
 		<button class="key-btn" onclick={() => jumpShell(-1)} title="Schale zurück">⏮</button>
-		<button class="key-btn" onclick={() => stepTick(-1)} title="Tick zurück">◀</button>
+		<button class="key-btn" onclick={() => stepTick(-1)} title="Tick zurück">←</button>
 		<button class="key-btn play-btn" onclick={togglePlay} title="Play / Pause"
 			>{$playbackStore.isPlaying ? '⏸' : '▶'}</button
 		>
-		<button class="key-btn" onclick={() => stepTick(1)} title="Tick vorwärts">▶</button>
+		<button class="key-btn" onclick={() => stepTick(1)} title="Tick vorwärts">→</button>
 		<button class="key-btn" onclick={() => jumpShell(1)} title="Schale vorwärts">⏭</button>
 		<button class="key-btn" onclick={toggleDirection} title="Richtungswechsel">↩</button>
 		<button class="key-btn" onclick={slower} title="Langsamer (÷1.3)">−</button>
