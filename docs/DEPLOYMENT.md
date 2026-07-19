@@ -1,9 +1,12 @@
 # Deployment & Betrieb — √2-Exponat (inkl. QR-Fernsteuerung)
 
-Zentrale Betriebsanleitung. Ergänzt `README.md` (Projektziel) und
-`docs/CONNECTION_SERVICE_SPEC.md` (Protokoll-Detail). Hier steht der
-**durchgängige Betriebsfluss**: wie man das Exponat startet, wie das
-Besucher-Handy joint, warum **ein Server / ein Origin** genutzt wird.
+Zentrale Betriebsanleitung. Ergänzt `README.md` (Projektziel),
+`docs/TOOLING_SPEC.md` (Architektur-/Migrations-Historie, §8 "Deployment:
+GitHub Pages" für die statische Demo ohne Relay) und
+`docs/CONNECTION_SERVICE_SPEC.md` (Protokoll-Detail, §10 "Betriebsmodell"
+für die Entscheidung "ein Server"). Hier steht der **durchgängige
+Betriebsfluss**: wie man das Exponat startet, wie das Besucher-Handy
+joint, warum **ein Server / ein Origin** genutzt wird.
 
 ---
 
@@ -44,6 +47,15 @@ DATA_DIR=./data API_KEYS=<dein-key> PORT=5173 node server/index.js
 - `API_KEYS` = komma-getrennte Exponat-Keys (Token-Minting). **Secret**, nur
   via env/`.env`, nie ins Repo.
 - `DATA_DIR` = Ort für `admin_key` (beim ersten Start generiert, persistent).
+
+**Alternative: Docker Compose** (`deploy/docker-compose.yml`, optional mit
+Traefik für eine eigene Domain, `--profile edge`) - Secrets kommen dort aus
+einer `.env`-Datei, NIE aus der committeten Compose-Datei:
+
+```bash
+cp deploy/.env.example deploy/.env   # einmalig, danach API_KEYS/ADMIN_KEY ausfuellen
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env up
+```
 - Statics: erwartet ein zuvor gebautes `dist/`. Fehlt es, wird nur die
   Relay-Status-Page unter `/` ausgeliefert (Hinweis im Log).
 
@@ -116,13 +128,16 @@ Devices):
 ## 7. Tests / Verifikation
 
 ```bash
-pnpm test                 # Unit (node --test) + vitest (Svelte) - lokal
-pnpm check                # Gate: svelte-check && eslint && knip && prettier
+pnpm test                          # Unit (node --test) + vitest (Svelte) - lokal
+pnpm check                         # Gate: svelte-check && eslint && knip && prettier
 
-node test-api.mjs         # REST: Minting, PIN, Verify, Revoke, Admin, CORS, Rate-Limit
-node test-connection.mjs  # WS: Host/Guest-Join, Relay, Presence, Seats, PIN-Backoff
-node test-sqrt2-sync.mjs  # E2E: sqrt2-Store-Sync durch den echten Relay
+node tests/relay/test-api.mjs         # REST: Minting, PIN, Verify, Revoke, Admin, CORS, Rate-Limit
+node tests/relay/test-connection.mjs  # WS: Host/Guest-Join, Relay, Presence, Seats, PIN-Backoff
+node tests/relay/test-sqrt2-sync.mjs  # E2E: sqrt2-Store-Sync durch den echten Relay
 ```
+
+Protokoll-Detail (welche Felder/Fehlercodes/Backoff-Regeln getestet werden):
+siehe `docs/CONNECTION_SERVICE_SPEC.md` §5 (REST API) + §6 (WebSocket).
 
 ---
 

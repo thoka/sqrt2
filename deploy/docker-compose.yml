@@ -1,9 +1,11 @@
 # deploy/docker-compose.yml — Exponat (Frontend + embedded Relay) hinter Traefik.
 #
 # Erster Start (aus dem Repo-Root, mit deploy/ als Kontext):
-#   docker compose -f deploy/docker-compose.yml up
+#   cp deploy/.env.example deploy/.env   # einmalig, danach ausfuellen (Secrets!)
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up
 #   -> Server printet ADMIN_KEY auf die Console (persistent in exponat-data:/data)
-#   -> API_KEY generiert temporaer (Production: API_KEYS setzen!)
+#   -> API_KEY generiert temporaer, falls deploy/.env kein API_KEYS setzt
+#      (Production: API_KEYS in deploy/.env setzen!)
 #
 # Traefik terminiert TLS (Let's Encrypt) und routet /ws + /api + /admin.
 # Admin-Route ist per BasicAuth-Middleware abgesichert (siehe unten).
@@ -11,6 +13,10 @@
 # Variante A (Tailscale-Testing): den `traefik`-Service weglassen (profiles:
 # edge) und Port 8080 auf dem Host publizieren -> ueber die Tailnet-IP /
 # <host>.<tailnet>.ts.net direkt erreichbar, kein Traefik noetig.
+#
+# Secrets (API_KEYS/ADMIN_KEY/ACME_EMAIL/ADMIN_BASIC_AUTH) kommen NICHT aus
+# dieser Datei, sondern aus einer .env-Datei (Vorlage: deploy/.env.example,
+# NIE committen) - siehe Kommentar dort zum genauen Aufruf mit --env-file.
 
 services:
   exponat:
@@ -21,9 +27,11 @@ services:
     environment:
       PORT: 8080
       DATA_DIR: /data
-      # Production: eigene Secrets setzen, z.B. aus .env / docker secret:
-      # API_KEYS: "exponat-sqrt2-...,exponat-film-..."
-      # ADMIN_KEY: "..."   # optional; sonst einmalig generiert + auf Console
+      # Aus deploy/.env (siehe deploy/.env.example) - leer = Server generiert
+      # einen temporaeren API-Key pro Start (nur zum schnellen Testen) bzw.
+      # einen persistenten Admin-Key beim allerersten Start.
+      API_KEYS: '${API_KEYS:-}'
+      ADMIN_KEY: '${ADMIN_KEY:-}'
       TOKEN_TTL_DEFAULT: 3600
       MAX_SEATS_DEFAULT: 4
       # CORS: komma-getrennte Origins (nur fuer eigenstaendige Relay-Nutzung

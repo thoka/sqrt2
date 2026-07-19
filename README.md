@@ -212,8 +212,9 @@ hartkodiertes `0.03`).
 - **QR-Code-Verbindung (Besucher-Handy):** **umgesetzt** — Token/PIN-Minting
   im `ControlPanel`, Gast joint per QR-Link über embedded Relay
   (`src/lib/connection.js`). Details in `docs/DEPLOYMENT.md` §4.
-- **Admin-konfigurierbare Steuerungs-Komplexität:** offen (Konfigurations-
-  objekt, welche Regler sichtbar sind) - baut auf der Store-Architektur auf.
+- **Admin-konfigurierbare Steuerungs-Komplexität:** offen (`TOOLING_SPEC.md`
+  Phase 6 "Politur" - Konfigurationsobjekt, welche Regler sichtbar sind) -
+  baut auf der Store-Architektur auf.
 - **Z/R-Modi vollständig neu (C¹):** eigenständiges Thema (§7).
 - **Tiefe-Standardwert** im Haupttool (`3`) vs Test-Tool (`10`): weiterhin
   nicht synchronisiert (offene Entscheidung).

@@ -75,9 +75,15 @@ Jede Phase ist einzeln committ- und testbar - wichtig, damit eine künftige Sitz
 
 **Neue Erkenntnis (Phase 7):** `window.MathJax` wird im `<head>` VOR dem Laden der MathJax-Bibliothek gesetzt (`{ chtml: { displayAlign: 'left' } }`) – `MathJax.typesetPromise` existiert erst NACH dem async-Laden. In `updateHUD` (jetzt `src/App.svelte`) daher NIEMALS blind `if (window.MathJax) MathJax.typesetPromise(...)` aufrufen: das wirft (`typesetPromise is not a function`) und bricht `App.onMount` ab → die Kind-Mounts (Canvas!) werden wieder abgebaut. Korrekt: `typeof window.MathJax.typesetPromise === 'function'` prüfen, sonst `window.MathJax?.startup?.promise` nutzen, sonst nur skalieren. Siehe `src/App.svelte`.
 
-**Nächster Schritt (Stand 2026-07-20):** Settings aufgeräumt: SpeedSlider aus Grundeinstellungen-Tab entfernt, "Pieces drehen" + "Fliegende Transparenz" in Animations-Tab verschoben, "Zoom" unter "Auto-Zoom" gruppiert, "Kompaktierung" (nicht mehr existent) aus UI entfernt. Remote-Steuerung: SpeedSlider + Zeitregler volle Breite, Tastatur-Buttons (⏮ ← → ⏭ ↩ − +) hinzugefügt. Panel-Öffnungszone auf 153px angepasst. Slider-Drag hält Panel offen. Offen: Phase 6 (Politur).
+**Stand 2026-07-20 (Settings aufgeräumt):** SpeedSlider aus Grundeinstellungen-Tab entfernt, "Pieces drehen" + "Fliegende Transparenz" in Animations-Tab verschoben, "Zoom" unter "Auto-Zoom" gruppiert, "Kompaktierung" (nicht mehr existent) aus UI entfernt. Remote-Steuerung: SpeedSlider + Zeitregler volle Breite, Tastatur-Buttons (⏮ ← → ⏭ ↩ − +) hinzugefügt. Panel-Öffnungszone auf 153px angepasst. Slider-Drag hält Panel offen.
+
+**Nächster Schritt (Stand 2026-07-20, TODO.md-Abarbeitung):** Beschriftung der Ziel-Quadrate (Formel unten/ausgerechneter Wert links, `showLabels`), Flug-Animation-Abschaltung ab konfigurierbarer Geschwindigkeit (`flightAnimSpeedThreshold`, kein Compile-Impact), Intro-Screen (nicht-blockierend, Play-Trigger) - alle drei in `docs/DONE.md` dokumentiert. Offen: Phase 6 (Politur), Virtual-Canvas/Multi-Viewport-Konzept (TODO.md, noch nicht begonnen), `RemoteControl` als foldbare Route.
 
 ## 8. Deployment: GitHub Pages (committeter Build, kein CI)
+
+Nur die **statische Demo ohne Relay/Fernsteuerung** (kein Server, kein
+`API_KEYS`). Für den Exponat-Betrieb (embedded Relay, QR-Fernsteuerung,
+Docker/Tailscale) siehe stattdessen `docs/DEPLOYMENT.md`.
 
 **Stand 2026-07-16:** GitHub Pages läuft über **Branch-Deploy** (`gh-pages`, `legacy`), nicht über GitHub Actions. Grund: pnpm 11.13 blockiert `pnpm install` bei esbuild-Build-Scripts (`ERR_PNPM_IGNORED_BUILDS`) — der ursprüngliche `build_type: workflow` (`.github/workflows/deploy-pages.yml`) schlug in CI daher dauerhaft fehl. Gelöst durch lokalen Build + committetes `dist/`.
 
