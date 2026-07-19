@@ -110,8 +110,10 @@ Welt-Position eines Stücks berechnen).
 
 ## CODE-QUALITÄT / REFACTOR
 
-- [ ] **`selection_strategy_prototype.html`** — in `src/` / `docs/` ordnen,
-      da kein Haupt-Tool mehr.
+- [x] **`selection_strategy_prototype.html`** — in `src/` / `docs/` ordnen,
+      da kein Haupt-Tool mehr. (Bereits in einer früheren Aufräum-Runde
+      entfernt, siehe Commit "Legacy-Prototypen ... entfernt" - Datei
+      existiert nicht mehr im Repo.)
 
 ## DOKUMENTATION
 
