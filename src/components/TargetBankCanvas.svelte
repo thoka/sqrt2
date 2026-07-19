@@ -530,15 +530,22 @@
 			ctx.translate(center_x, center_y);
 			if (Math.abs(rot) > 1e-4) ctx.rotate(rot);
 			ctx.fillRect(-pw / 2, -ph / 2, pw, ph);
-			if (LINE_WIDTH_PX > 0 && landed) {
-				if (Math.abs(rot) <= 1e-4 && alpha >= 0.999) {
-					gridPath.rect(center_x - pw / 2, center_y - ph / 2, pw, ph);
-				} else if (Math.abs(rot) <= 1e-4 && (alpha > 0.8 || p.type === 'Z_ghost')) {
-					ctx.filter = edgeFilter;
+			if (LINE_WIDTH_PX > 0) {
+				if (landed && alpha >= 0.999) {
+					// gridPath wird ohne Rotation gestroked.
+					// Bei gefuellter Drehung: pw/ph sind cross-lerpt,
+					// Rahmen braucht aber die visuell korrekten Maße.
+					const fw = Math.abs(rot) > 1e-4 ? ph : pw;
+					const fh = Math.abs(rot) > 1e-4 ? pw : ph;
+					gridPath.rect(center_x - fw / 2, center_y - fh / 2, fw, fh);
+				} else if (landed) {
 					ctx.strokeStyle = `rgba(0,0,0, ${alpha * 0.9})`;
 					ctx.lineWidth = LINE_WIDTH_PX;
 					ctx.strokeRect(-pw / 2, -ph / 2, pw, ph);
-					ctx.filter = 'none';
+				} else {
+					ctx.strokeStyle = `rgba(0,0,0, ${alpha * 0.9})`;
+					ctx.lineWidth = LINE_WIDTH_PX;
+					ctx.strokeRect(-pw / 2, -ph / 2, pw, ph);
 				}
 			}
 			ctx.restore();
@@ -546,7 +553,6 @@
 		}
 
 		for (let p of render_pipeline) drawPiece(p, false);
-		for (let p of render_pipeline) drawPiece(p, true);
 
 		// Zeichne Rand (gridPath: achsen-aligned, volle Deckkraft)
 		if (LINE_WIDTH_PX > 0) {
@@ -557,6 +563,8 @@
 			ctx.stroke(gridPath);
 			ctx.restore();
 		}
+
+		for (let p of render_pipeline) drawPiece(p, true);
 
 		renderHud(ctx);
 
