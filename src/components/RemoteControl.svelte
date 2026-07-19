@@ -13,6 +13,7 @@
 	//    pin) trägt (vom Exponat generierter Gast-Link).
 	import ControlPanel from './ControlPanel.svelte';
 	import PlaybackBar from './PlaybackBar.svelte';
+	import SpeedSlider from './SpeedSlider.svelte';
 	import { initSync, initNetworkSync } from '../lib/syncedStore.js';
 	import { createWsRoom } from '../lib/connection.js';
 
@@ -52,7 +53,10 @@
 	<div id="controlPanelMount">
 		<ControlPanel visibleTabs={['Grundeinstellungen']} />
 	</div>
-	<div id="playbackBarMount"><PlaybackBar /></div>
+	<div class="remote-playback">
+		<SpeedSlider variant="control" />
+		<div id="playbackBarMount"><PlaybackBar /></div>
+	</div>
 </main>
 
 <style>
@@ -91,5 +95,18 @@
 	:global(hr) {
 		border: 1px solid #334155;
 		margin: 10px 0;
+	}
+	.remote-playback {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		width: 100%;
+	}
+	.remote-playback :global(#playbackBarMount) {
+		width: 100%;
+	}
+	.remote-playback :global(#timeSlider) {
+		flex: 1 1 auto;
+		min-width: 0;
 	}
 </style>

@@ -19,7 +19,6 @@
 	// (oninput), genau wie im alten Panel.
 	import { configStore, playbackStore, compiledStore } from '../lib/stores.js';
 	import { displayStore } from '../lib/displayStore.js';
-	import SpeedSlider from './SpeedSlider.svelte';
 	import { buildStateParams } from '../lib/urlState.js';
 	import { initNetworkSync } from '../lib/syncedStore.js';
 	import {
@@ -311,7 +310,16 @@
 			</label>
 		</div>
 
-		<SpeedSlider variant="control" />
+		<label class="control-group" style="margin-top:6px;"
+			>Auto-Zoom: Mindestpixelgröße
+			<input type="range" min="0" max="1" step="0.001" value={minPxPos} oninput={onMinPxInput} />
+			<span class="zoom-readout"
+				>{$configStore.autoZoomMinPx.toLocaleString('de-DE', {
+					minimumFractionDigits: 3,
+					maximumFractionDigits: 3,
+				})} px</span
+			>
+		</label>
 
 		<label class="control-group" style="margin-top: 5px;"
 			>Zoom
@@ -331,37 +339,6 @@
 			Auto-Zoom aktiv - übersteuert den Regler nach oben
 		</div>
 
-		<label class="control-group" style="margin-top:6px;">
-			<input
-				type="checkbox"
-				checked={$configStore.flightRotation}
-				onchange={onChangeChecked('flightRotation')}
-			/>
-			T pieces drehen
-		</label>
-		<label class="control-group" style="margin-top:6px;"
-			>Fliegende Teile: Transparenz
-			<input
-				type="range"
-				min="0"
-				max="1"
-				step="0.01"
-				value={$configStore.flyingAlpha}
-				oninput={onInputFloat('flyingAlpha', 0.59)}
-			/>
-			<span class="zoom-readout">{Math.round($configStore.flyingAlpha * 100)} %</span>
-		</label>
-		<label class="control-group" style="margin-top:6px;"
-			>Auto-Zoom: Mindestpixelgröße
-			<input type="range" min="0" max="1" step="0.001" value={minPxPos} oninput={onMinPxInput} />
-			<span class="zoom-readout"
-				>{$configStore.autoZoomMinPx.toLocaleString('de-DE', {
-					minimumFractionDigits: 3,
-					maximumFractionDigits: 3,
-				})} px</span
-			>
-		</label>
-
 		<div class="control-group" style="margin-top:10px;">
 			<div>
 				Bank-Zoom (automatisch, reale Basis) — <span class="zoom-readout" id="bankZoomLabel"
@@ -372,30 +349,6 @@
 				Restfläche der Bank — <span class="zoom-readout" id="bankAreaLabel">100%</span>
 			</div>
 		</div>
-
-		<label
-			class="control-group"
-			style="margin-top:10px; flex-direction: row; align-items: center; gap: 8px;"
-		>
-			<input
-				type="checkbox"
-				style="width: auto;"
-				checked={$configStore.compactionEnabled}
-				onchange={onChangeChecked('compactionEnabled')}
-			/>
-			Kompaktierung
-		</label>
-		<label class="control-group" style="margin-top:6px;"
-			>Übergangsdauer (Ticks)
-			<input
-				type="number"
-				min="0"
-				max="30"
-				step="1"
-				value={$configStore.compactionTransitionTicks}
-				onchange={onChangeInt('compactionTransitionTicks', $configStore.compactionTransitionTicks)}
-			/>
-		</label>
 	{/if}
 
 	{#if showTab('Animation') && activeTab === 'Animation'}
@@ -447,6 +400,27 @@
 				value={$configStore.pauseDuration}
 				oninput={onInputFloat('pauseDuration', 1.5)}
 			/>
+		</label>
+
+		<label class="control-group" style="margin-top:6px;">
+			<input
+				type="checkbox"
+				checked={$configStore.flightRotation}
+				onchange={onChangeChecked('flightRotation')}
+			/>
+			Pieces drehen
+		</label>
+		<label class="control-group" style="margin-top:6px;"
+			>Fliegende Teile: Transparenz
+			<input
+				type="range"
+				min="0"
+				max="1"
+				step="0.01"
+				value={$configStore.flyingAlpha}
+				oninput={onInputFloat('flyingAlpha', 0.59)}
+			/>
+			<span class="zoom-readout">{Math.round($configStore.flyingAlpha * 100)} %</span>
 		</label>
 
 		<div class="muted-note" style="margin-top:10px;">Diagnose (Stotter-Untersuchung):</div>

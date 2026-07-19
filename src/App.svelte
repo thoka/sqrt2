@@ -115,8 +115,17 @@
 
 		// Settings-Panel (oben rechts) + Timeline (unten) erscheinen bei
 		// Mausnähe - für den Exponat-/Ausstellungs-Kontext.
-		const TOP_RIGHT_ZONE_PX = 160;
+		const TOP_RIGHT_ZONE_PX = 153;
 		const BOTTOM_REVEAL_ZONE_PX = 90;
+		let sliderDragging = false;
+		const onSliderDown = (e) => {
+			if (e.target.type === 'range') sliderDragging = true;
+		};
+		const onSliderUp = () => {
+			sliderDragging = false;
+		};
+		document.addEventListener('mousedown', onSliderDown);
+		document.addEventListener('mouseup', onSliderUp);
 		const onMove = (e) => {
 			let nearBottom = window.innerHeight - e.clientY < BOTTOM_REVEAL_ZONE_PX;
 			bottomBar.classList.toggle('visible', nearBottom);
@@ -132,14 +141,18 @@
 					e.clientY >= r.top &&
 					e.clientY <= r.bottom;
 			}
-			settingsPanel.classList.toggle('open', nearTopRight || overSettingsPanel);
+			settingsPanel.classList.toggle('open', nearTopRight || overSettingsPanel || sliderDragging);
 		};
 		document.addEventListener('mousemove', onMove);
 
 		// Tastensteuerung: wird ueber <svelte:window> im Template gebunden
 		// (Svelte 5 braucht den Compiler-Transform fuer $state-Reaktivitaet).
 
-		return () => document.removeEventListener('mousemove', onMove);
+		return () => {
+			document.removeEventListener('mousemove', onMove);
+			document.removeEventListener('mousedown', onSliderDown);
+			document.removeEventListener('mouseup', onSliderUp);
+		};
 	});
 
 	// Tastensteuerung (siehe TODO.md "Tastensteuerung")
