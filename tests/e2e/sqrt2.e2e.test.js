@@ -368,3 +368,15 @@ test('Geschwindigkeit: Fernsteuerung ändert Speed im Hauptfenster (Sync)', asyn
 	await pageA.close();
 	await pageB.close();
 });
+
+// Intro-Screen (TODO.md "Intro-Screen"): kurz sichtbar beim Start, blendet
+// sich aus, sobald die Wiedergabe startet (Space) - und blockiert dabei
+// selbst keine Klicks/Tastatur (pointer-events: none).
+test('Intro-Screen: sichtbar beim Start, verschwindet bei Play', async ({ page }) => {
+	await page.goto('/');
+	await expect(page.locator('.intro-overlay')).toBeVisible();
+	await expect(page.locator('.intro-settings-hint')).toContainText('Einstellungen');
+
+	await page.keyboard.press(' ');
+	await expect(page.locator('.intro-overlay')).not.toBeVisible({ timeout: 2000 });
+});

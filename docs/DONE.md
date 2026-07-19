@@ -49,3 +49,21 @@
   vollständig gelandete, deckende Stück - kein Zwischenzustand mehr.
 - Kein Compile-Impact (`flightAnimSpeedThreshold` bewusst NICHT in
   `compileRelevantKey`, wie `playSpeed` selbst).
+
+## Intro-Screen (2026-07-20)
+- `App.svelte`: `showIntro`-State, `.intro-overlay` (zentrierte Willkommens-Box
+  "√2 als Fläche" + kurzer Text) plus `.intro-settings-hint` fix oben rechts
+  ("Einstellungen ↗") - positioniert genau über der bestehenden Maus-Hover-
+  Zone, die die Einstellungen öffnet (`TOP_RIGHT_ZONE_PX`, siehe TODO.md
+  "Einstellungen aufräumen").
+- Blendet sich nach `INTRO_DURATION_MS` (6 s) von selbst aus, ODER sofort
+  sobald `playbackStore.isPlaying` wahr wird (EIN Subscribe deckt Space,
+  Play-Button UND Remote-Steuerung gleichzeitig ab, da alle über denselben
+  Store laufen).
+- Bewusst `pointer-events: none` auf dem gesamten Overlay (anders als das
+  bestehende `.help-overlay` bei "?"): der Intro-Screen ist rein informativ
+  und darf im Exponat-Kontext NIE Klicks auf Play/Timeline blockieren, auch
+  nicht kurz vor dem automatischen Ausblenden.
+- E2E-Test `tests/e2e/sqrt2.e2e.test.js` ("Intro-Screen: sichtbar beim Start,
+  verschwindet bei Play") - Sichtbarkeit + Play-Trigger, da DOM-/Mount-Pfad
+  laut AGENTS.md nicht nur per Unit-Test verifiziert werden darf.

@@ -90,8 +90,8 @@ Welt-Position eines Stücks berechnen).
 - [x] ?: Hilfe-Overlay
 
 ## Intro-Screen
-- [ ] Anzeige eines Intro-Screens für kurze Zeit beim Start. Ausschalten bei Play.
-- [ ] Hinweis auf Einstellungen oben rechts
+- [x] Anzeige eines Intro-Screens für kurze Zeit beim Start. Ausschalten bei Play.
+- [x] Hinweis auf Einstellungen oben rechts
 
 ## Fernsteuerung / Connection (Nachpflege)
 
