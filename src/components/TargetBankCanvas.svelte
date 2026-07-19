@@ -449,7 +449,9 @@
 			drawCommonAncestorExponent(ctx, drawnPieces, 50 + BANK_X_OFFSET * V_SCALE_BANK * scale + 8);
 		}
 
-		for (let p of render_pipeline) {
+		// Zwei Durchläufe: erst alle liegenden (mit Rahmen), dann alle
+		// fliegenden (ohne Rahmen, immer obendrauf).
+		function drawPiece(p, onlyFlying) {
 			let alpha = 1.0;
 			let is_visible = false;
 			if (p.type === 'Z_direct' || p.type === 'S_macro' || p.type === 'R_macro') {
@@ -468,14 +470,18 @@
 				}
 			}
 
-			if (!is_visible) continue;
-
-			ctx.fillStyle = COLORS[p.bp.k % COLORS.length];
-			ctx.globalAlpha = alpha;
+			if (!is_visible) return;
 
 			let fly_t = Math.max(0, Math.min(1, (u_time - p.time_fly) / 0.8));
 			if (p.type === 'Z_source' || p.type === 'Z_ghost') fly_t = p.type === 'Z_ghost' ? 1 : 0;
 			fly_t = fly_t * fly_t * (3.0 - 2.0 * fly_t);
+
+			const landed = fly_t <= 0.01 || fly_t >= 0.99;
+			if (onlyFlying && landed) return;
+			if (!onlyFlying && !landed) return;
+
+			ctx.fillStyle = COLORS[p.bp.k % COLORS.length];
+			ctx.globalAlpha = alpha;
 
 			let tx = dyn_prefA[p.u];
 			let ty = dyn_prefA[p.v];
@@ -487,16 +493,6 @@
 			let b_eff = Math.pow(BASE, 1.0 - effective_t_AB);
 			if (b_eff < 1.000001) b_eff = 1.000001;
 
-			/*
-			TODO: Haben wir das noch?
-			if (p.type === 'Z_micro') {
-				target_w = tw > th ? tw / b_eff : tw;
-				target_h = tw > th ? th : th / b_eff;
-				tx = tx + (tw > th ? p.i * target_w : 0);
-				ty = ty + (tw > th ? 0 : p.i * target_h);
-			}
-			*/
-
 			let origin = bankOriginState(p);
 			let [start_x, start_y, start_w, start_h] = project(
 				0,
@@ -507,94 +503,50 @@
 				origin?.rect,
 				origin?.camera,
 			);
-			let end_x, end_y, end_h, end_w;
+			let [end_x, end_y, end_w, end_h] = project(tx, ty, target_w, target_h, true);
 
-			[end_x, end_y, end_w, end_h] = project(tx, ty, target_w, target_h, true);
-
-			// Position: Center interpolieren (nicht linke obere Ecke),
-			// weil bei reiner Drehung die Größe konstant bleibt und
-			// das Stück sonst nicht auf der Zielzelle landet.
 			let px = (start_x + start_w / 2) * (1 - fly_t) + (end_x + end_w / 2) * fly_t;
 			let py = (start_y + start_h / 2) * (1 - fly_t) + (end_y + end_h / 2) * fly_t;
-			// Form + Drehung ueber morphRect (FLIGHT-MORPH-SPEC): Flaeche
-			// konstant, optional 90°-Drehung statt Streckung. Z_micro ist der
-			// bewusste Streckmodus (keine Morph-Form) - dort lineare Kanten.
-			// targetRot ist beim Compile bestimmt (0, +PI/2 oder -PI/2).
+
 			let pw, ph, rot;
 			if (p.type === 'Z_micro') {
 				pw = start_w * (1 - fly_t) + end_w * fly_t;
 				ph = start_h * (1 - fly_t) + end_h * fly_t;
 				rot = 0;
 			} else {
-				// Drehung: targetRot wird linear über fly_t interpoliert
 				rot = (p.targetRot || 0) * fly_t;
 				if (Math.abs(rot) < 1e-9) {
-					// TK: hm, das muss auch mit drehung interpretiert werden
-					// Keine Drehung: Form morph zum Ziel (alter Lerp)
 					pw = start_w * (1 - fly_t) + end_w * fly_t;
 					ph = start_h * (1 - fly_t) + end_h * fly_t;
 				} else {
-					// Drehung: Form morph zum Ziel mit vertauschen Breiten)
 					pw = start_w * (1 - fly_t) + end_h * fly_t;
 					ph = start_h * (1 - fly_t) + end_w * fly_t;
 				}
 			}
 
-			// Einheitlicher Zeichenpfad fuer alle Flug-Typen: zentriert +
-			// rotiert. gridPath (Kanten-Gitter) nur bei achsen-aligned
-			// (rot ~ 0) und voller Deckkraft - sonst nur fillRect.
 			let center_x = px;
 			let center_y = py;
 			ctx.save();
 			ctx.translate(center_x, center_y);
-
 			if (Math.abs(rot) > 1e-4) ctx.rotate(rot);
-
 			ctx.fillRect(-pw / 2, -ph / 2, pw, ph);
-			if (LINE_WIDTH_PX > 0) {
+			if (LINE_WIDTH_PX > 0 && landed) {
 				if (Math.abs(rot) <= 1e-4 && alpha >= 0.999) {
-					// Achsen-aligned, volle Deckkraft: Rechteck in gridPath
 					gridPath.rect(center_x - pw / 2, center_y - ph / 2, pw, ph);
-				} else if (Math.abs(rot) > 1e-4 && alpha >= 0.999) {
-					// Gedreht, volle Deckkraft: rotiertes Polygon in gridPath
-					const cos = Math.cos(rot),
-						sin = Math.sin(rot);
-					const hw = pw / 2,
-						hh = ph / 2;
-					const corners = [
-						[-hw, -hh],
-						[hw, -hh],
-						[hw, hh],
-						[-hw, hh],
-					];
-					gridPath.moveTo(
-						center_x + cos * corners[0][0] - sin * corners[0][1],
-						center_y + sin * corners[0][0] + cos * corners[0][1],
-					);
-					for (let i = 1; i < 4; i++) {
-						gridPath.lineTo(
-							center_x + cos * corners[i][0] - sin * corners[i][1],
-							center_y + sin * corners[i][0] + cos * corners[i][1],
-						);
-					}
-					gridPath.closePath();
 				} else if (Math.abs(rot) <= 1e-4 && (alpha > 0.8 || p.type === 'Z_ghost')) {
-					// Achsen-aligned, teilweise Deckkraft: direkt stroke
 					ctx.filter = edgeFilter;
 					ctx.strokeStyle = `rgba(0,0,0, ${alpha * 0.9})`;
 					ctx.lineWidth = LINE_WIDTH_PX;
 					ctx.strokeRect(-pw / 2, -ph / 2, pw, ph);
 					ctx.filter = 'none';
-				} else if (Math.abs(rot) > 1e-4) {
-					// Gedreht, teilweise Deckkraft: direkt stroke
-					ctx.strokeStyle = `rgba(0,0,0, ${alpha * 0.9})`;
-					ctx.lineWidth = LINE_WIDTH_PX;
-					ctx.strokeRect(-pw / 2, -ph / 2, pw, ph);
 				}
 			}
 			ctx.restore();
 			ctx.globalAlpha = 1.0;
 		}
+
+		for (let p of render_pipeline) drawPiece(p, false);
+		for (let p of render_pipeline) drawPiece(p, true);
 
 		// Zeichne Rand (gridPath: achsen-aligned, volle Deckkraft)
 		if (LINE_WIDTH_PX > 0) {
