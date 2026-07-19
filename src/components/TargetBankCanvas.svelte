@@ -579,7 +579,11 @@
 
 		for (let p of render_pipeline) drawPiece(p, true);
 
-		renderHud(ctx, teilDCamera.z, t_x + t_w);
+		// Rechte Kante der Bank-Bounding-Box in Canvas-Pixeln (fuer HUD-Positionierung).
+		let bankRightEdge =
+			(BANK_X_OFFSET + (teilDCamera.cx + bank_frame.w / 2) * V_SCALE_BANK) * scale;
+
+		renderHud(ctx, teilDCamera.z, bankRightEdge);
 
 		ctx.restore();
 	}
@@ -651,7 +655,7 @@
 		}
 	}
 
-	function renderHud(ctx, zoom, targetRightEdge) {
+	function renderHud(ctx, zoom, bankRightEdge) {
 		const enabled = get(configStore).hudUpdateEnabled;
 		const ready = compiledRef && compiledRef.axes;
 		// Anzeige aus: gecachten Zustand zuruecksetzen, nichts malen.
@@ -734,7 +738,7 @@
 					: Math.round(zoom).toLocaleString('de-DE') + 'x';
 			c.font = fontFor(Math.round(fontSize * 0.75));
 			let zoomW = c.measureText(zoomFmt).width;
-			let zoomX = targetRightEdge - zoomW;
+			let zoomX = bankRightEdge - zoomW;
 			let zoomY = y + Math.round(lineH * 0.3);
 			c.fillText(zoomFmt, zoomX, zoomY);
 			hudCache = { hash, w: W, h: H, on: true };
