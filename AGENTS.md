@@ -151,7 +151,16 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
 - Vite bindet via `server.host:true` an 0.0.0.0: Windows/WSL unter
   `localhost`; Cross-Device via Tailscale (`<host>.<tailnet>.ts.net`).
 - Offene Reste: ungenutzte `GLOBAL_*` in `TargetBankCanvas.svelte` (nur
-  ESLint-Warnungen); Phase 6 (Politur) offen.
+  ESLint-Warnungen); Phase 6 (Politur) offen; Bank-Flackern zu
+  debuggen (Todo-Tastensteuerung hilft).
+- **Flight-Morph Rendering (Stand 2026-07-19):** ZeiRendering-Passes
+  in `TargetBankCanvas.svelte`: (1) liegende Stücke → `gridPath`-Stroke
+  (Rahmen Batch), (2) fliegende Stücke → direkt stroke im rotierten
+  Kontext (immer ganz oben). Gedrehte landed Pieces: `gridPath.rect`
+  braucht die visuell korrekten Maße (pw/ph getauscht), nicht die
+  cross-lerpten, weil `gridPath` ohne Rotation gestroked wird.
+  `targetRot` wird beim Compile bestimmt (0, ±PI/2), `flightRotation`
+  (Checkbox, default an) schaltet Drehung globally ab.
 - **`tests/unit/compiler-split.test.js` hängt (Timeout 124):** die
   Config-Matrix nutzt base 16 / depth 15 → Stückzahl explodiert (16^15),
   schon im Original-Code reproduzierbar, NICHT durch eigene Änderungen
@@ -169,5 +178,5 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
 
 ## Migration
 
-`TOOLING_SPEC.md` = lebendiges Doc (Phasen 0-5 erledigt; Phase 6 Politur
+`TOOLING_SPEC.md` = lebendiges Doc (Phasen 0-8 erledigt; Phase 6 Politur
 offen). Nach jedem Schritt dort Status + "Nächster Schritt" aktualisieren.

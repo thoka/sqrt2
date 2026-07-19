@@ -39,8 +39,8 @@ Zeitliche Glättung gibt es schon: `fly_t = smoothstep(fly_t_raw)`
   Drehung + Streckung aufgeteilt (keine harte Entscheidung).
 - **Urspüngliche Quadrate werden nicht gedreht** (Drehung sinnfrei bei
   `sw == sh`).
-- **Alles konfigurierbar** (`morphRotWeight`), Vorgabe sichtbar erst
-  nach Fertigstellung.
+- **Alles konfigurierbar** (`flightRotation` Checkbox, default an),
+  Vorgabe sichtbar erst nach Fertigstellung.
 
 ## 3. Nicht-Ziel / Ausklammerung
 
@@ -91,7 +91,7 @@ Pulsieren mehr.
 - Neue Datei `src/lib/morphRect.js` (reine Funktion, Unit-getestet).
 - In `render_pipeline`-Schleife (ab Zeile ~477): statt `target_w/target_h`
   linear zu lerpen, `morphRect(start_w, start_h, end_w, end_h, fly_t,
-  morphRotWeight)` aufrufen → liefert `pw, ph, rot`.
+  flightRotation ? 1 : 0)` aufrufen → liefert `pw, ph, rot`.
   - `start_w/h` aus `bankOriginState` (bereits da, `start_x/y/w/h`).
   - `end_w/h` aus den `dyn_prefA`/`dyn_axes_w` (bereits da, `tx/ty/tw/th`).
 - **Rotation anwenden für ALLE Flug-Typen**, nicht nur `R_macro`:
@@ -104,10 +104,9 @@ Pulsieren mehr.
 
 ## 6. Konfiguration
 
-- Neues Feld `morphRotWeight` in `configStore` (Default 0.5, Laufzeit-
-  Feld, **kein Recompile** — GOTCHA #10: nicht in `compileRelevantKey`).
-- URL-Parameter (urlState.js, analog zu `speed`/`linewidth`):
-  `morphrot` (0…1, parse float, Default 0.5).
+- Feld `flightRotation` in `configStore` (Default `true`, Bool,
+  Recompile nötig — in `compileRelevantKey`).
+- URL-Parameter (urlState.js): `rotate` (1=an, 0=aus, Default 1).
 - SETTINGS-Eintrag in `sqrt2.html` (AGENTS.md GOTCHA #4: ein Eintrag
   `{key, phase, get, set}`).
 - Regler im ControlPanel (Animations-Optionen), dezent wie die anderen.
