@@ -587,7 +587,9 @@
 				? GLOBAL_TEIL_D_ZOOM_SPLINE.at(0)
 				: { cx: 0.5, cy: 0.5 };
 			_initialBankRightEdge =
-				(BANK_X_OFFSET + (initCam.cx + initFrame.frame.w / 2) * V_SCALE_BANK) * scale;
+				(BANK_X_OFFSET + (initCam.cx + initFrame.frame.w / 2) * V_SCALE_BANK) *
+				scale *
+				RENDER_SCALE;
 		}
 		let bankRightEdge = _initialBankRightEdge ?? 0;
 
