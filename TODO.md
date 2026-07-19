@@ -4,10 +4,19 @@ Offene Punkte, nach Relevanz sortiert. Erledigtes wird durchgestrichen
 (`~~`). Jede Stufe bekommt eigene Tests (Unit und/oder e2e) — siehe
 `AGENTS.md` ("Tests für alle Stufen"). Vor Commit: `pnpm format` + `pnpm check`.
 
-## Skalierung
-- [x] Weiße Quadrate am Anfang müssen exakt gleich groß sein und vertikal gleich ausgerichtet sein.
-- [x] Test dafür erstellen (`tests/unit/zoom-start-equal.test.js`)
+## Einstellungen aufräumen
+- [ ] Geschwindigkeit: wird im Config-Tab nicht gebraucht. 
+- [ ] Den Bereich, der die Einstellungen öffnet auf die ganze Höhe des Hauptfenster ausrichten. Breite: 153 px vom rechten Rand
+- [ ] Pieces drehen: einzeilig und in den Animations-Tab verschieben
+- [ ] Fliegende Transparenz: in den Animations-Tab verschieben
+- [ ] "Zoom" unter "Auto-Zoom"
+- [ ] "Kompaktierung" gibt es nicht mehr
 
+## Remote-Steuerung
+ - [ ] Zeitregler volle Breite
+ - [ ] Geschwindigkeitsregeler soll direkt über der Zeit  sichbar sein.
+ - [ ] Buttons für alle Tastatureingaben (außer "?" vorhehen)
+ 
 ## Steuerung
 - [ ] Solange ein slider bewegt wird, soll das verlassen des parents nicht den Dialog schhließen. Das passiert zuerzeit in den Einstellungen.
 
