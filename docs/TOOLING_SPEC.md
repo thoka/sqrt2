@@ -75,7 +75,7 @@ Jede Phase ist einzeln committ- und testbar - wichtig, damit eine künftige Sitz
 
 **Neue Erkenntnis (Phase 7):** `window.MathJax` wird im `<head>` VOR dem Laden der MathJax-Bibliothek gesetzt (`{ chtml: { displayAlign: 'left' } }`) – `MathJax.typesetPromise` existiert erst NACH dem async-Laden. In `updateHUD` (jetzt `src/App.svelte`) daher NIEMALS blind `if (window.MathJax) MathJax.typesetPromise(...)` aufrufen: das wirft (`typesetPromise is not a function`) und bricht `App.onMount` ab → die Kind-Mounts (Canvas!) werden wieder abgebaut. Korrekt: `typeof window.MathJax.typesetPromise === 'function'` prüfen, sonst `window.MathJax?.startup?.promise` nutzen, sonst nur skalieren. Siehe `src/App.svelte`.
 
-**Nächster Schritt (Stand 2026-07-19):** Flight-Morph auf `master` gemergt: Flächenkonstanz + optionale 90°-Drehung, `targetRot` Compile-Time, `flightRotation`-Checkbox, `flyingAlpha`-Slider (Default 0.59) mit smoothstep-Fade, Tastensteuerung (Space/Pfeile/PgUp/PgDn/Return/+/-,? Hilfe-Overlay). Offen: Phase 6 (Politur), "Reine-Svelte"-Vertiefung. E2E: `tests/relay/test-sqrt2-sync.mjs`.
+**Nächster Schritt (Stand 2026-07-20):** Settings aufgeräumt: SpeedSlider aus Grundeinstellungen-Tab entfernt, "Pieces drehen" + "Fliegende Transparenz" in Animations-Tab verschoben, "Zoom" unter "Auto-Zoom" gruppiert, "Kompaktierung" (nicht mehr existent) aus UI entfernt. Remote-Steuerung: SpeedSlider + Zeitregler volle Breite, Tastatur-Buttons (⏮ ← → ⏭ ↩ − +) hinzugefügt. Panel-Öffnungszone auf 153px angepasst. Slider-Drag hält Panel offen. Offen: Phase 6 (Politur).
 
 ## 8. Deployment: GitHub Pages (committeter Build, kein CI)
 
