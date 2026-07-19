@@ -487,12 +487,15 @@
 			let b_eff = Math.pow(BASE, 1.0 - effective_t_AB);
 			if (b_eff < 1.000001) b_eff = 1.000001;
 
+			/*
+			TODO: Haben wir das noch?
 			if (p.type === 'Z_micro') {
 				target_w = tw > th ? tw / b_eff : tw;
 				target_h = tw > th ? th : th / b_eff;
 				tx = tx + (tw > th ? p.i * target_w : 0);
 				ty = ty + (tw > th ? 0 : p.i * target_h);
 			}
+			*/
 
 			let origin = bankOriginState(p);
 			let [start_x, start_y, start_w, start_h] = project(
@@ -504,7 +507,9 @@
 				origin?.rect,
 				origin?.camera,
 			);
-			let [end_x, end_y, end_w, end_h] = project(tx, ty, target_w, target_h, true);
+			let end_x, end_y, end_h, end_w;
+
+			[end_x, end_y, end_w, end_h] = project(tx, ty, target_w, target_h, true);
 
 			// Position: Center interpolieren (nicht linke obere Ecke),
 			// weil bei reiner Drehung die Größe konstant bleibt und
@@ -524,13 +529,14 @@
 				// Drehung: targetRot wird linear über fly_t interpoliert
 				rot = (p.targetRot || 0) * fly_t;
 				if (Math.abs(rot) < 1e-9) {
+					// TK: hm, das muss auch mit drehung interpretiert werden
 					// Keine Drehung: Form morph zum Ziel (alter Lerp)
 					pw = start_w * (1 - fly_t) + end_w * fly_t;
 					ph = start_h * (1 - fly_t) + end_h * fly_t;
 				} else {
-					// Mit Drehung: Seitenlängen konstant, Canvas-Rotation
-					pw = start_w;
-					ph = start_h;
+					// Drehung: Form morph zum Ziel mit vertauschen Breiten)
+					pw = start_w * (1 - fly_t) + end_h * fly_t;
+					ph = start_h * (1 - fly_t) + end_w * fly_t;
 				}
 			}
 
@@ -541,23 +547,56 @@
 			let center_y = py;
 			ctx.save();
 			ctx.translate(center_x, center_y);
+
 			if (Math.abs(rot) > 1e-4) ctx.rotate(rot);
+
 			ctx.fillRect(-pw / 2, -ph / 2, pw, ph);
 			if (LINE_WIDTH_PX > 0) {
 				if (Math.abs(rot) <= 1e-4 && alpha >= 0.999) {
-					gridPath.rect(-pw / 2, -ph / 2, pw, ph);
+					// Achsen-aligned, volle Deckkraft: Rechteck in gridPath
+					gridPath.rect(center_x - pw / 2, center_y - ph / 2, pw, ph);
+				} else if (Math.abs(rot) > 1e-4 && alpha >= 0.999) {
+					// Gedreht, volle Deckkraft: rotiertes Polygon in gridPath
+					const cos = Math.cos(rot),
+						sin = Math.sin(rot);
+					const hw = pw / 2,
+						hh = ph / 2;
+					const corners = [
+						[-hw, -hh],
+						[hw, -hh],
+						[hw, hh],
+						[-hw, hh],
+					];
+					gridPath.moveTo(
+						center_x + cos * corners[0][0] - sin * corners[0][1],
+						center_y + sin * corners[0][0] + cos * corners[0][1],
+					);
+					for (let i = 1; i < 4; i++) {
+						gridPath.lineTo(
+							center_x + cos * corners[i][0] - sin * corners[i][1],
+							center_y + sin * corners[i][0] + cos * corners[i][1],
+						);
+					}
+					gridPath.closePath();
 				} else if (Math.abs(rot) <= 1e-4 && (alpha > 0.8 || p.type === 'Z_ghost')) {
+					// Achsen-aligned, teilweise Deckkraft: direkt stroke
 					ctx.filter = edgeFilter;
 					ctx.strokeStyle = `rgba(0,0,0, ${alpha * 0.9})`;
 					ctx.lineWidth = LINE_WIDTH_PX;
 					ctx.strokeRect(-pw / 2, -ph / 2, pw, ph);
 					ctx.filter = 'none';
+				} else if (Math.abs(rot) > 1e-4) {
+					// Gedreht, teilweise Deckkraft: direkt stroke
+					ctx.strokeStyle = `rgba(0,0,0, ${alpha * 0.9})`;
+					ctx.lineWidth = LINE_WIDTH_PX;
+					ctx.strokeRect(-pw / 2, -ph / 2, pw, ph);
 				}
 			}
 			ctx.restore();
 			ctx.globalAlpha = 1.0;
 		}
 
+		// Zeichne Rand (gridPath: achsen-aligned, volle Deckkraft)
 		if (LINE_WIDTH_PX > 0) {
 			ctx.save();
 			ctx.filter = edgeFilter;
@@ -567,25 +606,6 @@
 			ctx.restore();
 		}
 
-		// === Zahlentafel l / l² / R AUF DEM CANVAS (statt DOM) ===
-		// Frueher DOM-#numberPanel: pro Ziffernwechsel innerHTML +
-		// updateNumberPanelScale() (scrollWidth/clientWidth -> erzwungener
-		// Reflow) -> neue Ruckler. JETZT direkt gemalt: exakte
-		// BigInt-Werte aus computeLiveL (Mathe unveraendert), nur die
-		// Darstellungsschicht ist Canvas statt DOM. Kein Reflow, kein
-		// innerHTML.
-		// Performance: das Canvas wird pro Frame voll geloescht, die
-		// Zahlentafel muesste also eigentlich jeden Frame neu gezeichnet
-		// werden - das (inkl. dem teuren computeLiveL/BigInt) war die
-		// Performance-Regression. Daher: die drei Zeilen werden NUR neu
-		// berechnet + auf ein OFFSCREEN-Canvas gemalt, wenn sich die
-		// angezeigten Werte (Hash ueber l/l²/R/Basis) ODER die
-		// Canvas-Groesse aendern. Pro Frame wird nur das gecachte
-		// Bitmap via drawImage aufgelegt (sehr guenstig).
-		// Schalter "Zahlendarstellung" (hudUpdateEnabled) schaltet die
-		// Anzeige weiterhin ab - wie vor dem Canvas-Umbau.
-		// Layout: linksbuendig oben, Schrift automatisch verkleinert,
-		// falls die laengste Zeile die verfuegbare Breite ueberschreitet.
 		renderHud(ctx);
 
 		ctx.restore();
