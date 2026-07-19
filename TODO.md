@@ -73,11 +73,9 @@ Welt-Position eines Stücks berechnen).
       ein fliegendes Stück überquert die Grenze ohne Sprung.
 
 ## Flug-Animation
-
-## Flug-Animation
-- [ ] Die Flug-Animation soll ab einer bestimmten Geschwindigkeit ausgeschaltet werden.
-- [ ] Diese Geschwindigkeit (Vorgabe 3) soll einstellbar sein in den Animations-Optionen.
-- [ ] Kein Recompile bei Ändeerungen.
+- [x] Die Flug-Animation soll ab einer bestimmten Geschwindigkeit ausgeschaltet werden.
+- [x] Diese Geschwindigkeit (Vorgabe 3) soll einstellbar sein in den Animations-Optionen.
+- [x] Kein Recompile bei Ändeerungen.
 
 ## Tastensteuerung
 

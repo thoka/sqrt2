@@ -80,6 +80,12 @@ const CONFIG_FIELDS = [
 		format: (c) => c.flyingAlpha.toFixed(2),
 	},
 	{
+		key: 'flightmaxspeed',
+		field: 'flightAnimSpeedThreshold',
+		parse: (v) => parseFloat(v) || 3.0,
+		format: (c) => String(c.flightAnimSpeedThreshold),
+	},
+	{
 		key: 'hud',
 		field: 'hudUpdateEnabled',
 		parse: (v) => v !== '0',

@@ -27,6 +27,7 @@ const DEFAULT_CONFIG = {
 	bankRenderEnabled: true,
 	flightRotation: true,
 	flyingAlpha: 0.59,
+	flightAnimSpeedThreshold: 3.0,
 	showLabels: false,
 };
 const DEFAULT_PLAYBACK = { time: 0, isPlaying: false, direction: 1 };
@@ -148,6 +149,7 @@ test('buildStateParams() setzt jeden erwarteten URL-Schlüssel', () => {
 		'modeab',
 		'rotate',
 		'flyalpha',
+		'flightmaxspeed',
 		'labels',
 		'time',
 		'play',

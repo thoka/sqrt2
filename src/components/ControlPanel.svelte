@@ -435,6 +435,16 @@
 			/>
 			<span class="zoom-readout">{Math.round($configStore.flyingAlpha * 100)} %</span>
 		</label>
+		<label class="control-group" style="margin-top:6px;"
+			>Flug-Animation aus ab Geschwindigkeit
+			<input
+				type="number"
+				min="0.1"
+				step="0.1"
+				value={$configStore.flightAnimSpeedThreshold}
+				onchange={onChangeFloat('flightAnimSpeedThreshold', 3.0)}
+			/>
+		</label>
 
 		<div class="muted-note" style="margin-top:10px;">Diagnose (Stotter-Untersuchung):</div>
 		<label

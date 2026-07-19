@@ -29,7 +29,7 @@
 		formatAxisFormulaLabel,
 		formatAxisValueLabel,
 	} from '../lib/numberRenderer.js';
-	import { clampDt } from '../lib/timeStep.js';
+	import { clampDt, isFlightAnimationEnabled } from '../lib/timeStep.js';
 	import { morphRect, computeRotation, rotationAngle } from '../lib/morphRect.js';
 	import {
 		setDebugCanvas,
@@ -102,6 +102,11 @@
 	let ANIM_PAUSE_DURATION = 1.5;
 	let ANIM_SPEED = 2.0;
 	let FLYING_ALPHA = 0.59;
+	// Ab dieser playSpeed wird die Flug-Animation abgeschaltet (Stücke
+	// erscheinen direkt an der Zielposition statt zu fliegen) - siehe
+	// drawPiece(): flightAnimEnabled steuert NUR den fly_t-Tween, NICHT die
+	// Sichtbarkeits-Fenster selbst (die bleiben unverändert).
+	let FLIGHT_ANIM_SPEED_THRESHOLD = 3.0;
 	// Beschriftung der Ziel-Quadrate (TODO.md "Darstellung"): unten die
 	// symbolische Formel, links der ausgerechnete Wert - siehe drawTargetLabels().
 	let SHOW_LABELS = false;
@@ -147,6 +152,7 @@
 			FLYING_ALPHA = c.flyingAlpha;
 			bankRenderEnabled = c.bankRenderEnabled;
 			SHOW_LABELS = c.showLabels;
+			FLIGHT_ANIM_SPEED_THRESHOLD = c.flightAnimSpeedThreshold;
 
 			let compiled = get(compiledStore);
 			compiledRef = compiled;
@@ -535,7 +541,15 @@
 			if (!is_visible) return;
 
 			let fly_t = Math.max(0, Math.min(1, (u_time - p.time_fly) / 0.8));
-			if (p.type === 'Z_source' || p.type === 'Z_ghost') fly_t = p.type === 'Z_ghost' ? 1 : 0;
+			if (p.type === 'Z_source' || p.type === 'Z_ghost') {
+				fly_t = p.type === 'Z_ghost' ? 1 : 0;
+			} else if (!isFlightAnimationEnabled(ANIM_SPEED, FLIGHT_ANIM_SPEED_THRESHOLD)) {
+				// Flug-Animation ab dieser Geschwindigkeit abgeschaltet (TODO.md
+				// "Flug-Animation"): Stück erscheint direkt an der Zielposition,
+				// kein Tween - die Sichtbarkeits-Fenster (is_visible) bleiben
+				// unveraendert, nur der Bank->Ziel-Uebergang selbst entfaellt.
+				fly_t = 1;
+			}
 			fly_t = fly_t * fly_t * (3.0 - 2.0 * fly_t);
 
 			const landed = fly_t >= 0.999;

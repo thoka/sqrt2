@@ -25,6 +25,11 @@ const DEFAULTS = {
 	flightRotation: true,
 	// Transparenz fliegender Stücke (0 = unsichtbar, 1 = deckend)
 	flyingAlpha: 0.59,
+	// Ab dieser Wiedergabe-Geschwindigkeit (playSpeed) wird die Flug-Animation
+	// (Bank -> Ziel) abgeschaltet - Stücke erscheinen dann direkt an ihrer
+	// Zielposition statt sichtbar zu fliegen (bei hoher Geschwindigkeit ist
+	// der Flug ohnehin nicht mehr wahrnehmbar, nur noch ein Ruckeln).
+	flightAnimSpeedThreshold: 3.0,
 	// Beschriftung der Ziel-Quadrate (Formel unten / ausgerechneter Wert links)
 	showLabels: false,
 	// Diagnose-Schalter (Stotter-Untersuchung): entkoppeln HUD-/Bank-
