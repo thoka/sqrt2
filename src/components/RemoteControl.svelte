@@ -161,10 +161,20 @@
 	}
 	.remote-playback :global(#playbackBarMount) {
 		width: 100%;
+		display: flex;
+		align-items: center;
+		gap: 14px;
 	}
 	.remote-playback :global(#playbackBarMount #timeSlider) {
 		flex: 1 1 auto;
 		min-width: 0;
+		width: 100%;
+	}
+	:global(.control-group input[type='range']) {
+		width: 100%;
+	}
+	:global(.slider-with-marker) {
+		width: 100%;
 	}
 	.remote-keys {
 		display: flex;
