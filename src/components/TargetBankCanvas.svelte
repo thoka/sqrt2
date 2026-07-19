@@ -579,7 +579,7 @@
 
 		for (let p of render_pipeline) drawPiece(p, true);
 
-		renderHud(ctx);
+		renderHud(ctx, teilDCamera.z);
 
 		ctx.restore();
 	}
@@ -651,7 +651,7 @@
 		}
 	}
 
-	function renderHud(ctx) {
+	function renderHud(ctx, zoom) {
 		const enabled = get(configStore).hudUpdateEnabled;
 		const ready = compiledRef && compiledRef.axes;
 		// Anzeige aus: gecachten Zustand zuruecksetzen, nichts malen.
@@ -662,14 +662,17 @@
 		// Exakte BigInt-Werte aus der Simulation (Mathe unveraendert).
 		let { N_l, N_R, GRID, AREA_SCALE } = computeLiveL(compiledRef, u_time, BASE);
 		let { P_str, P2_str, rem_str } = formatLiveNumbers(N_l, N_R, GRID, AREA_SCALE, BASE);
+		let zoomStr = formatZoomFactor(zoom);
 		// Jede Zeile: [Label, Wert, Basis-Subscript]. Die Basis wird als
 		// tiefgestellte, kleinere Zahl NACH dem Wert gemalt (kein Inline).
+		// Leerer String als Basis = kein Subscript (z.B. Bank-Zoom).
 		let rows = [
 			['l   = ', P_str, BASE],
 			['l²  = ', P2_str, BASE],
 			['R   = ', rem_str, BASE],
+			['z   = ', zoomStr, ''],
 		];
-		let hash = P_str + '|' + P2_str + '|' + rem_str + '|' + BASE;
+		let hash = P_str + '|' + P2_str + '|' + rem_str + '|' + zoomStr + '|' + BASE;
 
 		let W = canvasEl.width;
 		let H = canvasEl.height;
@@ -718,9 +721,11 @@
 				c.fillText(lab + val, x, y);
 				// Basis als Subscript: eine Stufe kleinere Schrift,
 				// leicht abgesenkt, direkt NACH dem Wert.
-				let wval = c.measureText(lab + val).width;
-				c.font = fontFor(subFont);
-				c.fillText(String(base), x + wval + 6, y + fontSize - subFont);
+				if (base) {
+					let wval = c.measureText(lab + val).width;
+					c.font = fontFor(subFont);
+					c.fillText(String(base), x + wval + 6, y + fontSize - subFont);
+				}
 				y += lineH;
 			}
 			hudCache = { hash, w: W, h: H, on: true };
