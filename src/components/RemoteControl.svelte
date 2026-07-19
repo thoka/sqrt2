@@ -162,7 +162,7 @@
 	.remote-playback :global(#playbackBarMount) {
 		width: 100%;
 	}
-	.remote-playback :global(#timeSlider) {
+	.remote-playback :global(#playbackBarMount #timeSlider) {
 		flex: 1 1 auto;
 		min-width: 0;
 	}
