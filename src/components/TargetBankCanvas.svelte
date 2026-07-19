@@ -725,16 +725,17 @@
 				}
 				y += lineH;
 			}
-			// Bank-Zoom: separates Feld weiter unten und weiter rechts,
-			// lange Zahl ohne Exponenten-Darstellung.
+			// Bank-Zoom: separates Feld weiter unten, rechtsbündig
+			// mit festerem Abstand zur rechten Bank-Kante.
 			let zoomFmt =
 				zoom < 10
 					? zoom.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) +
 						'x'
 					: Math.round(zoom).toLocaleString('de-DE') + 'x';
-			let zoomX = x0 + Math.round(lineH * 2.5);
-			let zoomY = y + Math.round(lineH * 0.3);
 			c.font = fontFor(Math.round(fontSize * 0.75));
+			let zoomW = c.measureText(zoomFmt).width;
+			let zoomX = (bankPanel.getBoundingClientRect().left - 40) * RENDER_SCALE - 4 - zoomW;
+			let zoomY = y + Math.round(lineH * 0.3);
 			c.fillText(zoomFmt, zoomX, zoomY);
 			hudCache = { hash, w: W, h: H, on: true };
 		}
