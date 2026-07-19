@@ -36,6 +36,7 @@
 		setDebugBankDrawnDetail,
 		isDebugEnabled,
 	} from '../lib/debugAgent.js';
+	import { es2018 } from 'globals';
 
 	const COLORS = [
 		'#cbd5e1',
@@ -96,6 +97,7 @@
 	let LINE_WIDTH_PX = 0.3;
 	let ANIM_PAUSE_DURATION = 1.5;
 	let ANIM_SPEED = 2.0;
+	let FLYING_ALPHA = 0.59;
 	// Maximal erlaubter Zeitschritt pro Frame (Sekunden). Ein einzelner
 	// langer Frame (GC/Compile/Tab-Throttle) wird darauf begrenzt, damit
 	// die Simulation keinen sichtbaren Vorwaertssprung macht.
@@ -132,6 +134,7 @@
 			LINE_WIDTH_PX = c.lineWidth;
 			ANIM_PAUSE_DURATION = c.pauseDuration;
 			ANIM_SPEED = c.playSpeed;
+			FLYING_ALPHA = c.flyingAlpha;
 			bankRenderEnabled = c.bankRenderEnabled;
 
 			let compiled = get(compiledStore);
@@ -450,7 +453,6 @@
 		// Zwei Durchläufe: erst alle liegenden (mit Rahmen), dann alle
 		// fliegenden (ohne Rahmen, immer obendrauf).
 		function drawPiece(p, onlyFlying) {
-			let alpha = 1;
 			let is_visible = false;
 			if (p.type === 'Z_direct' || p.type === 'S_macro' || p.type === 'R_macro') {
 				if (u_time >= p.time_fly) is_visible = true;
@@ -477,6 +479,19 @@
 			const landed = fly_t >= 0.999;
 			if (onlyFlying && landed) return;
 			if (!onlyFlying && !landed) return;
+
+			// Alpha: landed=1, fliegend=FLYING_ALPHA mit weichem Übergang
+			// am Anfang/Ende der Flugphase (smoothstep-Kante).
+			let alpha;
+			if (landed) {
+				alpha = 1;
+			} else {
+				// smoothstep-Fade: 0→0.2 einblenden, 0.8→1 ausblenden
+				let fadeIn = Math.min(1, fly_t / 0.2);
+				let fadeOut = Math.min(1, (1 - fly_t) / 0.2);
+				let edge = fadeIn * fadeOut; // 0 an Rändern, 1 in der Mitte
+				alpha = 1 - (1 - FLYING_ALPHA) * edge;
+			}
 
 			ctx.fillStyle = COLORS[p.bp.k % COLORS.length];
 			ctx.globalAlpha = alpha;

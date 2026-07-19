@@ -74,6 +74,12 @@ const CONFIG_FIELDS = [
 		format: (c) => (c.flightRotation ? '1' : '0'),
 	},
 	{
+		key: 'flyalpha',
+		field: 'flyingAlpha',
+		parse: (v) => Math.max(0, Math.min(1, parseFloat(v) ?? 0.59)),
+		format: (c) => c.flyingAlpha.toFixed(2),
+	},
+	{
 		key: 'hud',
 		field: 'hudUpdateEnabled',
 		parse: (v) => v !== '0',

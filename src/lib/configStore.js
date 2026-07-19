@@ -23,6 +23,8 @@ const DEFAULTS = {
 	modeAB: 0.0,
 	// Flug-Morph: Teile drehen (true) oder nur strecken (false)
 	flightRotation: true,
+	// Transparenz fliegender Stücke (0 = unsichtbar, 1 = deckend)
+	flyingAlpha: 0.59,
 	// Diagnose-Schalter (Stotter-Untersuchung): entkoppeln HUD-/Bank-
 	// Update vom Render-Loop, um die Flug-Stotter-Quelle zu isolieren.
 	hudUpdateEnabled: true, // Zahlendarstellung (l/l²/R) neu berechnen/typsetten
