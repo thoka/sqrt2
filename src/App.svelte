@@ -139,7 +139,70 @@
 		};
 		document.addEventListener('mousemove', onMove);
 
-		return () => document.removeEventListener('mousemove', onMove);
+		// Tastensteuerung (siehe TODO.md "Tastensteuerung")
+		function stepTick(delta) {
+			let compiled = get(compiledStore);
+			let ttm = compiled?.GLOBAL_TTM;
+			if (!ttm) return;
+			let p = get(playbackStore);
+			let tick = Math.round(ttm.timeToTick(p.time)) + delta;
+			tick = Math.max(0, Math.min(ttm.maxTick, tick));
+			playbackStore.update((s) => ({ ...s, time: ttm.tickToTime(tick) }));
+		}
+		function jumpShell(delta) {
+			let compiled = get(compiledStore);
+			if (!compiled?.GLOBAL_SHELL_START) return;
+			let p = get(playbackStore);
+			let starts = compiled.GLOBAL_SHELL_START;
+			let currentShell = 0;
+			for (let i = starts.length - 1; i >= 0; i--) {
+				if (p.time >= starts[i]) {
+					currentShell = i;
+					break;
+				}
+			}
+			let target = currentShell + delta;
+			if (target < 0 || target >= starts.length) return;
+			playbackStore.update((s) => ({ ...s, time: starts[target] }));
+		}
+		function onKeyDown(e) {
+			if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+			switch (e.code) {
+				case 'Space':
+					e.preventDefault();
+					playbackStore.update((p) => ({ ...p, isPlaying: !p.isPlaying }));
+					break;
+				case 'ArrowLeft':
+					e.preventDefault();
+					stepTick(-1);
+					break;
+				case 'ArrowRight':
+					e.preventDefault();
+					stepTick(1);
+					break;
+				case 'PageUp':
+					e.preventDefault();
+					jumpShell(1);
+					break;
+				case 'PageDown':
+					e.preventDefault();
+					jumpShell(-1);
+					break;
+				case 'Enter':
+					e.preventDefault();
+					playbackStore.update((p) => ({
+						...p,
+						direction: p.direction === 1 ? -1 : 1,
+					}));
+					break;
+			}
+		}
+		document.addEventListener('keydown', onKeyDown);
+
+		return () => {
+			document.removeEventListener('mousemove', onMove);
+			document.removeEventListener('keydown', onKeyDown);
+		};
 	});
 </script>
 

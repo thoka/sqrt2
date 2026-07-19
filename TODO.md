@@ -66,11 +66,12 @@ Welt-Position eines Stücks berechnen).
 
 ## Tastensteuerung
 
-- [ ] Space: start / stop
-- [ ] left: tick zurück
-- [ ] right: tick vorwärts
-- [ ] pg-up: schale vorwärts
-- [ ] pg-down: schale zurück
+- [x] Space: start / stop
+- [x] left: tick zurück
+- [x] right: tick vorwärts
+- [x] pg-up: schale vorwärts
+- [x] pg-down: schale zurück
+- [x] Return: Richtungswechsel
 
 ## Intro-Screen
 - [ ] Anzeige eines Intro-Screens für kurze Zeit beim Start. Ausschalten bei Play.
