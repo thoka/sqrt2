@@ -72,6 +72,9 @@ Welt-Position eines Stücks berechnen).
 - [x] pg-up: schale vorwärts
 - [x] pg-down: schale zurück
 - [x] Return: Richtungswechsel
+- [x] +: schneller (Faktor `SPEED_STEP`, Default 1.3)
+- [x] -: langsamer (Faktor 1/SPEED_STEP)
+- [x] ?: Hilfe-Overlay
 
 ## Intro-Screen
 - [ ] Anzeige eines Intro-Screens für kurze Zeit beim Start. Ausschalten bei Play.

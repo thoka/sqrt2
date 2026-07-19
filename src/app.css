@@ -344,3 +344,55 @@ select {
 	inset: 0;
 	z-index: 0;
 }
+
+/* Help-Overlay (?-Taste) */
+.help-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 1000;
+	background: rgba(0, 0, 0, 0.6);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+}
+.help-box {
+	background: #1e293b;
+	border: 1px solid #475569;
+	border-radius: 8px;
+	padding: 24px 32px;
+	color: #e2e8f0;
+	font-family: system-ui, sans-serif;
+	min-width: 280px;
+}
+.help-box h3 {
+	margin: 0 0 12px;
+	font-size: 1.1em;
+	color: #f8fafc;
+}
+.help-box table {
+	width: 100%;
+	border-collapse: collapse;
+}
+.help-box td {
+	padding: 4px 8px;
+	font-size: 0.9em;
+}
+.help-box td:first-child {
+	text-align: right;
+	padding-right: 16px;
+}
+.help-box kbd {
+	background: #334155;
+	border: 1px solid #64748b;
+	border-radius: 3px;
+	padding: 2px 6px;
+	font-family: monospace;
+	font-size: 0.9em;
+}
+.help-hint {
+	margin: 12px 0 0;
+	font-size: 0.75em;
+	color: #94a3b8;
+	text-align: center;
+}

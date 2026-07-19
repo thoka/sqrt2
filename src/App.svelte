@@ -21,7 +21,9 @@
 	import TargetBankCanvas from './components/TargetBankCanvas.svelte';
 	import SpeedSlider from './components/SpeedSlider.svelte';
 
-	let u_time = 0.0;
+	let _u_time = 0.0;
+	let showHelp = $state(false);
+	const SPEED_STEP = 1.3;
 
 	// === Progress-Anzeige (ASYNC-COMPILE-PLAN, Schritt 6) ===
 	// Erscheint erst nach einer kurzen Schwelle (300 ms), damit schnelle
@@ -106,7 +108,7 @@
 		// hier nur noch u_time uebernehmen.
 		configStore.subscribe(applyConfig);
 		playbackStore.subscribe((p) => {
-			u_time = p.time;
+			_u_time = p.time;
 		});
 
 		// Widget-Auswahl (displayStore): zeigt entweder Balken- ODER Grid-Widget.
@@ -167,6 +169,11 @@
 		}
 		function onKeyDown(e) {
 			if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+			// Help-Overlay: jede Taste schliesst es
+			if (showHelp) {
+				showHelp = false;
+				return;
+			}
 			switch (e.code) {
 				case 'Space':
 					e.preventDefault();
@@ -194,6 +201,20 @@
 						...p,
 						direction: p.direction === 1 ? -1 : 1,
 					}));
+					break;
+				case 'Equal': // +
+					e.preventDefault();
+					configStore.update((c) => ({ ...c, playSpeed: c.playSpeed * SPEED_STEP }));
+					break;
+				case 'Minus': // -
+					e.preventDefault();
+					configStore.update((c) => ({ ...c, playSpeed: c.playSpeed / SPEED_STEP }));
+					break;
+				case 'Slash': // ? (Shift+/)
+					if (e.shiftKey) {
+						e.preventDefault();
+						showHelp = true;
+					}
 					break;
 			}
 		}
@@ -226,3 +247,26 @@
 	<div id="playbackBarMount"></div>
 	<div id="speedControl"><SpeedSlider variant="compact" /></div>
 </div>
+
+{#if showHelp}
+	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+	<div class="help-overlay" onclick={() => (showHelp = false)}>
+		<div class="help-box" role="dialog" aria-label="Tastensteuerung">
+			<h3>Tastensteuerung</h3>
+			<table>
+				<tbody>
+					<tr><td><kbd>Space</kbd></td><td>Play / Pause</td></tr>
+					<tr><td><kbd>←</kbd></td><td>Tick zurück</td></tr>
+					<tr><td><kbd>→</kbd></td><td>Tick vorwärts</td></tr>
+					<tr><td><kbd>PgUp</kbd></td><td>Schale vorwärts</td></tr>
+					<tr><td><kbd>PgDn</kbd></td><td>Schale zurück</td></tr>
+					<tr><td><kbd>Return</kbd></td><td>Richtungswechsel</td></tr>
+					<tr><td><kbd>+</kbd></td><td>Schneller (×{SPEED_STEP})</td></tr>
+					<tr><td><kbd>−</kbd></td><td>Langsamer (÷{SPEED_STEP})</td></tr>
+					<tr><td><kbd>?</kbd></td><td>Hilfe</td></tr>
+				</tbody>
+			</table>
+			<p class="help-hint">Beliebige Taste zum Schliessen</p>
+		</div>
+	</div>
+{/if}
