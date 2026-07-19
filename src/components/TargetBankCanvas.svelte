@@ -450,7 +450,7 @@
 		// Zwei Durchläufe: erst alle liegenden (mit Rahmen), dann alle
 		// fliegenden (ohne Rahmen, immer obendrauf).
 		function drawPiece(p, onlyFlying) {
-			let alpha = 1.0;
+			let alpha = 1;
 			let is_visible = false;
 			if (p.type === 'Z_direct' || p.type === 'S_macro' || p.type === 'R_macro') {
 				if (u_time >= p.time_fly) is_visible = true;
@@ -474,7 +474,7 @@
 			if (p.type === 'Z_source' || p.type === 'Z_ghost') fly_t = p.type === 'Z_ghost' ? 1 : 0;
 			fly_t = fly_t * fly_t * (3.0 - 2.0 * fly_t);
 
-			const landed = fly_t <= 0.01 || fly_t >= 0.99;
+			const landed = fly_t >= 0.999;
 			if (onlyFlying && landed) return;
 			if (!onlyFlying && !landed) return;
 
