@@ -51,6 +51,8 @@ pnpm test             # node --test *.test.js (reine Logik) UND vitest run (Svel
 | `p.html` | Referenz-Prototyp (Slot-basiertes Repacking, **verworfen**, nur als Vergleich). | historisch |
 | `bank-core.js` | **Gemeinsame Bibliothek** (ES-Modul), von beiden HTML-Tools importiert: Bank-Algorithmus + Kompaktierung + bijektive Tick↔Zeit-Abbildung. | Fertig, in Node getestet |
 | `src/lib/smoothing.js` | **Gemeinsame Glättungs-Bibliothek** (3 Bausteine, siehe §6.1). | Fertig, persistent getestet |
+| `src/lib/paramTween.js` | **Echtzeit-Feder-Tweener** (`createSpringTween()`) für Live-Parameter, die zu beliebiger, vorher unbekannter Echtzeit neu verzielt werden (Abgrenzung zu `smoothing.js` im Modul-Kopfkommentar). | Fertig, `paramTween.test.js` |
+| `src/lib/zoomStateTween.js` | Treiber für die **Alternative Rand-Zoom-Steuerung** (`docs/Alternative Zoom-Steuerung,md`): animiert `modeAB`/`autoZoomMinPx` weich auf das Preset des gewählten Zoom-Zustands. | Fertig, `zoomStateTween.test.js` |
 | `src/lib/compiler.js` | `compileSystem()` als reine Funktion (Config rein, kompilierter Zustand raus). | Fertig, `compiler.test.js` |
 | `src/lib/stores.js` | `configStore`/`playbackStore` (writable) + `compiledStore` (derived) + `displayStore` (lokaler UI-State, **nicht** synchronisiert). | Fertig |
 | `src/lib/urlState.js` | `parseConfigFromUrl`/`parsePlaybackFromUrl`/`buildStateParams`. | Fertig, `url-state.test.js` |

@@ -1,0 +1,97 @@
+# Alternative (Rand-) Zoom-Steuerung
+
+Lass uns eine andere Rand-Zoom-Steuerung ausprobieren (d.h. ein- und ausschaltbar über eine Checkbox im Admin-Tab).
+
+Momentan hat der Nutzer zwei Schieberegler zur Steuerung des Zooms.
+
+Alternativ könnte die Steuerung nur zwischen drei Zuständen verstellen (vie Radio-Button oder Später physischem Drei-Stufen schalter):
+- Flächentreu (entspricht Zoom aus / Autozoom ganz links)
+- Rand sichtbar (jetziger Schieberegler bleibt, aber im Animation-Tab)
+- Gleichmäßig (entspricht Autozoom ganz rechts)
+
+Die Übergänge dazwischen sollen allerdings weich animiert sein.
+Wir bräuchten einen allgemeinen Parameter-Tweener für die Animationen.
+Später sollte auch das Einschalten der Beschriftung weiches Einblenden sein etc.
+
+Ziel dieses Versuchs ist  über Konzentration auf die wesentliche Funktionalität den Nutzer zu entlasten und nur optimierte Defaults anzubieten.
+
+## Stand / Entscheidungen (umgesetzt)
+
+  - **Default aus, opt-in:** `configStore.edgeZoomControlMode` (Default
+    `false`) schaltet die Alternativ-UI frei - solange sie aus ist, bleibt
+    das bisherige Zwei-Regler-Verhalten (Grundeinstellungen: "Auto-Zoom:
+    Mindestpixelgröße" + "Zoom") unveraendert und unangetastet. Checkbox
+    "Alternative Rand-Zoom-Steuerung" im Admin-Tab.
+
+  - **Preset-Mapping der 3 Zustaende** auf die zwei bestehenden Laufzeit-
+    Felder `modeAB`/`autoZoomMinPx` (beide unveraendert vom Canvas gelesen,
+    siehe `TargetBankCanvas.svelte`):
+    | Zustand | modeAB | autoZoomMinPx |
+    |---|---|---|
+    | Flächentreu | 0 | 0 (Auto-Zoom aus) |
+    | Rand sichtbar | `randZoomLevel` (Feinregler-Wert) | 3 (bisheriger Default) |
+    | Gleichmäßig | 1 | 100 (Auto-Zoom-Slider-Maximum) |
+
+    `randZoomLevel` ist ein eigenes Store-Feld (nicht `modeAB` selbst),
+    weil `modeAB` beim Besuch der beiden anderen Zustaende ueberschrieben
+    wird - ohne einen getrennten Merker wuerde ein Ausflug nach
+    "Flaechentreu"/"Gleichmaessig" die Feineinstellung fuer "Rand sichtbar"
+    verwerfen.
+
+  - **"Rand sichtbar" behaelt den alten Feinregler:** der bisherige "Zoom"-
+    Schieberegler (Grundeinstellungen) lebt im Alt-Modus im Animation-Tab
+    weiter ("Zoom (Feinregler für „Rand sichtbar")"), disabled außer im
+    Zustand "Rand sichtbar". Direkte Regler-Bedienung bleibt bewusst
+    ungedaempft/live (kein Tween) - CLAUDE.md nimmt Maus-Drag explizit von
+    der C1-Glaettungspflicht aus, nur die diskrete Zustandswahl (Radio-
+    Klick) ist eine "automatisierte" Aenderung im Sinne dieser Regel.
+
+  - **Genereller Echtzeit-Tweener statt Wiederverwendung von
+    `smoothing.js`:** `smoothing.js` glaettet ueber die kompilierte
+    Animations-Zeitachse (`u_time`), deren Stuetzpunkte VOR dem Rendern
+    bereits alle bekannt sind - passt nicht auf eine Radio-Button-Wahl zu
+    einer vorher unbekannten Echtzeit, bei der der Nutzer auch mitten in
+    einem laufenden Uebergang erneut waehlen kann (Retargeting). Neues,
+    eigenstaendiges Modul `src/lib/paramTween.js`
+    (`createSpringTween()`/`springStep()`): klassischer kritisch gedaempfter
+    Feder-Integrator mit explizitem Geschwindigkeits-Zustand (Prinzip von
+    Unitys `Mathf.SmoothDamp`) - dadurch ist JEDES Retargeting, zu JEDEM
+    Zeitpunkt, per Konstruktion C1 (siehe Modul-Kopfkommentar fuer die
+    volle Begruendung inkl. Abgrenzung zu `buildDampedFilter()`).
+
+  - **Treiber-Modul `src/lib/zoomStateTween.js`:** beobachtet
+    `edgeZoomControlMode`/`zoomState`, animiert bei Aenderung
+    `modeAB`/`autoZoomMinPx` per `createSpringTween()` (Uebergangsdauer
+    `SMOOTH_TIME = 0.35s`) auf das Preset des neuen Zustands, per rAF-
+    Schleife nur waehrend eine Animation tatsaechlich laeuft (stoppt
+    selbststaendig, sobald beide Federn "isSettled" sind). Registriert
+    ueber `initZoomStateTween()` in `TargetBankCanvas.svelte` `onMount()`
+    (dort ohnehin die einzige Instanz des configStore-Subscribe/rAF-
+    Rendering-Verbunds fuer den Zoom) - kein zusaetzlicher Render-Loop
+    noetig, die bestehende `configStore.subscribe()`-Kette in
+    `TargetBankCanvas` zeichnet bei jeder Feder-Aktualisierung automatisch
+    neu.
+
+  - **URL-Zustand:** drei neue Parameter analog zu den bestehenden
+    `modeab`/`autozoom` (siehe `src/lib/urlState.js`): `altzoom`
+    (`edgeZoomControlMode`), `zoomstate` (`zoomState`), `randzoom`
+    (`randZoomLevel`) - ein geteilter Link reproduziert damit auch den
+    gewaehlten Zoom-Zustand.
+
+  - **Nicht Teil dieser Umsetzung** (siehe "Später" oben): physischer
+    Drei-Stufen-Schalter, weiches Ein-/Ausblenden der Beschriftung. Der
+    Tweener (`paramTween.js`) ist bewusst generisch gehalten, damit ein
+    kuenftiges Beschriftungs-Fade denselben Baustein nutzen kann statt
+    einen eigenen zu erfinden.
+
+  - **Tests:** `tests/unit/paramTween.test.js` (reine Feder-Mathematik,
+    `node:test`), `src/lib/zoomStateTween.test.js` (Treiber-Verhalten inkl.
+    Retargeting/Stop-bei-Ausschalten, `vitest`/jsdom - braucht
+    `requestAnimationFrame`, das `node:test` nicht bereitstellt),
+    `tests/unit/url-state.test.js` (neue Parameter,
+    Parse/Format/Roundtrip), `src/components/ControlPanel.test.js` (Admin-
+    Checkbox, 3-Radio-UI ersetzt die 2 Regler, Feinregler-Enable/Disable).
+    Manuell im Browser verifiziert (Playwright-Skript, Screenshots): alle
+    3 Zustaende anwaehlbar, sichtbarer Zoom-Unterschied zwischen
+    "Flächentreu"/"Gleichmäßig", Feinregler korrekt de-/aktiviert, keine
+    Konsolenfehler.
