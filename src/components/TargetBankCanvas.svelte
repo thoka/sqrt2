@@ -25,8 +25,11 @@
 	import { configStore, playbackStore, compiledStore } from '../lib/stores.js';
 	import { computeLiveL } from '../lib/compiler.js';
 	import { formatLiveNumbers, formatAxisDenominator } from '../lib/numberRenderer.js';
-	import { drawFraction, drawFractionPower } from '../lib/mathCanvasRenderer.js';
+	import { drawScript } from '../lib/mathCanvasRenderer.js';
 	import { MATH_METRICS } from '../lib/mathMetrics.js';
+	import { ensureMathFont, MATH_FONT_STACK } from '../lib/mathFont.js';
+	import { getLabelImage, requestLabelImage } from '../lib/mathJaxLabelCache.js';
+	import { buildDampedFilter } from '../lib/smoothing.js';
 	import { clampDt, isFlightAnimationEnabled } from '../lib/timeStep.js';
 	import { morphRect, computeRotation, rotationAngle } from '../lib/morphRect.js';
 	import {
@@ -110,6 +113,36 @@
 	let SHOW_LABELS = false;
 	const LABEL_FONT_PX = 12;
 	const LABEL_PAD_PX = 4;
+	// Weiches Ein-/Ausblenden der Beschriftung über den Alpha-Kanal
+	// (docs/Beschriftung.md "Der Schalter 'Beschriftung an/aus' soll weich
+	// animiert sein") - `buildDampedFilter()` aus smoothing.js (stetige
+	// Ableitung, siehe CLAUDE.md), aber mit ECHTER Wanduhrzeit statt
+	// Simulationszeit als Achse: der Schalter ist eine UI-Aktion, die auch
+	// bei pausierter/gescrubbter Animation weich reagieren soll. Startet
+	// beim konfigurierten Default (aus), kein Fade beim allerersten Frame.
+	const LABELS_FADE_TAU = 0.09; // ~0.45s bis 96% des Zielwerts
+	let labelsAlphaPoints = [{ t: 0, v: 0 }];
+	let labelsAlphaFilter = buildDampedFilter(labelsAlphaPoints, LABELS_FADE_TAU);
+	let _fadeTickerRunning = false;
+	// Separater rAF-Ticker NUR für die Alpha-Blende: die Haupt-Render-Loop
+	// (loop(), unten) läuft nur während isPlaying - ein Fade muss aber auch
+	// bei pausierter Animation sichtbar ablaufen (User klickt oft im
+	// Stillstand auf die Checkbox).
+	function kickLabelsFadeTicker() {
+		if (_fadeTickerRunning) return;
+		_fadeTickerRunning = true;
+		function tick() {
+			renderFrame();
+			let target = SHOW_LABELS ? 1 : 0;
+			let current = labelsAlphaFilter(performance.now() / 1000);
+			if (Math.abs(current - target) > 0.002) {
+				requestAnimationFrame(tick);
+			} else {
+				_fadeTickerRunning = false;
+			}
+		}
+		requestAnimationFrame(tick);
+	}
 	// Maximal erlaubter Zeitschritt pro Frame (Sekunden). Ein einzelner
 	// langer Frame (GC/Compile/Tab-Throttle) wird darauf begrenzt, damit
 	// die Simulation keinen sichtbaren Vorwaertssprung macht.
@@ -149,7 +182,15 @@
 			ANIM_SPEED = c.playSpeed;
 			FLYING_ALPHA = c.flyingAlpha;
 			bankRenderEnabled = c.bankRenderEnabled;
-			SHOW_LABELS = c.showLabels;
+			if (c.showLabels !== SHOW_LABELS) {
+				SHOW_LABELS = c.showLabels;
+				labelsAlphaPoints = [
+					...labelsAlphaPoints.slice(-3),
+					{ t: performance.now() / 1000, v: SHOW_LABELS ? 1 : 0 },
+				];
+				labelsAlphaFilter = buildDampedFilter(labelsAlphaPoints, LABELS_FADE_TAU);
+				kickLabelsFadeTicker();
+			}
 			FLIGHT_ANIM_SPEED_THRESHOLD = c.flightAnimSpeedThreshold;
 
 			let compiled = get(compiledStore);
@@ -343,11 +384,12 @@
 		}
 
 		// Beschriftung der Ziel-Quadrate (TODO.md "Darstellung", Konfig-Option
-		// "Beschriftung an/aus"): Text wird INNERHALB des schon gespiegelten
-		// ctx (translate(50,H-50)+scale(1,-1) weiter oben) gezeichnet - daher
-		// lokal um den Ankerpunkt nochmal gespiegelt, sonst stuenden die
-		// Glyphen auf dem Kopf. `fn` zeichnet danach mit normaler Canvas-
-		// Konvention (y wächst nach unten) relativ zu lokal (0,0).
+		// "Beschriftung an/aus", Feinschliff siehe docs/Beschriftung.md): Text
+		// wird INNERHALB des schon gespiegelten ctx (translate(50,H-50)+
+		// scale(1,-1) weiter oben) gezeichnet - daher lokal um den Ankerpunkt
+		// nochmal gespiegelt, sonst stuenden die Glyphen auf dem Kopf. `fn`
+		// zeichnet danach mit normaler Canvas-Konvention (y wächst nach
+		// unten) relativ zu lokal (0,0).
 		function withUprightOrigin(x, y, fn) {
 			ctx.save();
 			ctx.translate(x, y);
@@ -355,55 +397,82 @@
 			fn();
 			ctx.restore();
 		}
-		function drawUprightLabel(x, y, text, align) {
-			withUprightOrigin(x, y, () => {
-				ctx.textAlign = align;
-				ctx.textBaseline = align === 'left' ? 'middle' : 'alphabetic';
-				ctx.font = `${LABEL_FONT_PX}px ui-monospace, monospace`;
-				ctx.lineWidth = 2.5;
-				ctx.strokeStyle = 'rgba(15,23,42,0.85)';
-				ctx.strokeText(text, 0, 0);
-				ctx.fillStyle = '#f8fafc';
-				ctx.fillText(text, 0, 0);
-			});
+		// TeX-Quellen fuer die beiden Beschriftungs-Sorten (docs/Beschriftung.md).
+		// exp=0 (Einheitsquadrat) bewusst UEBER denselben Pfad wie alle
+		// anderen Schalen ("1" ist einfach der Sonderfall eines Bruchs/einer
+		// Potenz mit trivialem Ergebnis) - kein separater Code-Pfad mehr, das
+		// war der eigentliche Grund fuer "kein Unterschied zwischen
+		// Einheitsquadrat und Schalen".
+		function bottomLabelTex(exp) {
+			return exp === 0 ? '1' : `\\left(\\frac{1}{${BASE}}\\right)^{${exp}}`;
+		}
+		function leftLabelTex(exp) {
+			// "Schraeger" (einzeiliger) Bruch: hochgestellter Zaehler, normaler
+			// Schraegstrich, tiefgestellter Nenner - TeX hat dafuer kein
+			// eingebautes Kommando, `{}^{a}/_{b}` (OHNE `\!`, das erzeugte einen
+			// Rendering-Defekt) ist die empirisch geprueft sauber gerenderte
+			// Variante (siehe docs/Beschriftung.md Diskussion).
+			return exp === 0 ? '1' : `{}^{1}/_{${formatAxisDenominator(BASE, exp)}}`;
+		}
+
+		// Liefert {w,h,draw} fuer ein gecachtes Label-Bild, oder `null`, wenn
+		// es noch nicht bereit ist (MathJax rendert dann im Hintergrund neu -
+		// siehe mathJaxLabelCache.js). KEIN Fallback-Renderer waehrend MathJax
+		// noch laedt/rendert: der Aufrufer laesst das Label diesen Frame
+		// einfach weg, `requestLabelImage()`s `onReady`-Callback stoesst bei
+		// Bedarf (pausierte Animation) einen Redraw an, sobald es fertig ist
+		// (docs/Beschriftung.md: "Solange warten wir einfach").
+		function mathLabelBox(tex, fontPx, x, y, anchor) {
+			let entry = getLabelImage(tex);
+			if (!entry) {
+				requestLabelImage(tex, tex, () => renderFrame());
+				return null;
+			}
+			let w = entry.widthEx * fontPx;
+			let h = entry.heightEx * fontPx;
+			return {
+				w,
+				h,
+				draw() {
+					withUprightOrigin(x, y, () => {
+						if (anchor === 'bottom-center') ctx.drawImage(entry.img, -w / 2, -h, w, h);
+						else ctx.drawImage(entry.img, 0, -h / 2, w, h);
+					});
+				},
+			};
 		}
 
 		// Pro Achsen-Index i (= eine Spalte UND eine Zeile im (u,v)-Gitter des
 		// Ziel-Quadrats, siehe recursive-layout.js/bank-core.js axes[]):
 		// - unterste Reihe (v=0): Formel "(1/basis)^exponent" ueber dem
-		//   unteren Rand der Spalte i, als ECHTER Bruch mit Exponent gezeichnet
-		//   (mathCanvasRenderer.js, an MathJax angelehnt - siehe
-		//   docs/MATHJAX_METRICS.md), NUR wenn die Breite reicht (TODO-Vorgabe).
-		// - linkeste Spalte (u=0): derselbe Wert AUSGERECHNET (exakter Bruch,
-		//   ebenfalls echt gestrichen) neben dem linken Rand der Zeile i,
-		//   analog nur bei ausreichender Zeilenhoehe.
+		//   unteren Rand der Spalte i, ECHT von MathJax gerendert (gecacht,
+		//   siehe mathJaxLabelCache.js), NUR wenn die Breite reicht (TODO-
+		//   Vorgabe).
+		// - linkeste Spalte (u=0): derselbe Wert AUSGERECHNET, als schraeger
+		//   (einzeiliger) Bruch - docs/Beschriftung.md: braucht weniger Hoehe
+		//   als ein gestapelter Bruch.
+		// Nur Achsen, deren Schale schon gerendert wurde (u_time >=
+		// GLOBAL_SHELL_START[i]) werden beschriftet (docs/Beschriftung.md
+		// "Noch nicht gerenderte Schalen sollen nicht beschriftet werden").
 		function drawTargetLabels() {
-			if (!SHOW_LABELS || TOTAL_STEPS === 0) return;
-			ctx.font = `${LABEL_FONT_PX}px ui-monospace, monospace`;
+			if (TOTAL_STEPS === 0) return;
+			let alpha = labelsAlphaFilter(performance.now() / 1000);
+			if (alpha <= 0.002) return;
+			ctx.save();
+			ctx.globalAlpha *= alpha;
 			for (let i = 0; i < TOTAL_STEPS; i++) {
+				if (GLOBAL_SHELL_START[i] !== undefined && u_time < GLOBAL_SHELL_START[i]) continue;
 				let exp = axes[i].exp;
+
 				let [bx, by, bw] = project(dyn_prefA[i], dyn_prefA[0], dyn_axes_w[i], dyn_axes_w[0], true);
-				if (exp === 0) {
-					if (bw >= ctx.measureText('1').width + LABEL_PAD_PX) {
-						drawUprightLabel(bx + bw / 2, by + LABEL_PAD_PX, '1', 'center');
-					}
-				} else {
-					let expStr = String(exp);
-					let dry = drawFractionPower(ctx, 0, 0, '1', String(BASE), expStr, LABEL_FONT_PX, {
-						dryRun: true,
-					});
-					if (bw >= dry.totalWidth + LABEL_PAD_PX) {
-						withUprightOrigin(
-							bx + bw / 2 - dry.totalWidth / 2,
-							by + LABEL_PAD_PX + dry.height / 2,
-							() => {
-								drawFractionPower(ctx, 0, 0, '1', String(BASE), expStr, LABEL_FONT_PX, {
-									color: '#f8fafc',
-								});
-							},
-						);
-					}
-				}
+				let bottomBox = mathLabelBox(
+					bottomLabelTex(exp),
+					LABEL_FONT_PX,
+					bx + bw / 2,
+					by + LABEL_PAD_PX,
+					'bottom-center',
+				);
+				if (bottomBox && bw >= bottomBox.w + LABEL_PAD_PX) bottomBox.draw();
 
 				let [lx, ly, , lh] = project(
 					dyn_prefA[0],
@@ -412,20 +481,16 @@
 					dyn_axes_w[i],
 					true,
 				);
-				if (exp === 0) {
-					if (lh >= LABEL_FONT_PX + LABEL_PAD_PX) {
-						drawUprightLabel(lx + LABEL_PAD_PX, ly + lh / 2, '1', 'left');
-					}
-				} else {
-					let denStr = formatAxisDenominator(BASE, exp);
-					let dry = drawFraction(ctx, 0, 0, '1', denStr, LABEL_FONT_PX, { dryRun: true });
-					if (lh >= dry.height + LABEL_PAD_PX) {
-						withUprightOrigin(lx + LABEL_PAD_PX + dry.width / 2, ly + lh / 2, () => {
-							drawFraction(ctx, 0, 0, '1', denStr, LABEL_FONT_PX, { color: '#f8fafc' });
-						});
-					}
-				}
+				let leftBox = mathLabelBox(
+					leftLabelTex(exp),
+					LABEL_FONT_PX,
+					lx + LABEL_PAD_PX,
+					ly + lh / 2,
+					'left-middle',
+				);
+				if (leftBox && lh >= leftBox.h + LABEL_PAD_PX) leftBox.draw();
 			}
+			ctx.restore();
 		}
 
 		// Herkunfts-Position eines fliegenden Stücks: EIN fester Zeitpunkt
@@ -816,7 +881,7 @@
 			// Breite (von x0 bis W - padX) ueberschreitet.
 			let fontSize = Math.round(lineH * 0.8);
 			let subFont = Math.round(fontSize * MATH_METRICS.SCRIPT_SCALE);
-			let fontFor = (s) => `${s}px ui-monospace, monospace`;
+			let fontFor = (s) => `${s}px ${MATH_FONT_STACK}`;
 			let avail = W - padX - x0;
 			c.font = fontFor(fontSize);
 			let longest = 0;
@@ -838,14 +903,16 @@
 			let x = x0;
 			let y = padY + fontSize;
 			for (const [lab, val, base] of rows) {
-				c.font = fontFor(fontSize);
-				c.fillText(lab + val, x, y);
-				// Basis als Subscript: eine Stufe kleinere Schrift,
-				// leicht abgesenkt, direkt NACH dem Wert.
 				if (base) {
-					let wval = c.measureText(lab + val).width;
-					c.font = fontFor(subFont);
-					c.fillText(String(base), x + wval + 6, y + fontSize * MATH_METRICS.SUB_SHIFT);
+					// Basis als Subscript - EIN gemeinsamer Renderer mit den
+					// Achsen-Beschriftungen (drawScript(), mathCanvasRenderer.js).
+					drawScript(c, x, y, lab + val, String(base), fontSize, 'sub', {
+						color: 'rgba(148,163,184,0.95)',
+						font: MATH_FONT_STACK,
+					});
+				} else {
+					c.font = fontFor(fontSize);
+					c.fillText(lab + val, x, y);
 				}
 				y += lineH;
 			}
@@ -942,6 +1009,17 @@
 		bankPanel = document.getElementById('bankPanel');
 		window.addEventListener('resize', resizeCanvas);
 		resizeCanvas();
+		// MathJax-Font fuer Beschriftung + Zahlentafel (siehe mathFont.js)
+		// laedt asynchron - sobald verfuegbar, EINMAL neu zeichnen, damit
+		// nichts dauerhaft im Fallback-Font haengen bleibt (spaetere Frames
+		// wuerden das ohnehin selbst holen, das hier ist nur fuer den Fall,
+		// dass gerade nicht animiert wird). Der HUD-Bitmap-Cache (renderHud())
+		// wird dafuer explizit invalidiert, sonst uebersieht er den reinen
+		// Font-Wechsel (der Werte-Hash bleibt gleich).
+		ensureMathFont().then(() => {
+			hudCache = { hash: '', w: 0, h: 0, on: false };
+			renderFrame();
+		});
 		const unsubC = configStore.subscribe(applyConfig);
 		const unsubP = playbackStore.subscribe(applyPlayback);
 		// compiledStore (asynchroner Compile): sobald ein neuer, fertiger

@@ -1,5 +1,20 @@
 # MathJax-Metriken: Brüche/Exponenten ohne MathJax nachbauen
 
+> **Update (docs/Beschriftung.md):** Die Achsen-Beschriftung der Ziel-
+> Quadrate nutzt inzwischen NICHT mehr den in diesem Dokument beschriebenen
+> Hand-Nachbau, sondern echtes, gecachtes MathJax
+> (`src/lib/mathJaxRenderer.js` + `mathJaxLabelCache.js` +
+> `mathJaxImageCache.js`, dynamisch geladen, IndexedDB-persistiert) - der
+> Hand-Nachbau lieferte trotz dieser Vermessung sichtbare Abweichungen
+> (Klammern zu fett, falsche Zentrierung), die sich als Cache-Problem
+> herausstellten, nicht als Metrik-Problem. Dieses Dokument (Methodik +
+> Konstanten) bleibt gültig für den verbleibenden Anwendungsfall: die
+> Zahlentafel-Hoch-/Tiefstellung im HUD (`renderHud()`, `layoutScript`/
+> `drawScript` in `mathCanvasRenderer.js`) - dort ändert sich der Wert bei
+> JEDEM Frame, ein MathJax-Cache hilft dort nicht, siehe docs/Beschriftung.md.
+> Die `layoutFraction`/`layoutFractionPower`/`layoutSlashFraction`-Funktionen
+> (Brüche/Exponenten in Klammern) wurden entfernt.
+
 **Anlass:** Die Achsen-Beschriftung der Ziel-Quadrate (TODO.md "Darstellung")
 soll Brüche/Exponenten zeigen, die **optisch wie MathJax** aussehen ("(1/2)²",
 "1/8" als echte, gestrichene Brüche statt Klartext) - **aber MathJax selbst

@@ -380,3 +380,41 @@ test('Intro-Screen: sichtbar beim Start, verschwindet bei Play', async ({ page }
 	await page.keyboard.press(' ');
 	await expect(page.locator('.intro-overlay')).not.toBeVisible({ timeout: 2000 });
 });
+
+// Achsen-Beschriftung (docs/Beschriftung.md): nutzt echtes, gecachtes
+// MathJax statt eines Nachbau-Renderers. Zwei Eigenschaften werden hier
+// abgesichert (nicht nur "sieht richtig aus", das prüft AGENTS.md zufolge
+// nur ein Mensch/Screenshot-Vergleich):
+//  1. Keine Laufzeitfehler, wenn Beschriftung aktiv ist (MathJax lädt +
+//     rendert im Hintergrund, Labels erscheinen nachträglich).
+//  2. Der schwere MathJax-Renderer-Chunk (@mathjax/src) wird beim ZWEITEN
+//     Seitenaufruf NICHT erneut geladen - alle Beschriftungen kommen dann
+//     aus dem persistenten IndexedDB-Cache (mathJaxImageCache.js).
+test('Beschriftung: MathJax-Renderer lädt einmalig, zweiter Aufruf nutzt den IndexedDB-Cache', async ({
+	context,
+}) => {
+	const page = await context.newPage();
+	const errors = [];
+	page.on('pageerror', (e) => errors.push(String(e)));
+
+	const firstVisitChunks = [];
+	page.on('request', (req) => {
+		if (req.url().includes('mathJaxRenderer')) firstVisitChunks.push(req.url());
+	});
+	await page.goto('/?base=2&depth=4&time=999&play=0&labels=1');
+	await page.waitForTimeout(2000);
+	expect(errors).toEqual([]);
+	expect(firstVisitChunks.length).toBeGreaterThan(0);
+
+	const page2 = await context.newPage();
+	const secondVisitChunks = [];
+	page2.on('request', (req) => {
+		if (req.url().includes('mathJaxRenderer')) secondVisitChunks.push(req.url());
+	});
+	await page2.goto('/?base=2&depth=4&time=999&play=0&labels=1');
+	await page2.waitForTimeout(2000);
+	expect(secondVisitChunks.length).toBe(0);
+
+	await page.close();
+	await page2.close();
+});

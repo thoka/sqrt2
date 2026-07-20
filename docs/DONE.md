@@ -164,3 +164,86 @@
 - Methodik + Rohmesswerte + Konstanten + Grenzen vollstaendig in
   `docs/MATHJAX_METRICS.md` dokumentiert (neu, in README-Dateiuebersicht
   verlinkt).
+
+## Beschriftung: echtes, gecachtes MathJax statt Hand-Nachbau (2026-07-20)
+- Nutzer-Feedback (`docs/Beschriftung.md`, siehe Checkliste dort): der
+  Hand-Nachbau (obiger Eintrag) sah trotz vermessener Konstanten sichtbar
+  falsch aus (Klammern zu fett, Bruch nicht zentriert, Farbe/Optik
+  inkonsistent zum Einheitsquadrat, gerade statt schräger Bruch links,
+  ungebremstes Ein-/Ausblenden). Nach Diskussion: Achsen-Beschriftung
+  komplett auf ECHTES MathJax umgestellt (die Menge moeglicher Ausdruecke
+  ist klein/endlich, bounded durch Basis/Tiefe - ideal fuer Caching). Die
+  Zahlentafel (HUD) bleibt beim eigenen Renderer (Wert aendert sich jeden
+  Frame, ein Cache hilft dort nicht - explizite Nutzer-Vorgabe).
+- **Font-Untersuchung** (`docs/Beschriftung.md` Punkt 2): MathJax' CHTML-
+  Fonts sind einzeln adressierbare WOFF-Dateien (`MathJax_Main-Regular.woff`
+  fuer Ziffern/Klammern/Schraegstrich/lateinische Buchstaben, Apache-2.0,
+  ~34 KB) - lokal gebuendelt unter `src/assets/fonts/` (+ NOTICE.md +
+  LICENSE-Apache-2.0.txt), eingebunden per `FontFace`-API in
+  `src/lib/mathFont.js`. Wird weiterhin fuer den HUD-Renderer genutzt
+  (`MATH_FONT_STACK`, `ensureMathFont()`).
+- **Neue Laufzeit-Abhaengigkeit `@mathjax/src`** (v4, Apache-2.0, Nachfolger
+  des deprecated `mathjax-full`) - mit Nutzer-Freigabe installiert. NUR
+  dynamisch importiert (`src/lib/mathJaxRenderer.js`, `await
+  import('./mathJaxRenderer.js')` in `mathJaxLabelCache.js`): der schwere
+  TeX-Parser+SVG-Renderer-Teil (~1,3 MB minifiziert/~470 KB gzip) bildet
+  dadurch einen EIGENEN Chunk, der nur bei einem echten Cache-Miss geladen
+  wird - das Haupt-Bundle blieb bei ~26 KB (vorher versehentlich auf
+  1,35 MB aufgeblaeht, als der Import noch statisch war - Regression sofort
+  gefunden + gefixt).
+- **Zwei Cache-Ebenen** (`src/lib/mathJaxLabelCache.js`):
+  1. In-Memory (`Map`) fuer sofortigen synchronen Zugriff im Render-Loop.
+  2. IndexedDB (`src/lib/mathJaxImageCache.js`) fuer Persistenz ueber
+     Seiten-Reloads hinweg ("beim zweiten Aufruf der Seite ist alles im
+     Cache", Nutzer-Vorgabe) - speichert den rohen SVG-String pro
+     TeX-Ausdruck (Schluessel = TeX-Quelle selbst).
+  `src/lib/mathJaxSvgImage.js` (SVG-String -> `HTMLImageElement`, liest
+  `width`/`height` in MathJax' "ex"-Einheit aus) ist bewusst OHNE
+  MathJax-Abhaengigkeit ausgelagert, damit es immer statisch importierbar
+  bleibt (nur `mathJaxRenderer.js` selbst zieht `@mathjax/src` nach).
+- **Kein Fallback-Renderer**: `TargetBankCanvas.svelte` (`mathLabelBox()`)
+  zeichnet ein Label nur, wenn `getLabelImage()` synchron etwas liefert;
+  sonst stoesst `requestLabelImage(key, tex, onReady)` das Rendern/Laden an
+  und der aktuelle Frame laesst das Label einfach weg - `onReady` ruft
+  `renderFrame()` erneut auf, sobald das Bild bereit ist (wichtig bei
+  pausierter Animation, sonst bliebe das Label bis zum naechsten "echten"
+  Trigger unsichtbar).
+- **Alle uebrigen Beschriftung.md-Punkte im selben Zug erledigt:**
+  - Farbe schwarz (kein Rahmen/Umriss mehr).
+  - Nur bereits gerenderte Schalen beschriftet: `u_time >=
+    GLOBAL_SHELL_START[i]`-Check pro Achsen-Index VOR dem Zeichnen.
+  - Kein Unterschied Einheitsquadrat/Schalen: exp=0 ("1") laeuft jetzt durch
+    DENSELBEN MathJax-Pfad wie jede andere Schale (kein separater
+    Text-Code-Pfad mehr) - TeX-Quelle ist einfach `"1"`.
+  - Linke Beschriftung als schraeger (einzeiliger) Bruch: TeX `{}^{a}/_{b}`
+    (OHNE `\!` - erzeugte einen Rendering-Defekt, empirisch mit einer
+    kleinen Testreihe geprueft, siehe Gespraechsverlauf).
+  - Untere Beschriftung: Klammern jetzt MathJax-authentisch duenn (kein
+    Hand-Tuning mehr noetig), Bruch durch echtes `\left(\frac{1}{b}
+    \right)^{n}` automatisch korrekt zentriert/proportioniert.
+  - Weiches Ein-/Ausblenden: `labelsAlphaFilter` (`buildDampedFilter()` aus
+    `smoothing.js`, TAU=0.09, wie CLAUDE.md "stetige Ableitung" vorgibt) auf
+    Basis von ECHTER Wanduhrzeit (`performance.now()`, nicht Simulationszeit
+    `u_time` - der Schalter ist eine UI-Aktion, muss auch bei pausierter/
+    gescrubbter Animation weich reagieren). Eigener kurzlebiger rAF-Ticker
+    (`kickLabelsFadeTicker()`), unabhaengig von der Haupt-Playback-Loop
+    (die nur bei `isPlaying` laeuft).
+- **Alter Hand-Nachbau entfernt**: `mathCanvasRenderer.js` verlor
+  `layoutFraction`/`drawFraction`/`layoutFractionPower`/
+  `drawFractionPower`/`layoutSlashFraction`/`drawSlashFraction` (nicht mehr
+  gebraucht) - nur `layoutScript`/`drawScript` bleiben (HUD-Subscript).
+  Zugehoerige Tests entsprechend reduziert; `docs/MATHJAX_METRICS.md` mit
+  Verweis auf diesen neuen Stand versehen (Methodik/Konstanten bleiben fuer
+  den HUD-Anwendungsfall gueltig, fuer Achsen-Beschriftung ueberholt).
+- **Bekannte, gewollte Nebenwirkung**: MathJax rendert manche Ausdruecke
+  etwas breiter als der alte Hand-Nachbau - bei den schmalsten Zellen (hohe
+  Exponenten) kann eine Beschriftung dadurch knapp nicht mehr in die
+  verfuegbare Breite passen (der bestehende "passt es?"-Test greift dann
+  haeufiger). Kein Bug, sondern die korrekte Konsequenz des genaueren
+  Renderings (bestaetigt per Debug-Messung: identische MathJax-Breite fuer
+  "(1/2)²" und "(1/2)³", nur die verfuegbare Zellbreite unterscheidet sich).
+- **Neuer E2E-Test** (`tests/e2e/sqrt2.e2e.test.js` "MathJax-Renderer laedt
+  einmalig, zweiter Aufruf nutzt den IndexedDB-Cache"): prueft genau das
+  Kernversprechen - 1. Seitenaufruf laedt den `mathJaxRenderer`-Chunk
+  (Netzwerk-Request beobachtet), 2. Aufruf (gleicher Browser-Context) NICHT
+  mehr, keine Laufzeitfehler in beiden Faellen.

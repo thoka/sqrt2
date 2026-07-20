@@ -1,94 +1,51 @@
-// mathCanvasRenderer.js — zeichnet Brueche/Exponenten auf einem Canvas-2D-
-// Kontext, optisch angelehnt an MathJax' CHTML-Ausgabe (siehe mathMetrics.js
-// + docs/MATHJAX_METRICS.md), OHNE MathJax zur Laufzeit zu laden.
+// mathCanvasRenderer.js — zeichnet die Zahlentafel-Hoch-/Tiefstellung
+// (l²/2¹⁸/1,41₁₀, siehe TargetBankCanvas.svelte renderHud()) auf einem
+// Canvas-2D-Kontext, optisch angelehnt an MathJax' CHTML-Ausgabe (siehe
+// mathMetrics.js + docs/MATHJAX_METRICS.md), OHNE MathJax zur Laufzeit zu
+// laden - die Zahlentafel ändert sich bei JEDEM Frame, ein Cache (wie für
+// die Achsen-Beschriftung, siehe mathJaxLabelCache.js) hilft dort nicht.
 //
 // Aufbau in zwei Schichten (Testbarkeit, siehe AGENTS.md "Canvas/DOM nie nur
 // per Unit-Test verifizieren"):
-//   - layoutFraction()/layoutFractionPower(): REINE Geometrie, bekommen eine
+//   - layoutScript(): REINE Geometrie, bekommt eine
 //     `measure(text, fontPx) -> {width, ascent, descent}`-Funktion injiziert
 //     statt selbst auf `ctx` zuzugreifen - dadurch mit einem Fake-Measurer
 //     per `node --test` pruefbar (tests/unit/mathCanvasRenderer.test.js).
-//   - drawFraction()/drawFractionPower(): duenne Canvas-Schicht, baut den
-//     echten `ctx.measureText`-Adapter und fuehrt die eigentlichen
-//     fillText()/fillRect()-Aufrufe anhand des Layouts aus - nur per
-//     Build+E2E/visuell verifizierbar, siehe TargetBankCanvas.svelte.
+//   - drawScript(): duenne Canvas-Schicht, baut den echten
+//     `ctx.measureText`-Adapter und fuehrt die eigentlichen
+//     fillText()-Aufrufe anhand des Layouts aus - nur per Build+E2E/visuell
+//     verifizierbar, siehe TargetBankCanvas.svelte.
+//
+// Die Achsen-Beschriftung der Ziel-Quadrate (Brüche/Exponenten wie
+// "(1/2)³") nutzte frueher ebenfalls diesen Renderer (Nachbau der MathJax-
+// Optik per Hand) - seit der Umstellung auf einen gecachten ECHTEN
+// MathJax-Renderer (mathJaxLabelCache.js, docs/Beschriftung.md Diskussion
+// "Es spricht nichts gegen die Nutzung von MathJax außer Performance. Wenn
+// Caching ausreicht, ist das der einfachere Weg.") braucht es diesen
+// Hand-Nachbau dort nicht mehr - die ehemaligen layoutFraction()/
+// drawFraction()/layoutFractionPower()/drawFractionPower()/
+// layoutSlashFraction()/drawSlashFraction()-Funktionen wurden entfernt.
 import { MATH_METRICS } from './mathMetrics.js';
 
-// Geometrie eines Bruchs num/den bei gegebener Grundschriftgroesse fontPx.
-// Alle Positionen sind relativ zum ANKERPUNKT (0,0) = Mitte des Bruchstrichs
-// (Canvas-Konvention: y waechst nach UNTEN - "y wird groesser" = "geht
-// optisch nach unten"). `measure` wird NUR fuer die skalierte Zaehler-/
-// Nenner-Schriftgroesse aufgerufen (`fontPx * SCRIPT_SCALE`).
-export function layoutFraction(measure, numText, denText, fontPx) {
+// Geometrie von "baseText" gefolgt von einem hoch- ODER tiefgestellten
+// `scriptText` (z.B. Exponent "l²"/"2¹⁸" oder Index "1,41₁₀") - reine
+// horizontale Aneinanderreihung, KEIN Bruch. `direction`: 'sup' (hochgestellt,
+// SUP_SHIFT) oder 'sub' (tiefgestellt, SUB_SHIFT).
+export function layoutScript(measure, baseText, scriptText, fontPx, direction = 'sup') {
+	const baseM = measure(baseText, fontPx);
 	const scriptFontPx = fontPx * MATH_METRICS.SCRIPT_SCALE;
-	const thickness = fontPx * MATH_METRICS.RULE_THICKNESS;
-	const gap = fontPx * MATH_METRICS.RULE_GAP;
-	const numM = measure(numText, scriptFontPx);
-	const denM = measure(denText, scriptFontPx);
-	// Kleiner Ueberstand des Bruchstrichs ueber Zaehler/Nenner hinaus, wie
-	// bei MathJax (dort deutlich groesser - siehe docs; hier bewusst
-	// zurueckhaltender fuer die kompakten Achsen-Beschriftungen).
-	const width = Math.max(numM.width, denM.width) + fontPx * 0.15;
+	const scriptM = measure(scriptText, scriptFontPx);
+	const shift =
+		direction === 'sup' ? -fontPx * MATH_METRICS.SUP_SHIFT : fontPx * MATH_METRICS.SUB_SHIFT;
+	const spacing = fontPx * 0.02;
 	return {
-		width,
-		thickness,
-		gap,
+		baseX: 0,
+		baseBaselineY: 0,
+		scriptX: baseM.width + spacing,
+		scriptBaselineY: shift,
 		scriptFontPx,
-		// Grundlinien-Y relativ zum Anker (0 = Bruchstrich-Mitte).
-		numBaselineY: -(thickness / 2 + gap),
-		denBaselineY: thickness / 2 + gap + denM.ascent,
-		numWidth: numM.width,
-		denWidth: denM.width,
-		numAscent: numM.ascent,
-		numDescent: numM.descent,
-		denAscent: denM.ascent,
-		denDescent: denM.descent,
-		// Gesamthoehe (oben=Zaehler-Ascent, unten=Nenner-Descent) - fuer die
-		// Klammerhoehe von drawFractionPower()/layoutFractionPower() sowie
-		// fuer Sichtbarkeits-Schwellwerte des Aufrufers.
-		height: numM.ascent + numM.descent + 2 * gap + thickness + denM.ascent + denM.descent,
+		totalWidth: baseM.width + spacing + scriptM.width,
 	};
-}
-
-// Geometrie von "(num/den)^exp" - Klammern werden auf die Bruchhoehe
-// hochskaliert (angenaehert an MathJax' `\left(\right)`-Streckung), der
-// Exponent sitzt auf Zaehler-Grundlinienhoehe (empirisch: Exponent-Mitte ≈
-// Zaehler-Mitte, siehe docs "paren_frac_pow_inline"). Liefert eine Liste
-// VON LINKS NACH RECHTS zu zeichnender Segmente mit x-Offset relativ zum
-// linken Rand (0) - der Aufrufer kennt dadurch `totalWidth`, BEVOR
-// irgendetwas gezeichnet wird (fuer den "passt die Breite?"-Test, TODO.md
-// "Darstellung").
-export function layoutFractionPower(measure, numText, denText, expText, fontPx) {
-	const frac = layoutFraction(measure, numText, denText, fontPx);
-	const refDigit = measure('0', fontPx);
-	const refHeight = refDigit.ascent + refDigit.descent;
-	// Klammer-Schriftgroesse so waehlen, dass die Klammer-Glyphe (deren
-	// eigene Ascent+Descent bei "normaler" Groesse ≈ refHeight ist) auf die
-	// Bruchhoehe skaliert - plus 5% Sicherheitszuschlag (MathJax-Klammern
-	// ueberragen den Inhalt leicht, siehe docs).
-	const parenFontPx = fontPx * Math.max(1, (frac.height / refHeight) * 1.05);
-	const parenOpen = measure('(', parenFontPx);
-	const parenClose = measure(')', parenFontPx);
-	const exp = measure(expText, frac.scriptFontPx);
-
-	let x = 0;
-	const segments = [];
-	segments.push({ type: 'paren', text: '(', x, fontPx: parenFontPx, baselineY: 0 });
-	x += parenOpen.width;
-	segments.push({ type: 'fraction', x: x + frac.width / 2, layout: frac });
-	x += frac.width;
-	segments.push({ type: 'paren', text: ')', x, fontPx: parenFontPx, baselineY: 0 });
-	x += parenClose.width;
-	segments.push({
-		type: 'exp',
-		text: expText,
-		x,
-		fontPx: frac.scriptFontPx,
-		baselineY: frac.numBaselineY,
-	});
-	x += exp.width;
-
-	return { segments, totalWidth: x, height: Math.max(frac.height, parenFontPx * 1.05) };
 }
 
 function canvasMeasurer(ctx, font) {
@@ -108,48 +65,22 @@ function canvasMeasurer(ctx, font) {
 	};
 }
 
-// Zeichnet num/den als echten, gestrichenen Bruch (Zaehler/Bruchstrich/
-// Nenner) zentriert um den Ankerpunkt (x,y) = Bruchstrich-Mitte. Erwartet
-// ctx.textAlign/textBaseline NICHT vorbelegt (wird selbst gesetzt). Mit
-// `opts.dryRun: true` wird nur die Geometrie berechnet (z.B. fuer einen
-// "passt die Breite in die Zelle?"-Test VOR dem Zeichnen), nichts gemalt.
-export function drawFraction(ctx, x, y, numText, denText, fontPx, opts = {}) {
+// Zeichnet "baseText" gefolgt von hoch-/tiefgestelltem `scriptText` ab dem
+// LINKEN Rand (x,y) = normale Grundlinie. Siehe layoutScript(). Deckt sowohl
+// Exponenten ("l²", direction='sup') als auch Indizes/Basis-Angaben
+// ("1,41₁₀", direction='sub') ab - EIN Renderer statt zwei fast identischer.
+export function drawScript(ctx, x, y, baseText, scriptText, fontPx, direction = 'sup', opts = {}) {
 	const font = opts.font || 'ui-monospace, monospace';
 	const measure = canvasMeasurer(ctx, font);
-	const L = layoutFraction(measure, numText, denText, fontPx);
-	if (opts.dryRun) return L;
-
-	ctx.fillStyle = opts.color || ctx.fillStyle;
-	ctx.font = `${L.scriptFontPx}px ${font}`;
-	ctx.textAlign = 'center';
-	ctx.textBaseline = 'alphabetic';
-	ctx.fillText(numText, x, y + L.numBaselineY);
-	ctx.fillText(denText, x, y + L.denBaselineY);
-	ctx.fillRect(x - L.width / 2, y - L.thickness / 2, L.width, L.thickness);
-	return L;
-}
-
-// Zeichnet "(num/den)^exp" ab dem LINKEN Rand (x,y) = Bruchstrich-Mitte-Y.
-// Mit `opts.dryRun: true` wird NICHTS gezeichnet (nur `ctx.measureText`
-// aufgerufen) - fuer den "passt die Breite in die Zelle?"-Test VOR dem
-// eigentlichen Zeichnen (gleiche Idee wie `layoutFractionPower`, aber ueber
-// die echte Canvas-Font-Messung statt eines Fake-Measurers).
-export function drawFractionPower(ctx, x, y, numText, denText, expText, fontPx, opts = {}) {
-	const font = opts.font || 'ui-monospace, monospace';
-	const measure = canvasMeasurer(ctx, font);
-	const L = layoutFractionPower(measure, numText, denText, expText, fontPx);
+	const L = layoutScript(measure, baseText, scriptText, fontPx, direction);
 	if (opts.dryRun) return L;
 
 	ctx.fillStyle = opts.color || ctx.fillStyle;
 	ctx.textAlign = 'left';
-	for (const seg of L.segments) {
-		if (seg.type === 'paren' || seg.type === 'exp') {
-			ctx.font = `${seg.fontPx}px ${font}`;
-			ctx.textBaseline = seg.type === 'paren' ? 'middle' : 'alphabetic';
-			ctx.fillText(seg.text, x + seg.x, y + seg.baselineY);
-		} else if (seg.type === 'fraction') {
-			drawFraction(ctx, x + seg.x, y, numText, denText, fontPx, opts);
-		}
-	}
+	ctx.textBaseline = 'alphabetic';
+	ctx.font = `${fontPx}px ${font}`;
+	ctx.fillText(baseText, x + L.baseX, y + L.baseBaselineY);
+	ctx.font = `${L.scriptFontPx}px ${font}`;
+	ctx.fillText(scriptText, x + L.scriptX, y + L.scriptBaselineY);
 	return L;
 }
