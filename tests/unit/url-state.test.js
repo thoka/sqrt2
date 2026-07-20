@@ -29,6 +29,9 @@ const DEFAULT_CONFIG = {
 	flyingAlpha: 0.59,
 	flightAnimSpeedThreshold: 3.0,
 	showLabels: false,
+	edgeZoomControlMode: false,
+	zoomState: 'rand',
+	randZoomLevel: 0.0,
 };
 const DEFAULT_PLAYBACK = { time: 0, isPlaying: false, direction: 1 };
 const FAKE_COMPILED = {
@@ -63,6 +66,23 @@ test('parseConfigFromUrl(): Checkbox-Feld "compaction" wird als Boolean gelesen'
 test('parseConfigFromUrl(): modeab wird auf [0,1] geklammert', () => {
 	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('modeab=5')), { modeAB: 1 });
 	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('modeab=-5')), { modeAB: 0 });
+});
+
+test('parseConfigFromUrl(): altzoom/zoomstate/randzoom (Alternative Rand-Zoom-Steuerung)', () => {
+	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('altzoom=1')), {
+		edgeZoomControlMode: true,
+	});
+	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('zoomstate=gleichmaessig')), {
+		zoomState: 'gleichmaessig',
+	});
+	// Unbekannter Zustandswert wird ignoriert statt einen ungueltigen Store-Wert zu erzeugen.
+	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('zoomstate=quatsch')), {});
+	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('randzoom=5')), {
+		randZoomLevel: 1,
+	});
+	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('randzoom=-5')), {
+		randZoomLevel: 0,
+	});
 });
 
 test('parsePlaybackFromUrl(): "time" hat Vorrang vor "tick", falls beide angegeben sind', () => {
@@ -151,6 +171,9 @@ test('buildStateParams() setzt jeden erwarteten URL-Schlüssel', () => {
 		'flyalpha',
 		'flightmaxspeed',
 		'labels',
+		'altzoom',
+		'zoomstate',
+		'randzoom',
 		'time',
 		'play',
 		'dir',

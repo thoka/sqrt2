@@ -36,6 +36,22 @@ const DEFAULTS = {
 	// Update vom Render-Loop, um die Flug-Stotter-Quelle zu isolieren.
 	hudUpdateEnabled: true, // Zahlendarstellung (l/l²/R) neu berechnen/typsetten
 	bankRenderEnabled: true, // Bank-Canvas (inkl. Flug-Animation) neu zeichnen
+
+	// Alternative Rand-Zoom-Steuerung (siehe docs/Alternative Zoom-Steuerung,md):
+	// statt der zwei Schieberegler (Zoom/Auto-Zoom) nur 3 diskrete Zustaende
+	// zur Auswahl, weich animiert beim Wechsel (src/lib/zoomStateTween.js).
+	// Default AUS, damit sich am bisherigen Zwei-Regler-Verhalten nichts
+	// aendert - zuschaltbar per Checkbox im Admin-Tab.
+	edgeZoomControlMode: false,
+	// 'flaechentreu' | 'rand' | 'gleichmaessig' - nur wirksam, wenn
+	// edgeZoomControlMode true ist.
+	zoomState: 'rand',
+	// Feinregler-Wert fuer den Zustand "Rand sichtbar" (der bisherige "Zoom"-
+	// Schieberegler, im Alt-Modus in den Animation-Tab reloziert). Getrennt
+	// von modeAB gemerkt, damit ein Zwischenausflug nach "Flaechentreu"/
+	// "Gleichmaessig" (die modeAB auf 0/1 ueberschreiben) die Feineinstellung
+	// nicht verwirft.
+	randZoomLevel: 0.0,
 };
 
 // URL-Parameter bereits beim Modul-Import auswerten (top-level, BEVOR der
