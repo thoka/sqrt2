@@ -77,7 +77,11 @@ Jede Phase ist einzeln committ- und testbar - wichtig, damit eine künftige Sitz
 
 **Stand 2026-07-20 (Settings aufgeräumt):** SpeedSlider aus Grundeinstellungen-Tab entfernt, "Pieces drehen" + "Fliegende Transparenz" in Animations-Tab verschoben, "Zoom" unter "Auto-Zoom" gruppiert, "Kompaktierung" (nicht mehr existent) aus UI entfernt. Remote-Steuerung: SpeedSlider + Zeitregler volle Breite, Tastatur-Buttons (⏮ ← → ⏭ ↩ − +) hinzugefügt. Panel-Öffnungszone auf 153px angepasst. Slider-Drag hält Panel offen.
 
-**Nächster Schritt (Stand 2026-07-20, TODO.md-Abarbeitung):** Beschriftung der Ziel-Quadrate (Formel unten/ausgerechneter Wert links, `showLabels`), Flug-Animation-Abschaltung ab konfigurierbarer Geschwindigkeit (`flightAnimSpeedThreshold`, kein Compile-Impact), Intro-Screen (nicht-blockierend, Play-Trigger) - alle drei in `docs/DONE.md` dokumentiert. Offen: Phase 6 (Politur), Virtual-Canvas/Multi-Viewport-Konzept (TODO.md, noch nicht begonnen), `RemoteControl` als foldbare Route.
+**Stand 2026-07-20 (TODO.md-Abarbeitung, Vormittag):** Beschriftung der Ziel-Quadrate (Formel unten/ausgerechneter Wert links, `showLabels`), Flug-Animation-Abschaltung ab konfigurierbarer Geschwindigkeit (`flightAnimSpeedThreshold`, kein Compile-Impact), Intro-Screen (nicht-blockierend, Play-Trigger) - alle drei in `docs/DONE.md` dokumentiert.
+
+**Stand 2026-07-20 (Beschriftung, Nachmittag):** die Achsen-Beschriftung nutzt jetzt ECHTES, gecachtes MathJax statt eines Hand-Nachbaus (`docs/Beschriftung.md`, `docs/DONE.md` "Beschriftung: echtes, gecachtes MathJax") - `@mathjax/src` als neue, aber nur dynamisch importierte Laufzeit-Abhängigkeit (`src/lib/mathJaxRenderer.js`), zwei Cache-Ebenen (In-Memory + IndexedDB, `mathJaxLabelCache.js`/`mathJaxImageCache.js`), kein Fallback-Renderer. Zahlentafel (HUD) bleibt beim eigenen Renderer (`mathCanvasRenderer.js`, jetzt nur noch `layoutScript`/`drawScript`). Alle offenen Punkte aus `docs/Beschriftung.md` sind abgehakt.
+
+**Nächster Schritt:** Branch `todos-abarbeiten` liegt 9 Commits vor `master`, noch nicht gemerged/gepusht (siehe Handover-Hinweis am Ende der Session). Offen: Phase 6 (Politur), Virtual-Canvas/Multi-Viewport-Konzept (TODO.md, noch nicht begonnen), `RemoteControl` als foldbare Route (TODO.md "Fernsteuerung/Connection").
 
 ## 8. Deployment: GitHub Pages (committeter Build, kein CI)
 
