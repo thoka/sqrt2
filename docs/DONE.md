@@ -113,3 +113,54 @@
 - Weiterhin offen (echte Feature-Arbeit, nicht nur Dokumentation):
   **`RemoteControl` als foldbare Route** im Exponat (TODO.md "Fernsteuerung /
   Connection (Nachpflege)").
+
+## MathJax-Metriken: Brüche/Exponenten ohne MathJax (2026-07-20)
+- Nutzer-Anfrage: Brüche (untere/linke Achsen-Beschriftung, siehe oben) und
+  Zahlendarstellungen allgemein sollen optisch wie MathJax aussehen, OHNE
+  MathJax zur Laufzeit zu laden (MathJax war 2026-07-18 wegen Flug-Stotterns
+  entfernt worden, Commit `b3adf99`).
+- Neues Analyse-Tool `scripts/mathjax-metrics.mjs` (Node + Playwright, mit
+  Nutzer-Freigabe: laedt MathJax 3 von der oeffentlichen CDN in eine
+  Sandbox-Headless-Seite, EINMALIG/offline, kein Teil des Laufzeit-Bundles):
+  rendert `\frac{1}{8}`, `\left(\frac{1}{2}\right)^{3}`, `x^{3}`,
+  `1.4142_{10}` (identisch zur frueheren HUD-Formel) bei fixer grosser
+  Schriftgroesse, liest den CHTML-DOM-Baum aus (Tag/Klasse/BoundingRect/
+  font-size relativ zum Container) und leitet daraus 5 Verhaeltniszahlen ab
+  (SCRIPT_SCALE 0.707, RULE_THICKNESS/RULE_GAP je 0.06, SUP_SHIFT 0.358,
+  SUB_SHIFT 0.128 - alle relativ zur Grundschriftgroesse).
+- Zwei reale Mess-Fallen dabei gefunden + im Skript dokumentiert: (1) ein
+  naiver "erstes Kind rekursiv"-Abstieg griff MathJax' unsichtbaren
+  Grundlinien-Strut statt der echten Ziffer-Glyphe (verwaesserte
+  SCRIPT_SCALE von 0.707 auf 0.85 - Fix: gezielt nach Tag `mjx-c` suchen);
+  (2) `getComputedStyle().fontSize` einer Zaehler-/Nenner-Box bleibt bei
+  MathJax oft auf der VOLLEN Groesse (Skalierung laeuft ueber CSS-Transform,
+  nicht font-size) - erst das innere Glyph-Element traegt die tatsaechlich
+  reduzierte Schriftgroesse.
+- `src/lib/mathMetrics.js`: die 5 abgeleiteten Konstanten, dokumentiert +
+  mit Regenerier-Anleitung. `src/lib/mathCanvasRenderer.js`: reine Geometrie
+  (`layoutFraction()`/`layoutFractionPower()`, testbar mit injiziertem
+  Fake-Measurer) + duenne Canvas-Zeichenschicht (`drawFraction()`/
+  `drawFractionPower()`, nutzt `ctx.measureText().actualBoundingBox*` als
+  echten Measurer, `opts.dryRun` fuer den "passt die Breite?"-Test ohne zu
+  zeichnen). 8 Unit-Tests (`tests/unit/mathCanvasRenderer.test.js`).
+- `TargetBankCanvas.svelte drawTargetLabels()`: zeichnet jetzt ECHTE
+  gestrichene Brueche statt Klartext "1/2" - unten geklammerter Bruch mit
+  Exponent (`(1/2)³`), links reiner Bruch (`1/8`). `numberRenderer.js`:
+  `formatAxisFormulaLabel`/`formatAxisValueLabel` (Klartext-Varianten aus
+  der vorigen Beschriftungs-Runde) durch `formatAxisDenominator()` ersetzt
+  (liefert nur noch den Nenner-String, Zaehler ist immer "1" - der Bruch
+  selbst wird jetzt GEZEICHNET statt als String formatiert).
+- Nebenbei vereinheitlicht: die Basis-Subscript-Darstellung in der
+  Zahlentafel (`renderHud()`, "1.4142₁₀") nutzte bisher geschaetzte Werte
+  (Skalierung 0.7, Absenkung `fontSize - subFont` = 0.3·fontSize) - jetzt
+  `MATH_METRICS.SCRIPT_SCALE`/`SUB_SHIFT` (0.128·fontSize, naeher an
+  MathJax' tatsaechlicher Index-Position).
+- Visuell verifiziert: Playwright-Screenshots der App (Basis 2 + 10,
+  `?labels=1`) zeigen echte Zaehler/Bruchstrich/Nenner-Stapel + Klammern/
+  Exponent; zusaetzlich per `--screenshot`-Flag PNG-Referenzbilder der
+  ECHTEN MathJax-Ausgabe erzeugt und direkt verglichen (gleiche Struktur,
+  andere Schriftart - siehe `docs/MATHJAX_METRICS.md` §6/§7 fuer bewusste
+  Vereinfachungen).
+- Methodik + Rohmesswerte + Konstanten + Grenzen vollstaendig in
+  `docs/MATHJAX_METRICS.md` dokumentiert (neu, in README-Dateiuebersicht
+  verlinkt).

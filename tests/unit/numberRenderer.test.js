@@ -10,8 +10,7 @@ import assert from 'node:assert/strict';
 import {
 	splitBaseNumber,
 	formatLiveNumbers,
-	formatAxisFormulaLabel,
-	formatAxisValueLabel,
+	formatAxisDenominator,
 } from '../../src/lib/numberRenderer.js';
 
 test('splitBaseNumber: trennt Ganzzahl- und Nachkommateil am Punkt', () => {
@@ -53,21 +52,15 @@ test('formatLiveNumbers: ganzzahlig (ohne Nachkommateil) bleibt valide', () => {
 	assert.strictEqual(rem_str, '0');
 });
 
-test('formatAxisFormulaLabel: exp=0 -> "1", sonst "(1/basis)^exponent"', () => {
-	assert.strictEqual(formatAxisFormulaLabel(2, 0), '1');
-	assert.strictEqual(formatAxisFormulaLabel(2, 3), '(1/2)^3');
-	assert.strictEqual(formatAxisFormulaLabel(10, 5), '(1/10)^5');
+test('formatAxisDenominator: basis^exponent als exakter String (BigInt)', () => {
+	assert.strictEqual(formatAxisDenominator(2, 0), '1');
+	assert.strictEqual(formatAxisDenominator(2, 1), '2');
+	assert.strictEqual(formatAxisDenominator(2, 2), '4');
+	assert.strictEqual(formatAxisDenominator(2, 3), '8');
+	assert.strictEqual(formatAxisDenominator(10, 3), '1000');
 });
 
-test('formatAxisValueLabel: exp=0 -> "1", sonst exakter Bruch 1/basis^exponent', () => {
-	assert.strictEqual(formatAxisValueLabel(2, 0), '1');
-	assert.strictEqual(formatAxisValueLabel(2, 1), '1/2');
-	assert.strictEqual(formatAxisValueLabel(2, 2), '1/4');
-	assert.strictEqual(formatAxisValueLabel(2, 3), '1/8');
-	assert.strictEqual(formatAxisValueLabel(10, 3), '1/1000');
-});
-
-test('formatAxisValueLabel: bleibt exakt auch bei grossen Exponenten (kein Float)', () => {
+test('formatAxisDenominator: bleibt exakt auch bei grossen Exponenten (kein Float)', () => {
 	// 2^60 uebersteigt Number.MAX_SAFE_INTEGER-Praezision bei naiver Float-Potenz.
-	assert.strictEqual(formatAxisValueLabel(2, 60), `1/${2n ** 60n}`);
+	assert.strictEqual(formatAxisDenominator(2, 60), `${2n ** 60n}`);
 });

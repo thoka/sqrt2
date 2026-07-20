@@ -20,12 +20,16 @@ Offene Punkte, nach Relevanz sortiert. Erledigtes wird durchgestrichen
 ## Steuerung
 - [x] Solange ein slider bewegt wird, soll das verlassen des parents nicht den Dialog schhließen. Das passiert zuerzeit in den Einstellungen.
 
-# Darstellung
+## Darstellung
 - [x] einen Konfigurationsoption "Beschriftung an/aus" in den Basiseinstellungen und im Remote einbauen
 - [x] wenn diese eingeschaltet ist:
    - [x] über dem unteren Rand der einzelnen untersten Quadrate im Ziel  (1/basis)^exponent anzeigen , wenn die breite des Rechtecks dazu ausreicht
    - [x] neben dem linken Rand der einlenen linkesten Quadrate im Ziel auch die Beschriftung anzeigen, jedoch ausgerechnet. D.h. im Fall von Basis = 2  1 (weises Grundquadrat); 1/2;  1/4; 1/8 etc
   Wichtig: nicht mathjax nutzen. ist zu langsam
+- [x] Brüche/Exponenten sollen optisch wie MathJax aussehen, OHNE MathJax zur
+      Laufzeit zu nutzen: MathJax offline vermessen (`scripts/mathjax-metrics.mjs`)
+      + eigener Canvas-Bruch-/Exponenten-Renderer (`src/lib/mathCanvasRenderer.js`,
+      Konstanten in `src/lib/mathMetrics.js`) - siehe `docs/MATHJAX_METRICS.md`.
 
 ## Sync-Isolierung via Pin (BroadcastChannel) — optional
 - [ ] Pin als Teil des `BroadcastChannel`-Namens (`sqrt2-state-<pin>`): Tabs mit

@@ -24,11 +24,9 @@
 	import { layoutCentered, findRect, commonAncestor } from '../lib/recursive-layout.js';
 	import { configStore, playbackStore, compiledStore } from '../lib/stores.js';
 	import { computeLiveL } from '../lib/compiler.js';
-	import {
-		formatLiveNumbers,
-		formatAxisFormulaLabel,
-		formatAxisValueLabel,
-	} from '../lib/numberRenderer.js';
+	import { formatLiveNumbers, formatAxisDenominator } from '../lib/numberRenderer.js';
+	import { drawFraction, drawFractionPower } from '../lib/mathCanvasRenderer.js';
+	import { MATH_METRICS } from '../lib/mathMetrics.js';
 	import { clampDt, isFlightAnimationEnabled } from '../lib/timeStep.js';
 	import { morphRect, computeRotation, rotationAngle } from '../lib/morphRect.js';
 	import {
@@ -348,40 +346,65 @@
 		// "Beschriftung an/aus"): Text wird INNERHALB des schon gespiegelten
 		// ctx (translate(50,H-50)+scale(1,-1) weiter oben) gezeichnet - daher
 		// lokal um den Ankerpunkt nochmal gespiegelt, sonst stuenden die
-		// Glyphen auf dem Kopf.
-		function drawUprightLabel(x, y, text, align) {
+		// Glyphen auf dem Kopf. `fn` zeichnet danach mit normaler Canvas-
+		// Konvention (y wächst nach unten) relativ zu lokal (0,0).
+		function withUprightOrigin(x, y, fn) {
 			ctx.save();
 			ctx.translate(x, y);
 			ctx.scale(1, -1);
-			ctx.textAlign = align;
-			ctx.textBaseline = align === 'left' ? 'middle' : 'alphabetic';
-			ctx.font = `${LABEL_FONT_PX}px ui-monospace, monospace`;
-			ctx.lineWidth = 2.5;
-			ctx.strokeStyle = 'rgba(15,23,42,0.85)';
-			ctx.strokeText(text, 0, 0);
-			ctx.fillStyle = '#f8fafc';
-			ctx.fillText(text, 0, 0);
+			fn();
 			ctx.restore();
+		}
+		function drawUprightLabel(x, y, text, align) {
+			withUprightOrigin(x, y, () => {
+				ctx.textAlign = align;
+				ctx.textBaseline = align === 'left' ? 'middle' : 'alphabetic';
+				ctx.font = `${LABEL_FONT_PX}px ui-monospace, monospace`;
+				ctx.lineWidth = 2.5;
+				ctx.strokeStyle = 'rgba(15,23,42,0.85)';
+				ctx.strokeText(text, 0, 0);
+				ctx.fillStyle = '#f8fafc';
+				ctx.fillText(text, 0, 0);
+			});
 		}
 
 		// Pro Achsen-Index i (= eine Spalte UND eine Zeile im (u,v)-Gitter des
 		// Ziel-Quadrats, siehe recursive-layout.js/bank-core.js axes[]):
 		// - unterste Reihe (v=0): Formel "(1/basis)^exponent" ueber dem
-		//   unteren Rand der Spalte i, NUR wenn deren Breite fuer den Text
-		//   reicht (TODO-Vorgabe).
-		// - linkeste Spalte (u=0): derselbe Wert AUSGERECHNET (exakter Bruch)
-		//   neben dem linken Rand der Zeile i, analog nur bei ausreichender
-		//   Zeilenhoehe (sonst ueberlappende Beschriftung bei tiefen Stufen).
+		//   unteren Rand der Spalte i, als ECHTER Bruch mit Exponent gezeichnet
+		//   (mathCanvasRenderer.js, an MathJax angelehnt - siehe
+		//   docs/MATHJAX_METRICS.md), NUR wenn die Breite reicht (TODO-Vorgabe).
+		// - linkeste Spalte (u=0): derselbe Wert AUSGERECHNET (exakter Bruch,
+		//   ebenfalls echt gestrichen) neben dem linken Rand der Zeile i,
+		//   analog nur bei ausreichender Zeilenhoehe.
 		function drawTargetLabels() {
 			if (!SHOW_LABELS || TOTAL_STEPS === 0) return;
 			ctx.font = `${LABEL_FONT_PX}px ui-monospace, monospace`;
 			for (let i = 0; i < TOTAL_STEPS; i++) {
 				let exp = axes[i].exp;
 				let [bx, by, bw] = project(dyn_prefA[i], dyn_prefA[0], dyn_axes_w[i], dyn_axes_w[0], true);
-				let formula = formatAxisFormulaLabel(BASE, exp);
-				if (bw >= ctx.measureText(formula).width + LABEL_PAD_PX) {
-					drawUprightLabel(bx + bw / 2, by + LABEL_PAD_PX, formula, 'center');
+				if (exp === 0) {
+					if (bw >= ctx.measureText('1').width + LABEL_PAD_PX) {
+						drawUprightLabel(bx + bw / 2, by + LABEL_PAD_PX, '1', 'center');
+					}
+				} else {
+					let expStr = String(exp);
+					let dry = drawFractionPower(ctx, 0, 0, '1', String(BASE), expStr, LABEL_FONT_PX, {
+						dryRun: true,
+					});
+					if (bw >= dry.totalWidth + LABEL_PAD_PX) {
+						withUprightOrigin(
+							bx + bw / 2 - dry.totalWidth / 2,
+							by + LABEL_PAD_PX + dry.height / 2,
+							() => {
+								drawFractionPower(ctx, 0, 0, '1', String(BASE), expStr, LABEL_FONT_PX, {
+									color: '#f8fafc',
+								});
+							},
+						);
+					}
 				}
+
 				let [lx, ly, , lh] = project(
 					dyn_prefA[0],
 					dyn_prefA[i],
@@ -389,8 +412,18 @@
 					dyn_axes_w[i],
 					true,
 				);
-				if (lh >= LABEL_FONT_PX + LABEL_PAD_PX) {
-					drawUprightLabel(lx + LABEL_PAD_PX, ly + lh / 2, formatAxisValueLabel(BASE, exp), 'left');
+				if (exp === 0) {
+					if (lh >= LABEL_FONT_PX + LABEL_PAD_PX) {
+						drawUprightLabel(lx + LABEL_PAD_PX, ly + lh / 2, '1', 'left');
+					}
+				} else {
+					let denStr = formatAxisDenominator(BASE, exp);
+					let dry = drawFraction(ctx, 0, 0, '1', denStr, LABEL_FONT_PX, { dryRun: true });
+					if (lh >= dry.height + LABEL_PAD_PX) {
+						withUprightOrigin(lx + LABEL_PAD_PX + dry.width / 2, ly + lh / 2, () => {
+							drawFraction(ctx, 0, 0, '1', denStr, LABEL_FONT_PX, { color: '#f8fafc' });
+						});
+					}
 				}
 			}
 		}
@@ -782,7 +815,7 @@
 			// Zeile (Wert + Luecke + Basis-Subscript) die verfuegbare
 			// Breite (von x0 bis W - padX) ueberschreitet.
 			let fontSize = Math.round(lineH * 0.8);
-			let subFont = Math.round(fontSize * 0.7);
+			let subFont = Math.round(fontSize * MATH_METRICS.SCRIPT_SCALE);
 			let fontFor = (s) => `${s}px ui-monospace, monospace`;
 			let avail = W - padX - x0;
 			c.font = fontFor(fontSize);
@@ -795,7 +828,7 @@
 			if (longest > avail && longest > 0) {
 				let factor = avail / longest;
 				fontSize = Math.max(10, Math.floor(fontSize * factor));
-				subFont = Math.round(fontSize * 0.7);
+				subFont = Math.round(fontSize * MATH_METRICS.SCRIPT_SCALE);
 				c.font = fontFor(fontSize);
 			}
 
@@ -812,7 +845,7 @@
 				if (base) {
 					let wval = c.measureText(lab + val).width;
 					c.font = fontFor(subFont);
-					c.fillText(String(base), x + wval + 6, y + fontSize - subFont);
+					c.fillText(String(base), x + wval + 6, y + fontSize * MATH_METRICS.SUB_SHIFT);
 				}
 				y += lineH;
 			}

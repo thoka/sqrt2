@@ -60,6 +60,7 @@ pnpm test             # node --test *.test.js (reine Logik) UND vitest run (Svel
 | `TOOLING_SPEC.md` | **Lebendige Migrations-Spezifikation** (Phasen 0-5 + 8, Stand je Step). Bei jeder Änderung aktualisieren. | gepflegt |
 | `docs/DEPLOYMENT.md` | **Zentrale Betriebsanleitung**: ein Server pro Exponat, embedded Relay, QR-Fernsteuerung, Tailscale. | gepflegt |
 | `docs/CONNECTION_SERVICE_SPEC.md` | Relay-Protokoll (Token/PIN/WS, embedded Betriebsmodell). | gepflegt |
+| `docs/MATHJAX_METRICS.md` | MathJax-Optik (Brüche/Exponenten) ohne MathJax-Laufzeit nachgebaut - Mess-Tool + Konstanten. | gepflegt |
 | `CLAUDE.md` | Agentenregeln (stetige Ableitung, Layout-Masse, SETTINGS-EIN-Objekt, Tooling-Updates, Svelte-Tests). | gepflegt |
 | `AGENTS.md` | Kurzübersicht + Gotchas für Agents (Build/Test, toter Code, Store-Pitfalls, npm-blockiert). | gepflegt |
 | `TODO.md` | Offene Punkte / Checkliste (nächste Stufen + Politur). | lebendig |
