@@ -324,9 +324,22 @@
 		// Store-Feld mehr, sondern wird HIER JEDEN Frame aus Aktivierung x
 		// Staerke berechnet (siehe docs/Alternative Zoom-Steuerung,md) - kein
 		// max() mit einem separat gesetzten manuellen Wert mehr noetig.
+		//
+		// WICHTIG: zoomEngagement multipliziert das ERGEBNIS (autoZoomTAB,
+		// bereits auf [0,1] begrenzt), NICHT den rohen Pixel-Schwellwert
+		// davor. Die natuerliche (unverzerrte) Breite der jeweils relevanten
+		// Ziffernstelle (widthAt(0) in computeAutoZoomTAB) schrumpft waehrend
+		// der Wiedergabe um viele Groessenordnungen (gemessen: 13.5px bei
+		// flachen Stellen bis 1e-11px bei tiefen) - eine Multiplikation auf
+		// den Schwellwert wuerde daher bei jeder noch so kleinen Aktivierung
+		// (schon 0.01%) sofort kraeftig zoomen, sobald die aktuelle Stelle
+		// tief genug ist (die "harmlose" Uebergangszone verschiebt sich
+		// staendig mit der Tiefe - eine feste Reglerkurve koennte das nicht
+		// kompensieren). Das Ergebnis (autoZoomTAB) ist dagegen IMMER auf
+		// [0,1] begrenzt und daher robust linear skalierbar.
 		let autoZoomTargetExp = getSmoothedAutoZoomExp(u_time);
-		let effectivePx = zoomEngagement * levelToPx(zoomLevel);
-		let effective_t_AB = computeAutoZoomTAB(effectivePx, scale, autoZoomTargetExp);
+		let autoZoomTAB = computeAutoZoomTAB(levelToPx(zoomLevel), scale, autoZoomTargetExp);
+		let effective_t_AB = zoomEngagement * autoZoomTAB;
 
 		updateDynamicLayout(effective_t_AB);
 

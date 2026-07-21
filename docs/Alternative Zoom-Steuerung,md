@@ -249,12 +249,13 @@ zwei Schritten:
      zeigt "Auto-Zoom: Aktivierung" + "Auto-Zoom: Stärke".
    - `TargetBankCanvas.svelte`: die resultierende Basisverzerrung
      (frueher `modeAB`) ist KEIN eigenstaendiges Store-Feld mehr,
-     sondern wird JEDEN Frame aus
-     `computeAutoZoomTAB(zoomEngagement * levelToPx(zoomLevel), scale,
-     targetExp)` berechnet - kein `max()` mit einem separat gesetzten
-     manuellen Wert mehr, damit auch keine "Auto-Zoom uebersteuert den
-     Regler"-Anzeige mehr noetig (strukturell unmoeglich geworden, nicht
-     nur ausgeblendet - `autoZoomMarker`/`autoZoomNote` entfernt).
+     sondern wird JEDEN Frame aus `zoomEngagement` und
+     `computeAutoZoomTAB(levelToPx(zoomLevel), scale, targetExp)`
+     berechnet (Details/Korrektur siehe Bug-Eintrag unten) - kein
+     `max()` mit einem separat gesetzten manuellen Wert mehr, damit auch
+     keine "Auto-Zoom uebersteuert den Regler"-Anzeige mehr noetig
+     (strukturell unmoeglich geworden, nicht nur ausgeblendet -
+     `autoZoomMarker`/`autoZoomNote` entfernt).
    - `urlState.js`: `modeab`/`autozoom` ersetzt durch
      `zoomengage`/`zoomlevel`.
    - Verifiziert: alle Tests gruen (dieselben vorbestehenden,
@@ -270,3 +271,58 @@ dem alten `modeAB`/`autoZoomMinPx`-Paar. Dafuer die Bausteine aus
 `CLAUDE.md` Abschnitt "Schalter-Tweening" anwenden (Embedding/Blend/
 Treiber) - Embedding-Topologie und Treiber-Variante weiterhin bewusst
 NICHT vorentschieden, siehe dort.
+
+## Bug (gefunden beim ersten Ausprobieren des Umbaus): `engagement` viel zu sensibel (behoben)
+
+**Symptom (User):** der "Auto-Zoom: Aktivierung"-Regler wirkt viel zu
+schnell - schon 1% Aktivierung macht einen gewaltigen Unterschied.
+
+**Root Cause (nachgerechnet mit den echten Formeln aus
+`computeAutoZoomTAB`):** die urspruengliche Umsetzung multiplizierte
+`engagement` auf den ROHEN Pixel-Schwellwert (`effectivePx = engagement
+* levelToPx(zoomLevel)`). Die natuerliche (unverzerrte) Breite der
+gerade relevanten Ziffernstelle (`widthAt(0)` in `computeAutoZoomTAB`)
+schrumpft waehrend der Wiedergabe aber ueber viele Groessenordnungen:
+
+| targetExp | widthAt(0) |
+|---|---|
+| 4  | 13.5 px |
+| 8  | 0.00135 px |
+| 12 | 1.35e-7 px |
+| 16 | 1.35e-11 px |
+
+Sobald diese natuerliche Breite (je nach Animationszeitpunkt) deutlich
+unter dem effektiven Schwellwert liegt, reicht JEDE noch so kleine
+Aktivierung (0.01%) schon aus, um kraeftig zu zoomen - die "harmlose"
+Uebergangszone verschiebt sich also staendig mit der Tiefe/Zeit. Eine
+feste Reglerkurve (z.B. eine `(1-e^-x)`-Formkurve auf dem Regler selbst,
+urspruenglicher Vorschlag) koennte das NICHT kompensieren, weil sich das
+Ziel dynamisch waehrend der Wiedergabe verschiebt.
+
+**Fix:** `engagement` multipliziert stattdessen das ERGEBNIS
+(`autoZoomTAB`, bereits fest auf `[0,1]` begrenzt), nicht den rohen
+Schwellwert davor:
+
+```js
+let autoZoomTAB = computeAutoZoomTAB(levelToPx(zoomLevel), scale, autoZoomTargetExp);
+let effective_t_AB = zoomEngagement * autoZoomTAB;
+```
+
+Damit ist `engagement` ein robuster linearer Blend zwischen "kein Zoom"
+und "voll berechneter Auto-Zoom fuer das aktuelle `level`" -
+unabhaengig davon, wie tief die Wiedergabe gerade ist.
+
+**Verifikation:** manuell im Browser (Playwright/Screenshots, tief in
+die Wiedergabe gesprungen, `targetExp` entsprechend hoch) - Reihe
+0%/1%/5%/10%/20%/30%/40%/50%/100% zeigt jetzt einen gleichmaessig
+fortschreitenden Uebergang statt eines Sprungs bei 1%. Tests weiterhin
+gruen (dieselben vorbestehenden Fails wie zu Sessionbeginn).
+
+**Offen:** ob 50% Engagement auch tatsaechlich "halb so viel Zoom"
+FUEHLT (statt nur "halb so viel `t_AB`"), ist noch nicht geprueft -
+`t_AB` geht selbst exponentiell in die Darstellung ein
+(`b_eff = BASE^(1-t_AB)`). Falls sich das beim weiteren Ausprobieren
+als unrund erweist, waere genau HIER (eine zusaetzliche, auf `t_AB`
+angewandte Formkurve) der richtige Ort fuer eine Idee wie den
+urspruenglich vorgeschlagenen `(1-e^-x)`-Ansatz - nicht auf dem rohen
+Schwellwert wie im ersten Versuch.
