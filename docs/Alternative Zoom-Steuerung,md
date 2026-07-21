@@ -326,3 +326,56 @@ als unrund erweist, waere genau HIER (eine zusaetzliche, auf `t_AB`
 angewandte Formkurve) der richtige Ort fuer eine Idee wie den
 urspruenglich vorgeschlagenen `(1-e^-x)`-Ansatz - nicht auf dem rohen
 Schwellwert wie im ersten Versuch.
+
+## Bug (User-Feedback nach dem engagement-Fix): toter Regelbereich bei "Auto-Zoom: Stärke" + unzureichende Gleichmässigkeit
+
+**Feedback:** Der engagement-Fix fühlt sich gut an. Zwei Folgepunkte:
+
+1. **`zoomLevel` muss nicht mehr unter 1px regelbar sein** - das
+   "ist ueberhaupt aktiv"-Bedürfnis deckt jetzt `zoomEngagement` ab,
+   `zoomLevel` deckt nur noch "wie aggressiv, wenn aktiv" ab.
+2. **Toter Regelbereich (schon vor dieser Session vorhanden):** ein Teil
+   des "Auto-Zoom: Stärke"-Reglers bewirkt gar nichts. Besser: der Regler
+   soll zwischen Minimum (Position 0 → 1px) und Maximum (Position 1 →
+   maximal erreichbare Breite) laufen, weiterhin monoton und mindestens
+   C1-stetig über die gesamte Wiedergabe.
+
+**Nachtrag (User, zweites Problem, selbe Ursache):** "abstrakt = gleich
+große Stücke" (der Gleichmäßig-Zustand) ist momentan nicht hinreichend
+implementiert - ein fester Deckel von 100px reicht nicht, um bei
+KLEINER Schalenanzahl (wenig Tiefe) ebenfalls gleich große Quadrate zu
+erzwingen.
+
+**Root Cause (nachgerechnet):** `widthAt(1)` (die Breite bei vollem Zoom,
+`t_AB=1`) ist die tatsaechliche maximal erreichbare Breite - oberhalb
+davon bewirkt eine weitere Erhoehung des Schwellwerts nichts mehr (das
+IST der tote Bereich). Sie haengt kaum von `targetExp` ab (< 0.1%
+Abweichung ueber den ganzen Bereich, da `b_eff` bei `t_AB=1` immer ~1
+ist - daher AUCH unabhaengig von der Animationszeit, nur von
+Basis/Tiefe/Fenstergroesse), aber STARK von der Schalenanzahl
+(`TOTAL_STEPS`) - Beispielrechnung:
+
+| TOTAL_STEPS (Schalenanzahl) | widthAt(1) |
+|---|---|
+| 3  | ~37.500 px |
+| 5  | ~25.000 px |
+| 17 | ~8.333 px |
+
+Der bisherige feste Deckel (100px) liegt bei KLEINER Schalenanzahl weit
+UNTER diesem Wert (toter Bereich oberhalb ~100px bewirkt nichts, Regler
+erreicht t_AB=1 nie exakt -> keine echte Gleichmaessigkeit) und bei
+GROSSER Schalenanzahl witzlos WEIT DARUEBER (nichts oberhalb des
+tatsaechlichen Maximums aendert noch etwas). **Beide gemeldeten Probleme
+haben dieselbe Ursache** und werden durch denselben Fix behoben.
+
+**Fix (geplant):** `levelToPx()`/`pxToLevel()` in `autoZoomLevel.js`
+bekommen ein dynamisches `maxPx` (statt eines festen `AUTO_ZOOM_LEVEL_HI_PX`)
+- berechnet als `widthAt(1, scale, 0)` (targetExp irrelevant, siehe oben)
+in `TargetBankCanvas.svelte`, unveraendert waehrend der Wiedergabe (haengt
+nur von Konfiguration/Fenstergroesse ab, nicht von der Zeit - erfuellt
+damit automatisch "C1-stetig ueber die ganze Animation", weil es sich
+waehrend einer Wiedergabe schlicht nicht aendert). Neue feste Untergrenze
+`AUTO_ZOOM_LEVEL_MIN_PX = 1`. Der berechnete Maximalwert wird ueber einen
+neuen Store (`autoZoomMaxPxStore` in `autoZoomLevel.js`) an
+`ControlPanel.svelte` durchgereicht (nur bei tatsaechlicher Aenderung
+geschrieben, kein Store-Churn pro Frame).
