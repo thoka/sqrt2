@@ -379,3 +379,29 @@ waehrend einer Wiedergabe schlicht nicht aendert). Neue feste Untergrenze
 neuen Store (`autoZoomMaxPxStore` in `autoZoomLevel.js`) an
 `ControlPanel.svelte` durchgereicht (nur bei tatsaechlicher Aenderung
 geschrieben, kein Store-Churn pro Frame).
+
+**Status: umgesetzt.** `src/lib/autoZoomLevel.js`:
+`levelToPx()`/`pxToLevel()` nehmen jetzt `maxPx` entgegen (Default
+`FALLBACK_MAX_PX=100` fuer den Fall vor dem ersten Render), feste
+Untergrenze `AUTO_ZOOM_LEVEL_MIN_PX=1`, neuer Store
+`autoZoomMaxPxStore`. `TargetBankCanvas.svelte`: `widthAt()` aus
+`computeAutoZoomTAB()` herausgeloest, neue Funktion
+`maxAutoZoomWidthPx(scale) = widthAt(1, scale, 0)`, pro Frame berechnet
+(billig) und nur bei tatsaechlicher Aenderung an den Store gemeldet.
+`ControlPanel.svelte` liest den Store fuer das px-Readout.
+`configStore`-Default fuer `zoomLevel` ist jetzt ein neutraler
+Reglerwert (0.5) statt eines aus einem festen px-Wert abgeleiteten
+Defaults.
+
+**Verifiziert (Playwright/Screenshots):**
+- **Kein toter Bereich mehr:** Reglerposition 0..1 in Schritten
+  (0/0.2/0.4/0.6/0.8/0.9/0.95/1) liefert bei Tiefe=16 die Reihe
+  1.000/1.637/2.679/4.384/7.175/9.179/10.382/11.743 px - durchgehend
+  wachsend, keine Plateaus.
+- **Echte Gleichmaessigkeit bei kleiner Schalenanzahl:** bei Tiefe=3
+  liefert Level=1 jetzt 60.842px (statt der alten 100px) - das
+  Ziel-Quadrat zeigt bei Aktivierung=100%/Staerke=100% sichtbar
+  GLEICH GROSSE Zellen (Screenshot geprueft), nicht mehr die
+  unveraendert proportionalen Bloecke wie beim alten festen Deckel.
+- Tests weiterhin gruen (dieselben vorbestehenden, unabhaengigen Fails
+  wie zu Sessionbeginn).
