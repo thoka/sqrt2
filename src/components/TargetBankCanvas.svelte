@@ -23,6 +23,7 @@
 	import { layoutCentered, findRect, commonAncestor } from '../lib/recursive-layout.js';
 	import { configStore, playbackStore, compiledStore } from '../lib/stores.js';
 	import { levelToPx, autoZoomMaxPxStore } from '../lib/autoZoomLevel.js';
+	import { initZoomStateTween } from '../lib/zoomStateTween.js';
 	import { computeLiveL } from '../lib/compiler.js';
 	import { formatLiveNumbers, formatAxisDenominator } from '../lib/numberRenderer.js';
 	import { drawScript } from '../lib/mathCanvasRenderer.js';
@@ -347,10 +348,20 @@
 		// Die resultierende Basisverzerrung ("modeAB") ist kein eigenstaendiges
 		// Store-Feld mehr, sondern wird HIER JEDEN Frame aus Aktivierung x
 		// Staerke UND dem unabhaengigen "Abstraktion"-Regler berechnet (siehe
-		// docs/Alternative Zoom-Steuerung,md). `abstraction` ist bewusst
-		// wieder ein max()-Floor (wie einst "modeAB") - anders als frueher
-		// aber nicht mehr mit dem rohen Auto-Zoom-Schwellwert verrechnet,
-		// sondern mit dessen bereits [0,1]-begrenztem ERGEBNIS.
+		// docs/Alternative Zoom-Steuerung,md).
+		//
+		// WICHTIG: `abstraction` wird NICHT per max() mit dem Auto-Zoom-
+		// Ergebnis verrechnet (das war der erste Versuch) - ein max()-Floor
+		// wird naemlich genau dann wirkungslos, wenn der Auto-Zoom-Anteil
+		// bereits ueber dem Regler-Wert liegt (z.B. spaet in der Wiedergabe,
+		// wenn Auto-Zoom ohnehin schon stark zoomt) - exakt dasselbe
+		// "eine Steuerung uebersteuert die andere ueber einen Teil ihres
+		// Bereichs"-Problem, das schon die alte modeAB/autoZoomMinPx-
+		// Kombination hatte (User-Beobachtung: Regler wirkt nur noch auf der
+		// letzten Strecke von [0,1]). Stattdessen eine LINEARE MISCHUNG
+		// zwischen dem Auto-Zoom-Ergebnis (bei abstraction=0) und 1 (bei
+		// abstraction=1) - dadurch bewirkt der Regler IMMER eine
+		// proportionale Aenderung, unabhaengig vom aktuellen Auto-Zoom-Stand.
 		//
 		// WICHTIG: zoomEngagement multipliziert das ERGEBNIS (autoZoomTAB,
 		// bereits auf [0,1] begrenzt), NICHT den rohen Pixel-Schwellwert
@@ -381,7 +392,8 @@
 			scale,
 			autoZoomTargetExp,
 		);
-		let effective_t_AB = Math.max(abstraction, zoomEngagement * autoZoomTAB);
+		let autoZoomComponent = zoomEngagement * autoZoomTAB;
+		let effective_t_AB = autoZoomComponent + abstraction * (1 - autoZoomComponent);
 
 		updateDynamicLayout(effective_t_AB);
 
@@ -1046,6 +1058,12 @@
 	}
 
 	onMount(() => {
+		// Treibt den weichen Uebergang zwischen den drei Voreinstellungen der
+		// Alternativen Rand-Zoom-Steuerung (schreibt zoomEngagement/
+		// abstraction in configStore, siehe zoomStateTween.js) - hier
+		// registriert, weil diese Komponente ohnehin die einzige Instanz des
+		// configStore-Subscribe/rAF-Rendering-Verbunds fuer den Zoom ist.
+		initZoomStateTween();
 		ctx = canvasEl.getContext('2d');
 		setDebugCanvas(canvasEl);
 		bankZoomLabel = document.getElementById('bankZoomLabel');

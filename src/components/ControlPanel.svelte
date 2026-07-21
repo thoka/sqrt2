@@ -70,6 +70,14 @@
 		return (e) => configStore.update((c) => ({ ...c, [field]: e.target.value }));
 	}
 
+	// Alternative Rand-Zoom-Steuerung (docs/Alternative Zoom-Steuerung,md):
+	// Radio-Klick setzt NUR zoomState - der eigentliche (weiche) Uebergang
+	// von zoomEngagement/abstraction auf das Preset dieses Zustands laeuft
+	// in zoomStateTween.js, angestossen durch genau diese Store-Aenderung.
+	function onZoomStateChange(state) {
+		return () => configStore.update((c) => ({ ...c, zoomState: state }));
+	}
+
 	// Zoom-Schwellwert: in der UI "Zoom-Schwellwert" (immer Basis 10), im
 	// Store als Potenzen zur echten Basis. Umrechnung 10/base (siehe
 	// INTERFACE-TODO Admin).
@@ -288,18 +296,51 @@
 			</label>
 		</div>
 
-		<label class="control-group" style="margin-top:6px;"
-			>Auto-Zoom: Aktivierung
-			<input
-				type="range"
-				min="0"
-				max="1"
-				step="0.01"
-				value={$configStore.zoomEngagement}
-				oninput={onInputFloat('zoomEngagement', 1)}
-			/>
-			<span class="zoom-readout">{Math.round($configStore.zoomEngagement * 100)} %</span>
-		</label>
+		{#if $configStore.edgeZoomControlMode}
+			<fieldset class="control-group zoom-state-group" style="margin-top:6px;">
+				<legend>Zoom</legend>
+				<label class="radio-row">
+					<input
+						type="radio"
+						name="zoomState"
+						checked={$configStore.zoomState === 'flaechentreu'}
+						onchange={onZoomStateChange('flaechentreu')}
+					/>
+					Flächentreu
+				</label>
+				<label class="radio-row">
+					<input
+						type="radio"
+						name="zoomState"
+						checked={$configStore.zoomState === 'rand'}
+						onchange={onZoomStateChange('rand')}
+					/>
+					Rand sichtbar
+				</label>
+				<label class="radio-row">
+					<input
+						type="radio"
+						name="zoomState"
+						checked={$configStore.zoomState === 'gleichmaessig'}
+						onchange={onZoomStateChange('gleichmaessig')}
+					/>
+					Gleichmäßig
+				</label>
+			</fieldset>
+		{:else}
+			<label class="control-group" style="margin-top:6px;"
+				>Auto-Zoom: Aktivierung
+				<input
+					type="range"
+					min="0"
+					max="1"
+					step="0.01"
+					value={$configStore.zoomEngagement}
+					oninput={onInputFloat('zoomEngagement', 1)}
+				/>
+				<span class="zoom-readout">{Math.round($configStore.zoomEngagement * 100)} %</span>
+			</label>
+		{/if}
 
 		<label class="control-group" style="margin-top: 5px;"
 			>Auto-Zoom: Stärke
@@ -319,18 +360,20 @@
 			>
 		</label>
 
-		<label class="control-group" style="margin-top: 5px;"
-			>Abstraktion
-			<input
-				type="range"
-				min="0"
-				max="1"
-				step="0.01"
-				value={$configStore.abstraction}
-				oninput={onInputFloat('abstraction', 0)}
-			/>
-			<span class="zoom-readout">{Math.round($configStore.abstraction * 100)} %</span>
-		</label>
+		{#if !$configStore.edgeZoomControlMode}
+			<label class="control-group" style="margin-top: 5px;"
+				>Abstraktion
+				<input
+					type="range"
+					min="0"
+					max="1"
+					step="0.01"
+					value={$configStore.abstraction}
+					oninput={onInputFloat('abstraction', 0)}
+				/>
+				<span class="zoom-readout">{Math.round($configStore.abstraction * 100)} %</span>
+			</label>
+		{/if}
 
 		<label
 			class="control-group"
@@ -467,7 +510,20 @@
 	{/if}
 
 	{#if showTab('Admin') && activeTab === 'Admin'}
-		<label class="control-group" style="margin-top: 5px;"
+		<label
+			class="control-group"
+			style="margin-top: 5px; flex-direction: row; align-items: center; gap: 8px;"
+		>
+			<input
+				type="checkbox"
+				style="width: auto;"
+				checked={$configStore.edgeZoomControlMode}
+				onchange={onChangeChecked('edgeZoomControlMode')}
+			/>
+			Alternative Rand-Zoom-Steuerung (3 Zustände statt Regler)
+		</label>
+
+		<label class="control-group" style="margin-top: 10px;"
 			>Zoom-Schwellwert
 			<input
 				type="number"
@@ -623,5 +679,24 @@
 	.muted-note {
 		color: #64748b;
 		font-size: 0.78em;
+	}
+	.zoom-state-group {
+		border: none;
+		margin: 0;
+		padding: 0;
+	}
+	.zoom-state-group legend {
+		font-size: 0.9em;
+		padding: 0;
+		margin-bottom: 2px;
+	}
+	.radio-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 8px;
+	}
+	.radio-row input[type='radio'] {
+		width: auto;
 	}
 </style>

@@ -109,6 +109,19 @@ const CONFIG_FIELDS = [
 		parse: (v) => v === '1',
 		format: (c) => (c.showLabels ? '1' : '0'),
 	},
+	// Alternative Rand-Zoom-Steuerung (docs/Alternative Zoom-Steuerung,md).
+	{
+		key: 'altzoom',
+		field: 'edgeZoomControlMode',
+		parse: (v) => v === '1',
+		format: (c) => (c.edgeZoomControlMode ? '1' : '0'),
+	},
+	{
+		key: 'zoomstate',
+		field: 'zoomState',
+		parse: (v) => (['flaechentreu', 'rand', 'gleichmaessig'].includes(v) ? v : undefined),
+		format: (c) => c.zoomState,
+	},
 	// --- Playback-Felder (liegen in playbackStore, nicht configStore) ---
 	// Laufrichtung der Zeit: -1 = rueckwaerts, sonst vorwaerts.
 	{

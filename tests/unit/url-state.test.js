@@ -18,6 +18,8 @@ const DEFAULT_CONFIG = {
 	zoomEngagement: 1.0,
 	zoomLevel: 0.5,
 	abstraction: 0.0,
+	edgeZoomControlMode: false,
+	zoomState: 'rand',
 	zoomSpeedCoef: 0.012,
 	compactionEnabled: false,
 	compactionTransitionTicks: 3,
@@ -79,6 +81,17 @@ test('parseConfigFromUrl(): abstraction wird auf [0,1] geklammert', () => {
 	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('abstraction=-5')), {
 		abstraction: 0,
 	});
+});
+
+test('parseConfigFromUrl(): altzoom/zoomstate (Alternative Rand-Zoom-Steuerung)', () => {
+	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('altzoom=1')), {
+		edgeZoomControlMode: true,
+	});
+	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('zoomstate=gleichmaessig')), {
+		zoomState: 'gleichmaessig',
+	});
+	// Unbekannter Zustandswert wird ignoriert statt einen ungueltigen Store-Wert zu erzeugen.
+	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('zoomstate=quatsch')), {});
 });
 
 test('parsePlaybackFromUrl(): "time" hat Vorrang vor "tick", falls beide angegeben sind', () => {
@@ -176,6 +189,8 @@ test('buildStateParams() setzt jeden erwarteten URL-Schlüssel', () => {
 		'flyalpha',
 		'flightmaxspeed',
 		'labels',
+		'altzoom',
+		'zoomstate',
 		'time',
 		'play',
 		'dir',

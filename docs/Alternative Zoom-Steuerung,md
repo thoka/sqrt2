@@ -418,20 +418,95 @@ als Store-Feld, das mit Auto-Zoom vermischt war.
 
 **Entscheidung:** `abstraction` ist EBENFALLS ein stufenloser linearer
 Regler (keine Formkurve, analog zu `engagement` - erst empirisch pruefen,
-ob eine Kurve noetig ist, bevor eine gebaut wird). Kombiniert sich per
-`max()` mit dem Auto-Zoom-Ergebnis - strukturell wie das alte `modeAB`,
-aber jetzt mit dem bereits [0,1]-begrenzten, engagement-gateten
-Auto-Zoom-Anteil statt einem rohen Schwellwert:
+ob eine Kurve noetig ist, bevor eine gebaut wird).
+
+**Korrektur (User, nach erstem Ausprobieren): `max()` war die falsche
+Kombination.** Ein `max()`-Floor wird wirkungslos, sobald der Auto-Zoom-
+Anteil bereits ueber dem Reglerwert liegt - genau das passiert spaet in
+der Wiedergabe (Auto-Zoom zoomt dort ohnehin schon stark), sodass der
+Regler dann nur noch auf der letzten Strecke von [0,1] ueberhaupt etwas
+bewirkte. Das ist exakt dasselbe "eine Steuerung uebersteuert die andere
+ueber einen Teil ihres Bereichs"-Problem, das schon die alte
+`modeAB`/`autoZoomMinPx`-Kombination hatte ("Auto-Zoom aktiv -
+uebersteuert den Regler nach oben").
+
+**Fix:** lineare Mischung zwischen dem Auto-Zoom-Ergebnis (bei
+`abstraction=0`) und 1 (bei `abstraction=1`) statt `max()` - dadurch
+bewirkt der Regler IMMER eine proportionale Aenderung, unabhaengig vom
+aktuellen Auto-Zoom-Stand:
 
 ```js
 let autoZoomTAB = computeAutoZoomTAB(levelToPx(zoomLevel, maxWidthPx), scale, autoZoomTargetExp);
-let effective_t_AB = Math.max(abstraction, zoomEngagement * autoZoomTAB);
+let autoZoomComponent = zoomEngagement * autoZoomTAB;
+let effective_t_AB = autoZoomComponent + abstraction * (1 - autoZoomComponent);
 ```
+
+Randwerte bleiben erhalten: `abstraction=0` liefert exakt das
+unveraenderte Auto-Zoom-Ergebnis, `abstraction=1` liefert exakt 1 (volle
+Gleichmaessigkeit), unabhaengig vom Auto-Zoom-Zustand.
 
 **Umgesetzt:** `configStore.abstraction` (Default 0), URL-Parameter
 `abstraction`, Regler "Abstraktion" in `ControlPanel.svelte`
-(Grundeinstellungen, linear 0..1, live). Verifiziert im Browser:
-Aktivierung=0%, Abstraktion=100% erzwingt trotzdem volle Gleichmaessigkeit
-(Ziel-Quadrat schrumpft auf ein einzelnes Element) - der `max()`-Floor
-funktioniert unabhaengig vom Auto-Zoom-Zustand, wie beabsichtigt. Tests
-gruen (dieselben vorbestehenden Fails).
+(Grundeinstellungen, linear 0..1, live). Tests gruen (dieselben
+vorbestehenden Fails).
+
+## Status: diskrete 3-Zustands-Umschaltung umgesetzt (Schalter-Tweening)
+
+Jetzt erst moeglich, da der Steuerungsraum (engagement/level/abstraction)
+zuerst sauber umgebaut wurde (User-Vorgabe: "erst der grundlegende Umbau
+und nicht optional hinterher"). Umsetzung der Bausteine aus `CLAUDE.md`
+Abschnitt "Schalter-Tweening":
+
+  - **Embedding:** NUR `zoomEngagement` + `abstraction` (2D) - `zoomLevel`
+    bleibt bewusst AUSSERHALB, in KEINEM der 3 Presets festgelegt, bleibt
+    also beim Zustandswechsel unveraendert stehen (wie ein Lautstaerke-
+    regler, der beim Stummschalten seinen Wert behaelt) und ist
+    unabhaengig vom aktiven Zustand jederzeit als eigener Regler nutzbar:
+    ```js
+    flaechentreu:  { engagement: 0, abstraction: 0 }
+    rand:          { engagement: 1, abstraction: 0 }
+    gleichmaessig: { abstraction: 1 } // engagement bewusst NICHT gesetzt
+    ```
+    "gleichmaessig" laesst `engagement` unveraendert, weil bei
+    `abstraction=1` die lineare Mischung (siehe oben) ohnehin exakt 1
+    liefert, unabhaengig von `engagement` - macht dadurch jeden der 3
+    paarweisen Uebergaenge (Flaechentreu↔Rand, Rand↔Gleichmaessig) zu einer
+    EIN-SKALAR-Bewegung, was sie automatisch zeitsymmetrisch macht (nur
+    ein direkter Sprung Flaechentreu↔Gleichmaessig, der "Rand" ueberspringt,
+    bewegt beide Groessen gemeinsam).
+  - **Blend:** trivialer 2-Punkt-Blend (immer FROM=aktueller Live-Wert TO=
+    Preset-Ziel) mit gemeinsamem Fortschritt `s` - kein Simplex noetig, da
+    nie zwischen mehr als 2 Punkten gleichzeitig geblendet wird.
+  - **Treiber:** einfacher Ease-Ramp (`smoothstep(elapsed/DURATION)`,
+    `DURATION=0.35s`), KEINE Feder (User-Entscheidung "einfachere Loesung
+    zuerst, ohne eine aufwaendigere spaeter zu blockieren") - bei
+    Retargeting waehrend eines laufenden Uebergangs wird die Rampe bei
+    `s=0` neu gestartet (kleiner Steigungsknick moeglich, akzeptierter
+    Trade-off), der WERT selbst bleibt aber C0-stetig, weil "von" immer
+    der aktuelle Live-Wert aus `configStore` ist.
+
+**Neues Modul `src/lib/zoomStateTween.js`** (frischer, einfacher Code -
+NICHT die beerdigte Feder-Implementierung wiederbelebt). Registriert ueber
+`initZoomStateTween()` in `TargetBankCanvas.svelte` `onMount()`.
+
+**ControlPanel.svelte:** Admin-Checkbox "Alternative Rand-Zoom-Steuerung"
+(`edgeZoomControlMode`). Grundeinstellungen: bei aktivem Alt-Modus
+ersetzen 3 Radio-Buttons (Flächentreu/Rand sichtbar/Gleichmäßig) die
+Regler "Aktivierung" und "Abstraktion" - "Auto-Zoom: Stärke" bleibt
+UNABHAENGIG vom Zustand immer sichtbar (ist ja nicht Teil des Embeddings).
+
+**Verifiziert:** 5 Tests in `src/lib/zoomStateTween.test.js` (vitest/jsdom,
+braucht `requestAnimationFrame`), 2 neue Tests in `ControlPanel.test.js`
+(Admin-Checkbox, Radio-UI ersetzt Regler), neue URL-Parameter-Tests.
+Manuell im Browser (Playwright/Screenshots): alle 3 Zustaende anwaehlbar,
+sichtbarer Zoom-Unterschied, "Gleichmäßig" erzeugt tatsaechlich ein
+einzelnes gleichmaessiges Element, keine Konsolenfehler. Tests insgesamt
+gruen (dieselben vorbestehenden, unabhaengigen Fails wie zu
+Sessionbeginn).
+
+**Noch offen (bewusst nicht entschieden):** ob die 1D-Ketten-Topologie
+(Embedding) und der einfache Ease-Ramp (Treiber) sich am fertigen Exponat
+gut genug anfuehlen, oder ob eine aufwaendigere Variante (z.B.
+geschwindigkeitsstetige Neuplanung bei Retargeting, siehe CLAUDE.md
+"Schalter-Tweening") noetig wird - das soll am Exponat ausprobiert werden,
+keine Vorab-Festlegung.

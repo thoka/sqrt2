@@ -41,6 +41,18 @@ const DEFAULTS = {
 	// Regler bewusst ohne Formkurve (siehe docs/Alternative
 	// Zoom-Steuerung,md: erst am Regler pruefen, ob eine Kurve noetig ist).
 	abstraction: 0.0,
+
+	// Alternative Rand-Zoom-Steuerung (siehe docs/Alternative
+	// Zoom-Steuerung,md "Schalter-Tweening"): statt der drei einzelnen
+	// Regler (Aktivierung/Abstraktion; zoomLevel bleibt unabhaengig davon
+	// immer als Regler sichtbar) nur 3 diskrete Zustaende zur Auswahl,
+	// weich animiert beim Wechsel (src/lib/zoomStateTween.js). Default AUS,
+	// damit sich am Regler-Verhalten nichts aendert - zuschaltbar per
+	// Checkbox im Admin-Tab.
+	edgeZoomControlMode: false,
+	// 'flaechentreu' | 'rand' | 'gleichmaessig' - nur wirksam, wenn
+	// edgeZoomControlMode true ist.
+	zoomState: 'rand',
 	// Flug-Morph: Teile drehen (true) oder nur strecken (false)
 	flightRotation: true,
 	// Transparenz fliegender Stücke (0 = unsichtbar, 1 = deckend)
