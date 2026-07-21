@@ -10,38 +10,86 @@
 // ein Lautstaerkeregler, der beim Stummschalten seinen Wert behaelt) und
 // ist unabhaengig vom aktiven Zustand jederzeit als eigener Regler nutzbar.
 //
-// Treiber: bewusst ein einfacher, gleichmaessig durchlaufender Ease-Ramp
-// (smoothstep(elapsed/DURATION)), KEINE Feder (siehe CLAUDE.md
-// "Schalter-Tweening" + docs/Alternative Zoom-Steuerung,md fuer die
-// Diskussion, warum eine Feder hier nicht zeitsymmetrisch ist) - User-
-// Entscheidung "einfachere Loesung zuerst, ohne eine aufwaendigere spaeter
-// zu blockieren". Bei Retargeting waehrend eines laufenden Uebergangs wird
-// die Rampe einfach bei s=0 neu gestartet (kleiner Steigungsknick moeglich,
-// akzeptierter Trade-off) - der Wert selbst bleibt dabei stetig (C0), weil
-// "von" immer der aktuelle Live-Wert aus configStore ist (der waehrend
-// eines laufenden Uebergangs exakt der zuletzt geschriebene Zwischenwert
-// ist).
+// TREIBER (2. Anlauf): kritisch gedaempfter Geschwindigkeits-Integrator
+// (Position UND Geschwindigkeit als echter Zustand - "Game Programming
+// Gems 4.8"/Unitys Mathf.SmoothDamp). Der ERSTE Anlauf war bewusst ein
+// einfacherer Ease-Ramp (Fortschritt s, bei Retargeting auf s=0
+// zurueckgesetzt) - User-Entscheidung "einfachere Loesung zuerst". Das
+// erzeugte aber sichtbare "Blitze" beim schnellen Umschalten: s=0
+// bedeutet Geschwindigkeit exakt 0, ein Retargeting waehrend eine
+// Bewegung noch eine REALE Geschwindigkeit hatte, erzeugte also einen
+// Geschwindigkeits-Knick - und weil `engagement`/`abstraction`
+// EXPONENTIELL in die Darstellung eingehen (`BASE^(1-t_AB)`, siehe
+// TargetBankCanvas.svelte), machte sich dieser Knick als sichtbarer
+// Sprung bemerkbar, nicht nur als leichte Unrundheit.
+//
+// Dieser Integrator traegt Geschwindigkeit ECHT ueber jedes Retargeting
+// hinweg fort (nur die ZIEL-Werte aendern sich bei retarget(), Position
+// und Geschwindigkeit laufen unveraendert weiter) - dadurch ist JEDES
+// Retargeting, zu JEDEM Zeitpunkt, garantiert geschwindigkeitsstetig
+// (keine Blitze mehr, beliebig schnelles Hin-und-Herschalten moeglich).
+//
+// smoothTime/maxSpeed werden aus configStore.zoomStateTransitionDuration
+// abgeleitet (Regler "Zustands-Übergang: Dauer" im Animation-Tab, 0..10s):
+// smoothTime steuert das Anfahren/Abbremsen an den Enden, maxSpeed
+// deckelt die Geschwindigkeit dazwischen so, dass eine VOLLE 0->1-Bewegung
+// (der groesstmoegliche Sprung in diesem Embedding) bei konstanter
+// Maximalgeschwindigkeit ungefaehr `duration` Sekunden braucht - der
+// Regler bleibt dadurch als "ungefaehre Uebergangsdauer" interpretierbar,
+// auch wenn die Feder den Zielwert nur asymptotisch (nie exakt exakt)
+// erreicht.
 import { configStore } from './configStore.js';
 
-const DURATION = 0.35; // Sekunden - typische UI-Uebergangsdauer
+// Kalibrierungsfaktor smoothTime -> tatsaechliche Einschwingzeit (~1%
+// Restfehler, ausgehend aus der Ruhe): per Simulation ermittelt (siehe
+// docs/Alternative Zoom-Steuerung,md), NICHT 1:1 (eine kritisch gedaempfte
+// Feder braucht laenger als ihre eigene smoothTime, um praktisch am Ziel
+// anzukommen).
+const SETTLE_TIME_FACTOR = 3.65;
 
 // Preset je Zustand - NUR die Felder angeben, die dieser Zustand
 // tatsaechlich festlegt. "gleichmaessig" laesst engagement bewusst offen
-// (bleibt unveraendert): sobald abstraction=1 ist, dominiert der max() in
-// TargetBankCanvas.svelte ohnehin, engagement ist dann irrelevant - siehe
-// docs/Alternative Zoom-Steuerung,md fuer die Begruendung (macht jeden der
-// 3 paarweisen Uebergaenge zu einer Ein-Skalar-Bewegung, damit
-// zeitsymmetrisch).
+// (bleibt unveraendert): sobald abstraction=1 ist, dominiert die lineare
+// Mischung in TargetBankCanvas.svelte ohnehin, engagement ist dann
+// irrelevant - siehe docs/Alternative Zoom-Steuerung,md fuer die
+// Begruendung (macht jeden der 3 paarweisen Uebergaenge zu einer
+// Ein-Skalar-Bewegung).
 const ZOOM_STATE_TARGETS = {
 	flaechentreu: { engagement: 0, abstraction: 0 },
 	rand: { engagement: 1, abstraction: 0 },
 	gleichmaessig: { abstraction: 1 },
 };
 
-function smoothstep(s) {
-	if (s <= 0) return 0;
-	if (s >= 1) return 1;
-	return s * s * (3 - 2 * s);
+// Ein Integrations-Schritt (Position + Geschwindigkeit) - reine Funktion,
+// unabhaengig testbar. Kanonischer SmoothDamp-Algorithmus (Game
+// Programming Gems 4.8): kritisch gedaempft (kein Ueberschwingen bei
+// EINEM Ziel), mit Geschwindigkeitsdeckel (maxSpeed) und expliziter
+// Ueberschwing-Sicherung (verhindert Artefakte, wenn maxSpeed/grosse dt
+// das Ziel sonst "ueberspringen" wuerden).
+export function springStep(value, velocity, target, smoothTime, maxSpeed, dt) {
+	if (dt <= 0) return { value, velocity };
+	smoothTime = Math.max(0.0001, smoothTime);
+	const omega = 2 / smoothTime;
+	const x = omega * dt;
+	const exp = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x);
+	let change = value - target;
+	const originalTarget = target;
+
+	const maxChange = maxSpeed * smoothTime;
+	change = Math.max(-maxChange, Math.min(maxChange, change));
+	const clampedTarget = value - change;
+
+	const temp = (velocity + omega * change) * dt;
+	let newVelocity = (velocity - omega * temp) * exp;
+	let newValue = clampedTarget + (change + temp) * exp;
+
+	// Ueberschwingen verhindern: wenn das Ziel auf dem Weg "ueberholt"
+	// wuerde, stattdessen exakt dort stoppen (Standard-SmoothDamp-Sicherung).
+	if (originalTarget - value > 0 === newValue > originalTarget) {
+		newValue = originalTarget;
+		newVelocity = (newValue - originalTarget) / dt;
+	}
+	return { value: newValue, velocity: newVelocity };
 }
 
 let started = false;
@@ -57,19 +105,55 @@ export function initZoomStateTween() {
 
 	let rafId = null;
 	let lastKey = null;
-	let transitionFrom = null;
-	let transitionTo = null;
-	let startTime = 0;
+	let lastFrameTime = 0;
+
+	let engagementValue = 1.0;
+	let engagementVelocity = 0;
+	let abstractionValue = 0.0;
+	let abstractionVelocity = 0;
+	let targetEngagement = 1.0;
+	let targetAbstraction = 0.0;
+	let smoothTime = 1.0;
+	let maxSpeed = 1.0;
+
+	const SETTLE_EPS = 1e-3;
 
 	function tick(now) {
-		let s = DURATION <= 0 ? 1 : Math.max(0, Math.min(1, (now - startTime) / DURATION));
-		let eased = smoothstep(s);
-		let engagement =
-			transitionFrom.engagement + (transitionTo.engagement - transitionFrom.engagement) * eased;
-		let abstraction =
-			transitionFrom.abstraction + (transitionTo.abstraction - transitionFrom.abstraction) * eased;
-		configStore.update((c) => ({ ...c, zoomEngagement: engagement, abstraction }));
-		if (s >= 1) {
+		let dt = Math.min(0.1, Math.max(0, (now - lastFrameTime) / 1000));
+		lastFrameTime = now;
+
+		let e = springStep(
+			engagementValue,
+			engagementVelocity,
+			targetEngagement,
+			smoothTime,
+			maxSpeed,
+			dt,
+		);
+		let a = springStep(
+			abstractionValue,
+			abstractionVelocity,
+			targetAbstraction,
+			smoothTime,
+			maxSpeed,
+			dt,
+		);
+		engagementValue = e.value;
+		engagementVelocity = e.velocity;
+		abstractionValue = a.value;
+		abstractionVelocity = a.velocity;
+		configStore.update((c) => ({
+			...c,
+			zoomEngagement: engagementValue,
+			abstraction: abstractionValue,
+		}));
+
+		let settled =
+			Math.abs(engagementValue - targetEngagement) < SETTLE_EPS &&
+			Math.abs(engagementVelocity) < SETTLE_EPS &&
+			Math.abs(abstractionValue - targetAbstraction) < SETTLE_EPS &&
+			Math.abs(abstractionVelocity) < SETTLE_EPS;
+		if (settled) {
 			rafId = null;
 			return;
 		}
@@ -77,19 +161,39 @@ export function initZoomStateTween() {
 	}
 
 	function retarget(c, now) {
+		let duration = Math.max(0.05, c.zoomStateTransitionDuration ?? 1.0);
+		// smoothTime ist NICHT direkt "duration" - eine kritisch gedaempfte
+		// Feder braucht empirisch (per Simulation ermittelt) ca. das 3.65-
+		// fache von smoothTime, um auf ~1% Restfehler zu kommen. Ohne diese
+		// Umrechnung waere der Regler "Zustands-Übergang: Dauer" grob falsch
+		// kalibriert (ein voller 0->1-Uebergang dauerte ca. 3.65x laenger als
+		// eingestellt). maxSpeed bewusst grosszuegig (nicht an duration
+		// gekoppelt) - dient nur als Sicherheitsnetz gegen extreme
+		// Geschwindigkeiten bei sehr kurzen Dauern, bindet im Normalfall nicht.
+		smoothTime = duration / SETTLE_TIME_FACTOR;
+		maxSpeed = 20;
 		let preset = ZOOM_STATE_TARGETS[c.zoomState] ?? ZOOM_STATE_TARGETS.rand;
-		// "von" ist immer der aktuelle Live-Wert - waehrend eines laufenden
-		// Uebergangs ist das exakt der zuletzt von tick() geschriebene
-		// Zwischenwert (Wert bleibt dadurch C0-stetig, auch bei schnellem
-		// Umklicken). Felder, die das neue Preset nicht festlegt, bleiben
-		// unveraendert (Ziel = aktueller Wert).
-		transitionFrom = { engagement: c.zoomEngagement, abstraction: c.abstraction };
-		transitionTo = {
-			engagement: preset.engagement ?? c.zoomEngagement,
-			abstraction: preset.abstraction ?? c.abstraction,
-		};
-		startTime = now;
-		if (rafId === null) rafId = requestAnimationFrame(tick);
+
+		if (rafId === null) {
+			// Keine Bewegung im Gange - Position/Geschwindigkeit auf einen
+			// zwischenzeitlich ANDERS (z.B. direkt per Regler) gesetzten
+			// Live-Wert nachziehen, sonst wuerde die naechste Bewegung von
+			// einer veralteten Position aus starten. WAEHREND einer laufenden
+			// Bewegung (rafId !== null) passiert das explizit NICHT - Position
+			// UND Geschwindigkeit laufen unveraendert weiter, nur die Ziele
+			// aendern sich (das ist der eigentliche Fix gegen die "Blitze").
+			engagementValue = c.zoomEngagement;
+			engagementVelocity = 0;
+			abstractionValue = c.abstraction;
+			abstractionVelocity = 0;
+		}
+		targetEngagement = preset.engagement ?? c.zoomEngagement;
+		targetAbstraction = preset.abstraction ?? c.abstraction;
+
+		if (rafId === null) {
+			lastFrameTime = now;
+			rafId = requestAnimationFrame(tick);
+		}
 	}
 
 	configStore.subscribe((c) => {

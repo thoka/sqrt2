@@ -53,6 +53,10 @@ const DEFAULTS = {
 	// 'flaechentreu' | 'rand' | 'gleichmaessig' - nur wirksam, wenn
 	// edgeZoomControlMode true ist.
 	zoomState: 'rand',
+	// Dauer (Sekunden) fuer einen KOMPLETTEN Uebergang zwischen 2 Zustaenden
+	// (src/lib/zoomStateTween.js) - Regler "Zustands-Übergang: Dauer" im
+	// Animation-Tab, Bereich 0..10s.
+	zoomStateTransitionDuration: 1.0,
 	// Flug-Morph: Teile drehen (true) oder nur strecken (false)
 	flightRotation: true,
 	// Transparenz fliegender Stücke (0 = unsichtbar, 1 = deckend)

@@ -410,6 +410,24 @@
 		</label>
 
 		<label class="control-group" style="margin-top:6px;"
+			>Zustands-Übergang: Dauer (Sekunden)
+			<input
+				type="range"
+				min="0"
+				max="10"
+				step="0.1"
+				value={$configStore.zoomStateTransitionDuration}
+				oninput={onInputFloat('zoomStateTransitionDuration', 1.0)}
+			/>
+			<span class="zoom-readout"
+				>{$configStore.zoomStateTransitionDuration.toLocaleString('de-DE', {
+					minimumFractionDigits: 1,
+					maximumFractionDigits: 1,
+				})} s</span
+			>
+		</label>
+
+		<label class="control-group" style="margin-top:6px;"
 			>Zoom-Trägheit (kleiner = schneller)
 			<input
 				type="number"

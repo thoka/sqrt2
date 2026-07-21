@@ -16,6 +16,9 @@ const BASE = {
 	zoomEngagement: 1.0,
 	abstraction: 0.0,
 	zoomLevel: 0.5,
+	// Klein gehalten, damit die Tests (echte Timer/rAF) schnell durchlaufen -
+	// die Standard-Dauer (1s) wird separat unten getestet.
+	zoomStateTransitionDuration: 0.1,
 };
 
 async function waitUntil(predicate, timeoutMs = 8000) {
@@ -97,4 +100,56 @@ test('edgeZoomControlMode=false stoppt weitere automatische Updates', async () =
 	let frozen = get(configStore).abstraction;
 	await new Promise((r) => setTimeout(r, 300));
 	expect(get(configStore).abstraction).toBe(frozen);
+}, 10000);
+
+// Regression: zoomStateTransitionDuration ist in SEKUNDEN, aber
+// requestAnimationFrame-Zeitstempel sind in MILLISEKUNDEN - ohne
+// die ms->s-Umrechnung in tick() war der Uebergang nach < 1ms fertig,
+// UNABHAENGIG vom Reglerwert (per manueller Browser-Messung gefunden -
+// dieser Test allein haette den Bug unter jsdom NICHT zuverlaessig
+// gefangen, siehe docs/Alternative Zoom-Steuerung,md).
+test('zoomStateTransitionDuration wird als SEKUNDEN interpretiert (ms/s-Regression)', async () => {
+	configStore.set({
+		...BASE,
+		edgeZoomControlMode: true,
+		zoomState: 'flaechentreu',
+		zoomEngagement: 0,
+		abstraction: 0,
+		zoomStateTransitionDuration: 1.0,
+	});
+	configStore.update((c) => ({ ...c, zoomState: 'rand' }));
+	await new Promise((r) => setTimeout(r, 150));
+	let early = get(configStore).zoomEngagement;
+	expect(early).toBeGreaterThan(0); // Uebergang hat begonnen
+	expect(early).toBeLessThan(0.5); // aber nach 150ms von 1000ms bei weitem nicht fertig
+	await waitUntil(() => Math.abs(get(configStore).zoomEngagement - 1) < 0.01, 3000);
+}, 10000);
+
+// Regression: der erste Treiber (Ease-Ramp, bei Retargeting auf s=0
+// zurueckgesetzt) erzeugte beim schnellen Umschalten sichtbare "Blitze"
+// (User-Feedback) - Geschwindigkeit sprang bei jedem Retargeting auf 0.
+// Der Geschwindigkeits-Integrator darf beim Umschalten MITTEN in einer
+// Bewegung keinen abrupten Wert-Sprung zeigen (Wert bleibt C0-stetig,
+// da "von" immer der aktuelle Live-Wert ist).
+test('schnelles Umschalten (Retargeting mitten in der Bewegung) bleibt wertstetig', async () => {
+	configStore.set({
+		...BASE,
+		edgeZoomControlMode: true,
+		zoomState: 'flaechentreu',
+		zoomEngagement: 0,
+		abstraction: 0,
+		zoomStateTransitionDuration: 0.5,
+	});
+	configStore.update((c) => ({ ...c, zoomState: 'gleichmaessig' })); // abstraction -> 1
+	await new Promise((r) => setTimeout(r, 150)); // mitten in der Bewegung
+	let valueBeforeRetarget = get(configStore).abstraction;
+	expect(valueBeforeRetarget).toBeGreaterThan(0.01); // Bewegung ist tatsaechlich im Gange
+
+	configStore.update((c) => ({ ...c, zoomState: 'rand' })); // abstraction -> 0, Richtungswechsel
+	await new Promise((r) => setTimeout(r, 20)); // EIN winziger Schritt nach dem Retargeting
+	let valueAfterRetarget = get(configStore).abstraction;
+	// Kein Sprung: nach nur 20ms kann sich der Wert nur graduell aendern.
+	expect(Math.abs(valueAfterRetarget - valueBeforeRetarget)).toBeLessThan(0.1);
+
+	await waitUntil(() => Math.abs(get(configStore).abstraction) < 0.01, 3000);
 }, 10000);

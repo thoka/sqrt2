@@ -122,6 +122,12 @@ const CONFIG_FIELDS = [
 		parse: (v) => (['flaechentreu', 'rand', 'gleichmaessig'].includes(v) ? v : undefined),
 		format: (c) => c.zoomState,
 	},
+	{
+		key: 'zoomstatedur',
+		field: 'zoomStateTransitionDuration',
+		parse: (v) => Math.max(0, Math.min(10, parseFloat(v) ?? 1)),
+		format: (c) => String(c.zoomStateTransitionDuration),
+	},
 	// --- Playback-Felder (liegen in playbackStore, nicht configStore) ---
 	// Laufrichtung der Zeit: -1 = rueckwaerts, sonst vorwaerts.
 	{

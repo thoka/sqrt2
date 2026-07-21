@@ -504,9 +504,60 @@ einzelnes gleichmaessiges Element, keine Konsolenfehler. Tests insgesamt
 gruen (dieselben vorbestehenden, unabhaengigen Fails wie zu
 Sessionbeginn).
 
-**Noch offen (bewusst nicht entschieden):** ob die 1D-Ketten-Topologie
-(Embedding) und der einfache Ease-Ramp (Treiber) sich am fertigen Exponat
-gut genug anfuehlen, oder ob eine aufwaendigere Variante (z.B.
-geschwindigkeitsstetige Neuplanung bei Retargeting, siehe CLAUDE.md
-"Schalter-Tweening") noetig wird - das soll am Exponat ausprobiert werden,
-keine Vorab-Festlegung.
+**~~Noch offen~~ GEKLAERT (User-Feedback nach erstem Ausprobieren):** der
+einfache Ease-Ramp erzeugte beim schnellen Umschalten sichtbare "Blitze"
+- siehe naechster Abschnitt fuer den Fix.
+
+## Fix: Ease-Ramp durch geschwindigkeitsstetigen Integrator ersetzt ("Blitze" behoben)
+
+**Symptom (User):** beim schnellen Hin- und Herschalten zwischen den 3
+Zustaenden traten sichtbare "Blitze" auf.
+
+**Root Cause:** der Ease-Ramp (`smoothstep(elapsed/DURATION)`) hat bei
+JEDEM Retargeting Geschwindigkeit exakt 0 (Start einer neuen Rampe bei
+`s=0`). Traf ein Retargeting eine Bewegung, die gerade eine REALE
+Geschwindigkeit ≠0 hatte, entstand ein Geschwindigkeits-Knick. Weil
+`engagement`/`abstraction` EXPONENTIELL in die Darstellung eingehen
+(`BASE^(1-t_AB)`), zeigte sich dieser Knick als sichtbarer Sprung, nicht
+nur als leichte Unrundheit - genau das war urspruenglich vereinbart
+("Beschleunigung und Geschwindigkeit... damit immer hin und her
+geschaltet werden kann"), aber bewusst als "aufwaendigere Variante spaeter"
+zurueckgestellt worden.
+
+**Fix:** `src/lib/zoomStateTween.js` nutzt jetzt einen kritisch gedaempften
+Geschwindigkeits-Integrator (Position UND Geschwindigkeit als echter
+Zustand - "Game Programming Gems 4.8"/Unitys `Mathf.SmoothDamp`, exportiert
+als `springStep()`). Position/Geschwindigkeit laufen bei einem Retargeting
+WAEHREND einer laufenden Bewegung unveraendert weiter (nur die Ziele
+aendern sich) - dadurch ist JEDES Retargeting, zu JEDEM Zeitpunkt,
+garantiert geschwindigkeitsstetig. Das ist konzeptionell dieselbe
+Feder-Mathematik, die frueher fuer `paramTween.js` beerdigt wurde - dort
+war sie auf ROHE, wahrnehmungs-nichtlineare Pixel-Schwellwerte angewandt
+(Zeitsymmetrie-Bug), hier auf bereits saubere, lineare `[0,1]`-Groessen
+(`engagement`/`abstraction`) - der damalige Bruch-Grund trifft hier viel
+schwaecher zu, waehrend das eigentliche Problem (Blitze bei Retargeting)
+strukturell geloest wird.
+
+**Kalibrierung:** `smoothTime` ist NICHT direkt der Regler-Wert
+("Zustands-Übergang: Dauer") - eine kritisch gedaempfte Feder braucht
+empirisch (per Simulation ermittelt) ca. das 3.65-fache von `smoothTime`,
+um auf ~1% Restfehler zu kommen (`SETTLE_TIME_FACTOR`). Ohne diese
+Umrechnung waere der Regler grob falsch kalibriert gewesen (ein voller
+0->1-Uebergang haette ca. 3.65x laenger gedauert als eingestellt).
+`maxSpeed` ist bewusst grosszuegig (20, nicht an `duration` gekoppelt) -
+dient nur als Sicherheitsnetz gegen extreme Geschwindigkeiten bei sehr
+kurzen Dauern, bindet im Normalfall nicht.
+
+**Verifiziert:**
+- `tests/unit/zoomStateTween-spring.test.js` (reine `springStep()`-Logik,
+  `node:test`): monotone Annaeherung ohne Ueberschwingen, Geschwindigkeit
+  bleibt bei Retargeting erhalten (Regressionstest gegen die "Blitze"),
+  maxSpeed-Deckel wird eingehalten, Ankunft aus der Ruhe.
+- `src/lib/zoomStateTween.test.js`: neuer Regressionstest "schnelles
+  Umschalten... bleibt wertstetig" + Duration-Kalibrierungstest.
+- Manuell im Browser (Playwright, Pixel-Messung der Ziel-Quadrat-Breite):
+  ein einzelner Uebergang (Dauer=1s) laeuft glatt ueber ca. 1.5-2s
+  (Kalibrierung reicht als Naeherung); schnelles Umschalten
+  (Gleichmaessig->Rand->Flaechentreu, je 150ms Abstand) zeigt eine
+  durchgehend monotone Bewegung ohne Sprung/Richtungswechsel - keine
+  Blitze mehr, keine Konsolenfehler.
