@@ -156,3 +156,65 @@ Kurzfassung fuer diesen konkreten Fall:
   Treiber-Variante sollen am fertigen Exponat ausprobiert/verglichen
   werden, keine Vorab-Festlegung). Die bisherige `createSpringTween()`-
   Loesung bleibt bis dahin production-Stand, gilt aber als vorlaeufig.
+
+## Konkreter Umsetzungsplan (naechster Schritt, bestaetigt)
+
+Aus der Diskussion konkretisiert - deutlich einfacher als der obige
+generische Simplex-Entwurf, weil sich zwei Dinge am tatsaechlichen Code
+(`computeAutoZoomTAB()`/`effective_t_AB` in `TargetBankCanvas.svelte`)
+bestaetigt haben:
+
+  - **`modeAB` muss vom Schalter-Tween GAR NICHT angefasst werden.**
+    `computeAutoZoomTAB(thresholdPx, ...)` hat einen harten Zweig
+    `thresholdPx <= 0 → return 0`. Bleibt `modeAB` bei seinem Default (0),
+    liefert `autoZoomMinPx` alleine alle 3 Zustaende: `0` → Flaechentreu
+    (`effective_t_AB = max(0,0) = 0`), `3` (heutiger Default) → Rand
+    sichtbar (= heutiges Out-of-the-Box-Verhalten unveraendert), `100` →
+    Gleichmaessig (`autoZoomTAB` saettigt praktisch bei 1). Das Schalter-
+    Tween-Problem reduziert sich damit von 2 Dimensionen auf 1.
+  - **`autoZoomMinPx` wird in zwei Groessen zerlegt** (loest das
+    "Null ist auf der Log-Skala nicht sauber erreichbar"-Problem, siehe
+    Feedback oben):
+    - `engagement ∈ [0,1]` - linear, "ist Auto-Zoom ueberhaupt aktiv".
+      Exakte 0 ist hier trivial erreichbar (linearer Skalar, kein
+      Log-Grenzwert-Problem).
+    - `level ∈ [0,1]` - dieselbe Log-Abbildung wie im bestehenden
+      manuellen Regler (`MINPX_LO`/`MINPX_HI`/`MINPX_SPAN` in
+      `ControlPanel.svelte`), extrahiert in eine gemeinsame Funktion statt
+      zweimal gebaut - "wie aggressiv, wenn aktiv" (3px ↔ 100px).
+    - Ausgabe: `autoZoomMinPx = engagement · shapeFn(level)`.
+  - **Preset-Zuordnung:** Flaechentreu = `{engagement: 0}` (`level`
+    bleibt unveraendert stehen, ist irrelevant); Rand sichtbar =
+    `{engagement: 1, level: level(3px)}`; Gleichmaessig =
+    `{engagement: 1, level: level(100px)}`.
+  - **Zeitsymmetrie faellt dadurch groesstenteils geschenkt ab:**
+    Flaechentreu↔Rand bewegt NUR `engagement` (ein Skalar, trivial
+    spiegelsymmetrisch), Rand↔Gleichmaessig bewegt NUR `level` (ebenfalls
+    ein Skalar, jetzt in wahrnehmungslinearisiertem Raum - behebt B→C/C→B
+    aus dem Feedback oben direkt). Nur ein direkter Sprung
+    Flaechentreu↔Gleichmaessig (Radio-Klick ueberspringt "Rand sichtbar")
+    bewegt beide gemeinsam - bleibt aber symmetrisch, weil beide mit
+    demselben Profil/derselben Dauer laufen.
+  - **Treiber:** einfache Variante zuerst (linearer/Ease-Ramp, bei
+    Retargeting neu bei `s=0` gestartet, kleiner Steigungsknick beim
+    schnellen Umklicken akzeptiert - User-Entscheidung: "einfachere Loesung
+    zuerst, ohne eine aufwaendigere spaeter zu blockieren"). Hinter einer
+    schlanken, austauschbaren Schnittstelle, damit eine
+    geschwindigkeitsstetige Neuplanung (Motion-Replanning wie in
+    Robotik/CNC) spaeter nachgeruestet werden kann, ohne Embedding/Blend
+    anzufassen.
+
+  **Offener Folgepunkt (User-Hinweis, noch zu klaeren/spezifizieren):** im
+  Modus "Regler statt diskrete Zustaende" (dem heutigen Zwei-Regler-UI)
+  soll statt des `modeAB`-Reglers ("Zoom") ein Schalter "Rand-Zoom
+  einschalten" hinzukommen - vermutlich gepaart mit dem (jetzt sauberen,
+  log-skalierten) `level`-Regler statt des bisherigen
+  "Auto-Zoom: Mindestpixelgroesse"-Reglers mit implizitem
+  Snap-auf-0-am-linken-Anschlag. Das würde beide UI-Modi auf dieselben
+  zwei zugrunde liegenden Dials (`engagement`/`level`) vereinheitlichen,
+  statt zwei sich gegenseitig ueberschreibende Regler zu zeigen (die
+  bestehende Notiz "Auto-Zoom aktiv - uebersteuert den Regler nach oben"
+  gesteht diese Verwirrung im heutigen UI bereits ein). Ob `modeAB` als
+  Store-/Render-Feld intern bestehen bleibt (Kompatibilitaet/Debug) oder
+  perspektivisch ganz entfaellt, ist NICHT Teil dieser Entscheidung -
+  hier geht es nur um den nutzersichtbaren Regler.
