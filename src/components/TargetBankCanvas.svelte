@@ -96,12 +96,14 @@
 	let compiledRef = null;
 
 	// Auto-Zoom: Aktivierung (linear) + Staerke (log-skaliert ueber
-	// levelToPx(), siehe autoZoomLevel.js). Die resultierende
+	// levelToPx(), siehe autoZoomLevel.js) + Abstraktion (manueller,
+	// von Auto-Zoom unabhaengiger Basis-b->1-Override). Die resultierende
 	// Basisverzerrung (frueher "modeAB") wird daraus JEDEN Frame in
 	// renderFrame() berechnet (computeAutoZoomTAB()) - kein eigenstaendiges
 	// Store-Feld mehr, siehe docs/Alternative Zoom-Steuerung,md.
 	let zoomEngagement = 1.0;
 	let zoomLevel = 0.0;
+	let abstraction = 0.0;
 	// Zuletzt an autoZoomMaxPxStore gemeldeter Wert (siehe renderFrame()) -
 	// vermeidet Store-Schreibvorgaenge (und damit ControlPanel-Re-Renders)
 	// bei jedem Frame, obwohl sich der Wert praktisch nie aendert.
@@ -186,6 +188,7 @@
 			BANK_ZOOM_THRESHOLD_POWERS = c.bankZoomThresholdPowers;
 			zoomEngagement = c.zoomEngagement;
 			zoomLevel = c.zoomLevel;
+			abstraction = c.abstraction;
 			LINE_WIDTH_PX = c.lineWidth;
 			ANIM_PAUSE_DURATION = c.pauseDuration;
 			ANIM_SPEED = c.playSpeed;
@@ -343,8 +346,11 @@
 
 		// Die resultierende Basisverzerrung ("modeAB") ist kein eigenstaendiges
 		// Store-Feld mehr, sondern wird HIER JEDEN Frame aus Aktivierung x
-		// Staerke berechnet (siehe docs/Alternative Zoom-Steuerung,md) - kein
-		// max() mit einem separat gesetzten manuellen Wert mehr noetig.
+		// Staerke UND dem unabhaengigen "Abstraktion"-Regler berechnet (siehe
+		// docs/Alternative Zoom-Steuerung,md). `abstraction` ist bewusst
+		// wieder ein max()-Floor (wie einst "modeAB") - anders als frueher
+		// aber nicht mehr mit dem rohen Auto-Zoom-Schwellwert verrechnet,
+		// sondern mit dessen bereits [0,1]-begrenztem ERGEBNIS.
 		//
 		// WICHTIG: zoomEngagement multipliziert das ERGEBNIS (autoZoomTAB,
 		// bereits auf [0,1] begrenzt), NICHT den rohen Pixel-Schwellwert
@@ -375,7 +381,7 @@
 			scale,
 			autoZoomTargetExp,
 		);
-		let effective_t_AB = zoomEngagement * autoZoomTAB;
+		let effective_t_AB = Math.max(abstraction, zoomEngagement * autoZoomTAB);
 
 		updateDynamicLayout(effective_t_AB);
 

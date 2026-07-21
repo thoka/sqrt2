@@ -32,6 +32,12 @@ const CONFIG_FIELDS = [
 		format: (c) => c.zoomLevel.toFixed(4),
 	},
 	{
+		key: 'abstraction',
+		field: 'abstraction',
+		parse: (v) => Math.max(0, Math.min(1, parseFloat(v) || 0)),
+		format: (c) => c.abstraction.toFixed(4),
+	},
+	{
 		key: 'zoomspeed',
 		field: 'zoomSpeedCoef',
 		parse: (v) => parseFloat(v) || 0.012,

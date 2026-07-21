@@ -33,6 +33,14 @@ const DEFAULTS = {
 	// px-Default ergibt daher keinen Sinn mehr, stattdessen ein neutraler
 	// mittlerer Regler-Default.
 	zoomLevel: 0.5,
+	// Abstraktion: manueller, von Auto-Zoom UNABHAENGIGER Regler, der die
+	// Basisverzerrung Richtung 1 erzwingt ("Modus B" aus dem urspruenglichen
+	// README - macht die Stellenwert-Struktur sichtbar), unabhaengig davon,
+	// ob das fuer die Lesbarkeit noetig waere. Kombiniert sich mit dem
+	// Auto-Zoom-Ergebnis per max() in TargetBankCanvas.svelte - linearer
+	// Regler bewusst ohne Formkurve (siehe docs/Alternative
+	// Zoom-Steuerung,md: erst am Regler pruefen, ob eine Kurve noetig ist).
+	abstraction: 0.0,
 	// Flug-Morph: Teile drehen (true) oder nur strecken (false)
 	flightRotation: true,
 	// Transparenz fliegender Stücke (0 = unsichtbar, 1 = deckend)

@@ -17,6 +17,7 @@ const DEFAULT_CONFIG = {
 	bankZoomThresholdPowers: 0,
 	zoomEngagement: 1.0,
 	zoomLevel: 0.5,
+	abstraction: 0.0,
 	zoomSpeedCoef: 0.012,
 	compactionEnabled: false,
 	compactionTransitionTicks: 3,
@@ -69,6 +70,15 @@ test('parseConfigFromUrl(): zoomengage/zoomlevel werden auf [0,1] geklammert', (
 	});
 	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('zoomlevel=5')), { zoomLevel: 1 });
 	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('zoomlevel=-5')), { zoomLevel: 0 });
+});
+
+test('parseConfigFromUrl(): abstraction wird auf [0,1] geklammert', () => {
+	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('abstraction=5')), {
+		abstraction: 1,
+	});
+	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('abstraction=-5')), {
+		abstraction: 0,
+	});
 });
 
 test('parsePlaybackFromUrl(): "time" hat Vorrang vor "tick", falls beide angegeben sind', () => {
@@ -131,6 +141,7 @@ test('buildStateParams() -> parseConfigFromUrl()/parsePlaybackFromUrl() ist ein 
 		compactionEnabled: true,
 		zoomEngagement: 0.42,
 		zoomLevel: 0.73,
+		abstraction: 0.31,
 	};
 	let playback = { time: 4.5, isPlaying: true, direction: -1 };
 	let params = buildStateParams(config, playback);
@@ -154,6 +165,7 @@ test('buildStateParams() setzt jeden erwarteten URL-Schlüssel', () => {
 		'zoomthresh',
 		'zoomengage',
 		'zoomlevel',
+		'abstraction',
 		'zoomspeed',
 		'linewidth',
 		'pause',

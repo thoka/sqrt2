@@ -319,6 +319,19 @@
 			>
 		</label>
 
+		<label class="control-group" style="margin-top: 5px;"
+			>Abstraktion
+			<input
+				type="range"
+				min="0"
+				max="1"
+				step="0.01"
+				value={$configStore.abstraction}
+				oninput={onInputFloat('abstraction', 0)}
+			/>
+			<span class="zoom-readout">{Math.round($configStore.abstraction * 100)} %</span>
+		</label>
+
 		<label
 			class="control-group"
 			style="margin-top:10px; flex-direction: row; align-items: center; gap: 8px;"

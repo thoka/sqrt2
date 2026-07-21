@@ -100,6 +100,21 @@ test('Auto-Zoom-Stärke (range) aktualisiert configStore.zoomLevel live bei "inp
 	unmount(app);
 });
 
+test('Abstraktion (range) aktualisiert configStore.abstraction live bei "input"', () => {
+	const app = mount(ControlPanel, { target: document.body });
+	const label = [...document.querySelectorAll('.control-group')].find((g) =>
+		g.textContent.startsWith('Abstraktion'),
+	);
+	const rangeInput = label.querySelector('input[type=range]');
+
+	rangeInput.value = '0.7';
+	fire(rangeInput, 'input');
+	flushSync();
+	expect(get(configStore).abstraction).toBeCloseTo(0.7);
+
+	unmount(app);
+});
+
 test('Tick-Eingabe: springt über playbackStore.time zum passenden Zeitpunkt (GLOBAL_TTM aus compiledStore)', () => {
 	const app = mount(ControlPanel, { target: document.body });
 	// Admin-Tab aktivieren (Tick-Feld liegt dort).

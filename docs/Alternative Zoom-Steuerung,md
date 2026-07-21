@@ -405,3 +405,33 @@ Defaults.
   unveraendert proportionalen Bloecke wie beim alten festen Deckel.
 - Tests weiterhin gruen (dieselben vorbestehenden, unabhaengigen Fails
   wie zu Sessionbeginn).
+
+## Dritter Regler: "Abstraktion" (manueller Basis-b→1-Override)
+
+**Idee (User):** mit `engagement`/`level` sauber aufgeraeumt, fehlt noch
+ein DRITTER, von Auto-Zoom unabhaengiger Regler fuer "Abstraktion
+einschalten" (Basis Richtung 1 fuer ALLE Ziffernstellen) - das ist
+inhaltlich der urspruengliche "Modus B" aus dem README ("Regler fuer
+'hypothetische Basis b→1' - verzerrt NUR das Ziel, macht Stellenwert-
+Struktur sichtbar"), nur jetzt als eigener, sauber getrennter Regler statt
+als Store-Feld, das mit Auto-Zoom vermischt war.
+
+**Entscheidung:** `abstraction` ist EBENFALLS ein stufenloser linearer
+Regler (keine Formkurve, analog zu `engagement` - erst empirisch pruefen,
+ob eine Kurve noetig ist, bevor eine gebaut wird). Kombiniert sich per
+`max()` mit dem Auto-Zoom-Ergebnis - strukturell wie das alte `modeAB`,
+aber jetzt mit dem bereits [0,1]-begrenzten, engagement-gateten
+Auto-Zoom-Anteil statt einem rohen Schwellwert:
+
+```js
+let autoZoomTAB = computeAutoZoomTAB(levelToPx(zoomLevel, maxWidthPx), scale, autoZoomTargetExp);
+let effective_t_AB = Math.max(abstraction, zoomEngagement * autoZoomTAB);
+```
+
+**Umgesetzt:** `configStore.abstraction` (Default 0), URL-Parameter
+`abstraction`, Regler "Abstraktion" in `ControlPanel.svelte`
+(Grundeinstellungen, linear 0..1, live). Verifiziert im Browser:
+Aktivierung=0%, Abstraktion=100% erzwingt trotzdem volle Gleichmaessigkeit
+(Ziel-Quadrat schrumpft auf ein einzelnes Element) - der `max()`-Floor
+funktioniert unabhaengig vom Auto-Zoom-Zustand, wie beabsichtigt. Tests
+gruen (dieselben vorbestehenden Fails).
