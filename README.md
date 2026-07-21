@@ -8,6 +8,14 @@ Kernidee: √2 wird ziffernweise (digit-by-digit) über ein geometrisches Fläch
 
 Steuerung über ein Gerät des Betrachtenden wird möglich sein.
 
+Nebenziel: dieses Projekt dient auch als Testfeld für **allgemeine,
+projektübergreifend wiederverwendbare Entwurfsprinzipien für grafische
+Exponate** (z.B. weiche Übergänge zwischen diskreten Steuerungs-
+Zuständen, Kopplung an eine gemeinsame Geschwindigkeits-Wahrnehmung) -
+siehe `CLAUDE.md` Abschnitt "Schalter-Tweening" für das aktuell
+erarbeitete Prinzip und `docs/Alternative Zoom-Steuerung,md` als
+konkretes Fallbeispiel.
+
 ## 2. Schnellstart: aktuellen Stand ausprobieren
 
 ```bash

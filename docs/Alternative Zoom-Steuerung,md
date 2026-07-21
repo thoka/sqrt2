@@ -132,3 +132,27 @@ gilt bis zur Behebung als **nicht abgeschlossen**:
   Parameter (Wert = Formfunktion(s), s linear/gleichmaessig durchlaufen
   wie der Zeit-Regler) statt direkter Feder auf dem rohen Wert -
   siehe Diskussion, noch nicht entschieden/umgesetzt.
+
+## Konzeptioneller Nachtrag: "Schalter-Tweening" als allgemeines Prinzip
+
+Aus der Diskussion dieses Feedbacks ist ein **projektübergreifendes**
+Entwurfsprinzip entstanden, jetzt in `CLAUDE.md` als eigener Abschnitt
+"Schalter-Tweening: diskrete UI-Zustände als Punkte in einem
+Embedding-Raum" festgehalten (und im README unter "Projektziel" verlinkt).
+Kurzfassung fuer diesen konkreten Fall:
+
+  - Die 3 Zoom-Zustaende werden Punkte in einem R^n (Topologie/Dimension
+    experimentell waehlbar - 1D-Kette wie ein physischer
+    Drei-Stufen-Schalter, ODER 2D-Simplex mit direkten Uebergaengen, ODER
+    mehr) statt fest auf `modeAB`/`autoZoomMinPx` gesprungt zu werden.
+  - Eine n-dimensionale Verallgemeinerung von `computeSegmentBlend()`
+    bildet Position im Embedding auf die tatsaechlichen Ausgabewerte ab.
+  - Der Cursor-Treiber (linear/Ease vs. Feder) bleibt ein eigener,
+    austauschbarer Baustein - optional gekoppelt an `playSpeed`, damit
+    sich Uebergangstempo und Wiedergabetempo fuer Besucher:innen konsistent
+    anfuehlen.
+
+  **Noch offen:** konkrete Implementierung (Embedding-Topologie UND
+  Treiber-Variante sollen am fertigen Exponat ausprobiert/verglichen
+  werden, keine Vorab-Festlegung). Die bisherige `createSpringTween()`-
+  Loesung bleibt bis dahin production-Stand, gilt aber als vorlaeufig.

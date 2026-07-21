@@ -106,6 +106,70 @@ für spürbar ruhigere, langsamere Bewegung bei vielen dicht getakteten
 Stützpunkten. Im Zweifel bei Sicherheitsfragen: eher `computeSegmentBlend()`
 - und bei Bedarf mit dem Nutzer klären.
 
+## Schalter-Tweening: diskrete UI-Zustände als Punkte in einem Embedding-Raum
+
+**Projektübergreifendes Entwurfsprinzip** (nicht sqrt2-spezifisch - explizit
+zur Wiederverwendung in anderen Exponat-Projekten gedacht). Gilt, sobald ein
+UI-Element zwischen einer kleinen Zahl **benannter, diskreter Zustände**
+umschaltet (Radio-Buttons, später auch ein physischer Mehrstufen-Schalter)
+und der Übergang weich animiert sein soll.
+
+**Nicht vorschnell eine bestimmte Interpolationsform festlegen** (z.B. "die
+drei Zustände liegen auf einer Linie" oder "eine Feder direkt auf den rohen
+Ausgabewerten") - ob ein Übergang sich am fertigen Exponat richtig anfühlt,
+ist eine **empirische** Frage, keine, die sich am Reißbrett entscheiden
+lässt (siehe `docs/Alternative Zoom-Steuerung,md` für den konkreten Fall,
+der zu dieser Regel geführt hat: eine Feder direkt auf den Ausgabewerten
+fühlte sich je nach Richtung/Zustandspaar unterschiedlich schnell an und
+ignorierte die bereits bekannte Wahrnehmungs-Nichtlinearität eines der
+Parameter). Stattdessen in drei unabhängig austauschbare Bausteine
+zerlegen:
+
+1. **Embedding:** jeder benannte Zustand → ein Punkt in einem R^n. Dimension
+   UND Koordinaten sind eine experimentelle, jederzeit änderbare Wahl - z.B.
+   eine 1D-Kette `[0],[1],[2]` (entspricht einem physischen
+   Drei-Stufen-Schalter: ein Wechsel von Position 1 nach 3 muss zwangsläufig
+   durch Position 2 hindurchlaufen), oder ein 2D-Simplex
+   `[0,0],[1,0],[0,1]` (Übergänge laufen paarweise direkt, ohne einen
+   dritten Zustand optisch zu "besuchen"), oder mehr Punkte/Dimensionen.
+2. **Blend (Position im Embedding → tatsächliche Ausgabewerte):** eine
+   n-dimensionale Verallgemeinerung von `computeSegmentBlend()`
+   (baryzentrisch/simplizial) - für eine 1D-Kette ist das eine Kette von
+   2-Punkt-Segmenten (das bestehende `computeSegmentBlend()`-Prinzip direkt),
+   für 3 Punkte in 2D ein einzelner 2-Simplex (ein Dreieck). EIN Baustein für
+   beide Fälle, keine getrennte Sonderfall-Logik pro Topologie.
+3. **Treiber (Cursor-Bewegung durchs Embedding über Echtzeit):** bewegt die
+   live Position im Embedding-Raum zum Zielpunkt, selbst wieder austauschbar
+   (linearer Ramp/Ease vs. Feder vs. …) - unabhängig von 1+2. Ein linearer
+   Ramp ist exakt zeitsymmetrisch (Rückweg = gespiegelter Hinweg), aber bei
+   Retargeting mitten im Übergang entsteht ein kleiner Knick in der
+   Steigung; eine Feder ist bei jedem Retargeting C1-stetig, aber NICHT
+   zeitsymmetrisch zu ihrem eigenen Rückweg (Start immer aus der Ruhe, siehe
+   Diskussion in `docs/Alternative Zoom-Steuerung,md`) - welcher Trade-off
+   passt, ist wieder eine empirische Frage, kein Vorab-Dogma.
+
+**Geschwindigkeitskopplung:** der Treiber bekommt zusätzlich einen (pro
+Instanz optionalen) Kopplungs-Parameter an eine bereits vorhandene,
+dem Publikum vertraute Geschwindigkeits-Steuerung (hier: `playSpeed`) -
+dadurch wirkt sich "schneller" für Besucher:innen konsistent auf Wiedergabe
+UND Zustands-Wechsel gemeinsam aus, was sich für Erklärungen/Vorführungen am
+Exponat eignet. Nicht jeder Übergang muss daran gekoppelt sein.
+
+**Warum:** siehe oben - die Alternative (eine Topologie/Interpolationsform
+vorab festlegen) hat in der Praxis zu einem konkreten, vom Nutzer gemeldeten
+Wahrnehmungs-Bug geführt (Rückweg fühlte sich schneller an als der Hinweg,
+ein anderer Übergang fühlte sich wie "Pause, dann Ruck" an). Die saubere
+Trennung der drei Bausteine macht das Ausprobieren verschiedener
+Kombinationen (Embedding × Blend × Treiber) möglich, ohne bei jedem
+Experiment den Code umzubauen - und macht das Prinzip als Ganzes auf andere
+Exponat-Projekte übertragbar (nicht nur die konkrete sqrt2-Instanz).
+
+**Wie anwenden:** vor dem Bauen einer neuen "weichen Umschaltung zwischen
+Zuständen" erst prüfen, ob diese Dreiteilung (Embedding/Blend/Treiber) hier
+zutrifft, statt direkt eine Ad-hoc-Lösung auf den rohen Ausgabewerten zu
+bauen. Siehe `docs/Alternative Zoom-Steuerung,md` als laufendes
+Fallbeispiel/erste konkrete Anwendung.
+
 ## Layout-Umordnungen mehrerer Objekte: Masse/Trägheit statt Förderband
 
 Wenn ein automatisierter Vorgang MEHRERE Objekte gleichzeitig neu anordnet
