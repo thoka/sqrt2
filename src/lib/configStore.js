@@ -4,7 +4,6 @@
 // (stores.js re-exportiert den Orchestrator, der wieder configStore braucht).
 import { writable } from 'svelte/store';
 import { parseConfigFromUrl } from './urlState.js';
-import { pxToLevel } from './autoZoomLevel.js';
 
 // Default-Werte gespiegelt aus den `value`-Attributen der bisherigen
 // Inputs in sqrt2.html - keine Verhaltensänderung, nur eine zweite
@@ -28,7 +27,12 @@ const DEFAULTS = {
 	// TargetBankCanvas.svelte JEDEN Frame aus diesen beiden Werten
 	// berechnet.
 	zoomEngagement: 1.0,
-	zoomLevel: pxToLevel(3), // Default entspricht dem fruehereren autoZoomMinPx=3
+	// zoomLevel bezieht sich auf eine dynamische Ober-/Untergrenze (1px ..
+	// tatsaechlich maximal erreichbare Breite, siehe autoZoomLevel.js/
+	// maxAutoZoomWidthPx() in TargetBankCanvas.svelte) - ein fester
+	// px-Default ergibt daher keinen Sinn mehr, stattdessen ein neutraler
+	// mittlerer Regler-Default.
+	zoomLevel: 0.5,
 	// Flug-Morph: Teile drehen (true) oder nur strecken (false)
 	flightRotation: true,
 	// Transparenz fliegender Stücke (0 = unsichtbar, 1 = deckend)

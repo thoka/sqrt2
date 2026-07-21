@@ -18,7 +18,7 @@
 	// (zoomEngagement/zoomLevel/lineWidth/pause/speed) reagieren dagegen live
 	// (oninput), genau wie im alten Panel.
 	import { configStore, playbackStore, compiledStore } from '../lib/stores.js';
-	import { levelToPx } from '../lib/autoZoomLevel.js';
+	import { levelToPx, autoZoomMaxPxStore } from '../lib/autoZoomLevel.js';
 	import { displayStore } from '../lib/displayStore.js';
 	import { buildStateParams } from '../lib/urlState.js';
 	import { initNetworkSync } from '../lib/syncedStore.js';
@@ -312,7 +312,7 @@
 				oninput={onInputFloat('zoomLevel', 0)}
 			/>
 			<span class="zoom-readout"
-				>{levelToPx($configStore.zoomLevel).toLocaleString('de-DE', {
+				>{levelToPx($configStore.zoomLevel, $autoZoomMaxPxStore).toLocaleString('de-DE', {
 					minimumFractionDigits: 3,
 					maximumFractionDigits: 3,
 				})} px</span
