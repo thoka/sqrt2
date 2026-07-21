@@ -95,3 +95,40 @@ Ziel dieses Versuchs ist  über Konzentration auf die wesentliche Funktionalitä
     3 Zustaende anwaehlbar, sichtbarer Zoom-Unterschied zwischen
     "Flächentreu"/"Gleichmäßig", Feinregler korrekt de-/aktiviert, keine
     Konsolenfehler.
+
+## Feedback (User, nach erstem Ausprobieren) - offenes Kriterium
+
+Die `createSpringTween()`-Loesung (kritisch gedaempfte Feder direkt auf
+`modeAB`/`autoZoomMinPx`) erfuellt folgendes Kriterium **noch nicht** und
+gilt bis zur Behebung als **nicht abgeschlossen**:
+
+  - **A→B (Flächentreu → Rand sichtbar):** fühlt sich weich/gut an.
+  - **B→A (Rand sichtbar → Flächentreu):** sollte sich exakt wie die
+    zeitlich UMGEKEHRTE A→B-Bewegung anfühlen (wie ein rueckwaerts
+    abgespieltes Video derselben Animation). Fühlt sich stattdessen
+    SCHNELLER an als A→B.
+  - **B→C (Rand sichtbar → Gleichmäßig):** fühlt sich zu schnell an.
+  - **C→B (Gleichmäßig → Rand sichtbar):** wirkt wie eine Pause, gefolgt
+    von einer ploetzlichen, zu schnellen Bewegung ("Pause dann Ruck").
+
+  **Testkriterium (fuer die naechste Iteration):** alle 6 Uebergaenge
+  zwischen den 3 Zustaenden fuehlen sich in Geschwindigkeit/Charakter
+  gleichwertig an, UND jeder Rueckweg X→Y fuehlt sich wie die zeitlich
+  gespiegelte Version von Y→X an (nicht nur "irgendwie weich", sondern
+  hoerbar/sichtbar symmetrisch in der Bewegungskurve).
+
+  Siehe Diskussion im Gespraechsverlauf: vermuteter Grund ist (a) ein
+  kritisch gedaempfter Feder-Sprung AUS DER RUHE ist selbst bei
+  gleicher Distanz NICHT zeitsymmetrisch zu seinem eigenen Rueckweg
+  (beide Richtungen starten mit Geschwindigkeit 0 und demselben
+  "erst leise, dann Peak, dann lang auslaufend"-Profil - keine
+  Spiegelung), und (b) die Interpolation laeuft in ROHEN Config-Einheiten
+  (`autoZoomMinPx` linear 0..100), waehrend die tatsaechliche visuelle
+  Wirkung stark nichtlinear/saettigend ist (deshalb ist der bestehende
+  manuelle Regler dafuer ja bereits LOGARITHMISCH, siehe `MINPX_LO`/
+  `MINPX_HI`/`MINPX_SPAN` in `ControlPanel.svelte`) - reine Tiefpass-/
+  Feder-Glaettung im rohen Werteraum kann diese Nichtlinearitaet nicht
+  ausgleichen. Naechster Schritt: eigene "Interpolator"-Bausteine je
+  Parameter (Wert = Formfunktion(s), s linear/gleichmaessig durchlaufen
+  wie der Zeit-Regler) statt direkter Feder auf dem rohen Wert -
+  siehe Diskussion, noch nicht entschieden/umgesetzt.
