@@ -20,10 +20,16 @@ const CONFIG_FIELDS = [
 		format: (c) => String(c.bankZoomThresholdPowers),
 	},
 	{
-		key: 'autozoom',
-		field: 'autoZoomMinPx',
-		parse: (v) => parseFloat(v) || 0,
-		format: (c) => String(c.autoZoomMinPx),
+		key: 'zoomengage',
+		field: 'zoomEngagement',
+		parse: (v) => Math.max(0, Math.min(1, parseFloat(v) ?? 1)),
+		format: (c) => c.zoomEngagement.toFixed(4),
+	},
+	{
+		key: 'zoomlevel',
+		field: 'zoomLevel',
+		parse: (v) => Math.max(0, Math.min(1, parseFloat(v) || 0)),
+		format: (c) => c.zoomLevel.toFixed(4),
 	},
 	{
 		key: 'zoomspeed',
@@ -60,12 +66,6 @@ const CONFIG_FIELDS = [
 		field: 'compactionTransitionTicks',
 		parse: (v) => parseInt(v),
 		format: (c) => String(c.compactionTransitionTicks),
-	},
-	{
-		key: 'modeab',
-		field: 'modeAB',
-		parse: (v) => Math.max(0, Math.min(1, parseFloat(v) || 0)),
-		format: (c) => c.modeAB.toFixed(4),
 	},
 	{
 		key: 'rotate',

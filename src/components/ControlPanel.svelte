@@ -15,9 +15,10 @@
 	// Änderung aus, nicht bei jedem Tastendruck - deshalb bewusst kein
 	// bind:value (das würde bei <input type=number> auf "input" reagieren),
 	// sondern explizite onchange-Handler. Die reinen Laufzeit-/Renderregler
-	// (modeAB/autoZoomMinPx/lineWidth/pause/speed) reagieren dagegen live
+	// (zoomEngagement/zoomLevel/lineWidth/pause/speed) reagieren dagegen live
 	// (oninput), genau wie im alten Panel.
 	import { configStore, playbackStore, compiledStore } from '../lib/stores.js';
+	import { levelToPx } from '../lib/autoZoomLevel.js';
 	import { displayStore } from '../lib/displayStore.js';
 	import { buildStateParams } from '../lib/urlState.js';
 	import { initNetworkSync } from '../lib/syncedStore.js';
@@ -62,29 +63,6 @@
 		return onInputFloat(field, fallback);
 	}
 
-	// Logarithmischer Schieberegler fuer die Auto-Zoom-Mindestpixelgroesse
-	// (autoZoomMinPx): Bereich 0.001 .. 100 px. Position t in [0,1]
-	// <-> Wert v = MINPX_LO * (MINPX_HI/MINPX_LO)^t.
-	// Ganz nach links (v < 1.5 * MINPX_LO) wird effektiv auf 0 gesetzt,
-	// was den Auto-Zoom deaktiviert (AUTO_ZOOM_MIN_PX <= 0 im Canvas).
-	const MINPX_LO = 0.001;
-	const MINPX_HI = 100;
-	const MINPX_SPAN = Math.log(MINPX_HI / MINPX_LO);
-	const MINPX_EFF_ZERO = 1.5 * MINPX_LO;
-	// Position aus dem Store-Wert abgeleitet (kein $effect + bind:value,
-	// das eine Endlosschleife ausloest): t = log(v/LO)/SPAN.
-	const minPxPos = $derived(
-		Math.max(
-			0,
-			Math.min(1, Math.log(Math.max(MINPX_LO, $configStore.autoZoomMinPx) / MINPX_LO) / MINPX_SPAN),
-		),
-	);
-	function onMinPxInput(e) {
-		let t = parseFloat(e.target.value);
-		let v = MINPX_LO * Math.exp(t * MINPX_SPAN);
-		if (v < MINPX_EFF_ZERO) v = 0;
-		configStore.update((c) => ({ ...c, autoZoomMinPx: v }));
-	}
 	function onChangeChecked(field) {
 		return (e) => configStore.update((c) => ({ ...c, [field]: e.target.checked }));
 	}
@@ -311,33 +289,35 @@
 		</div>
 
 		<label class="control-group" style="margin-top:6px;"
-			>Auto-Zoom: Mindestpixelgröße
-			<input type="range" min="0" max="1" step="0.001" value={minPxPos} oninput={onMinPxInput} />
+			>Auto-Zoom: Aktivierung
+			<input
+				type="range"
+				min="0"
+				max="1"
+				step="0.01"
+				value={$configStore.zoomEngagement}
+				oninput={onInputFloat('zoomEngagement', 1)}
+			/>
+			<span class="zoom-readout">{Math.round($configStore.zoomEngagement * 100)} %</span>
+		</label>
+
+		<label class="control-group" style="margin-top: 5px;"
+			>Auto-Zoom: Stärke
+			<input
+				type="range"
+				min="0"
+				max="1"
+				step="0.001"
+				value={$configStore.zoomLevel}
+				oninput={onInputFloat('zoomLevel', 0)}
+			/>
 			<span class="zoom-readout"
-				>{$configStore.autoZoomMinPx.toLocaleString('de-DE', {
+				>{levelToPx($configStore.zoomLevel).toLocaleString('de-DE', {
 					minimumFractionDigits: 3,
 					maximumFractionDigits: 3,
 				})} px</span
 			>
 		</label>
-
-		<label class="control-group" style="margin-top: 5px;"
-			>Zoom
-			<div class="slider-with-marker">
-				<input
-					type="range"
-					min="0"
-					max="1"
-					step="0.01"
-					value={$configStore.modeAB}
-					oninput={onInputFloat('modeAB', 0)}
-				/>
-				<div class="auto-zoom-marker" id="autoZoomMarker" title="Auto-Zoom-Mindestwert"></div>
-			</div>
-		</label>
-		<div class="auto-zoom-note" id="autoZoomNote">
-			Auto-Zoom aktiv - übersteuert den Regler nach oben
-		</div>
 
 		<label
 			class="control-group"

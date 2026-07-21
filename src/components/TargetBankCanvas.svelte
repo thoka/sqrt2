@@ -13,16 +13,16 @@
 	// schreibt die fortschreitende Zeit zurück in playbackStore - genau
 	// wie zuvor in sqrt2.html, nur in der Komponente gekapselt.
 	//
-	// Cross-Komponenten-DOM (bankZoomLabel/bankAreaLabel/autoZoomMarker/
-	// autoZoomNote werden in <ControlPanel> gerendert, #bankPanel für
-	// renderAreaWidth) wird per getElementById geholt - dieselben globalen
-	// Elemente wie vorher, nur dass die Komponente sie liest statt
-	// sqrt2.html.
+	// Cross-Komponenten-DOM (bankZoomLabel/bankAreaLabel werden in
+	// <ControlPanel> gerendert, #bankPanel für renderAreaWidth) wird per
+	// getElementById geholt - dieselben globalen Elemente wie vorher, nur
+	// dass die Komponente sie liest statt sqrt2.html.
 	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
 	import { applyCompactionFit } from '../lib/bank-core.js';
 	import { layoutCentered, findRect, commonAncestor } from '../lib/recursive-layout.js';
 	import { configStore, playbackStore, compiledStore } from '../lib/stores.js';
+	import { levelToPx } from '../lib/autoZoomLevel.js';
 	import { computeLiveL } from '../lib/compiler.js';
 	import { formatLiveNumbers, formatAxisDenominator } from '../lib/numberRenderer.js';
 	import { drawScript } from '../lib/mathCanvasRenderer.js';
@@ -90,13 +90,18 @@
 	let animDirection = 1;
 	let animPause = 0;
 	let u_time = 0.0;
-	let u_mode_AB = 0.0;
 	// Vollstaendiger kompilierter Zustand (fuer computeLiveL der
 	// Canvas-gezeichneten Zahlentafel l/l²/R) - nur in applyConfig
 	// frisch gesetzt, NICHT pro Frame neu geholt.
 	let compiledRef = null;
 
-	let AUTO_ZOOM_MIN_PX = 0;
+	// Auto-Zoom: Aktivierung (linear) + Staerke (log-skaliert ueber
+	// levelToPx(), siehe autoZoomLevel.js). Die resultierende
+	// Basisverzerrung (frueher "modeAB") wird daraus JEDEN Frame in
+	// renderFrame() berechnet (computeAutoZoomTAB()) - kein eigenstaendiges
+	// Store-Feld mehr, siehe docs/Alternative Zoom-Steuerung,md.
+	let zoomEngagement = 1.0;
+	let zoomLevel = 0.0;
 	let RENDER_SCALE = 1;
 	let EDGE_BLUR_PX = 0;
 	let LINE_WIDTH_PX = 0.3;
@@ -152,7 +157,7 @@
 	// === Canvas ===
 	let canvasEl = $state();
 	let ctx = null;
-	let bankZoomLabel, bankAreaLabel, autoZoomMarker, autoZoomNote, bankPanel;
+	let bankZoomLabel, bankAreaLabel, bankPanel;
 
 	let lastTime = performance.now();
 	let _lastCompileKey;
@@ -175,8 +180,8 @@
 			N_MAX = c.depth;
 			BASE = c.base;
 			BANK_ZOOM_THRESHOLD_POWERS = c.bankZoomThresholdPowers;
-			u_mode_AB = c.modeAB;
-			AUTO_ZOOM_MIN_PX = c.autoZoomMinPx;
+			zoomEngagement = c.zoomEngagement;
+			zoomLevel = c.zoomLevel;
 			LINE_WIDTH_PX = c.lineWidth;
 			ANIM_PAUSE_DURATION = c.pauseDuration;
 			ANIM_SPEED = c.playSpeed;
@@ -315,11 +320,13 @@
 		// Tafel NICHT beginnen.)
 		hudX0 = (40 + scale * SQRT2) * RENDER_SCALE + 28;
 
+		// Die resultierende Basisverzerrung ("modeAB") ist kein eigenstaendiges
+		// Store-Feld mehr, sondern wird HIER JEDEN Frame aus Aktivierung x
+		// Staerke berechnet (siehe docs/Alternative Zoom-Steuerung,md) - kein
+		// max() mit einem separat gesetzten manuellen Wert mehr noetig.
 		let autoZoomTargetExp = getSmoothedAutoZoomExp(u_time);
-		let autoZoomTAB = computeAutoZoomTAB(AUTO_ZOOM_MIN_PX, scale, autoZoomTargetExp);
-
-		let effective_t_AB = Math.max(u_mode_AB, autoZoomTAB);
-		updateAutoZoomIndicator(autoZoomTAB, effective_t_AB > u_mode_AB + 1e-9);
+		let effectivePx = zoomEngagement * levelToPx(zoomLevel);
+		let effective_t_AB = computeAutoZoomTAB(effectivePx, scale, autoZoomTargetExp);
 
 		updateDynamicLayout(effective_t_AB);
 
@@ -773,22 +780,6 @@
 		ctx.restore();
 	}
 
-	function updateAutoZoomIndicator(autoZoomTAB, isActive) {
-		// Cross-Komponenten-DOM aus <ControlPanel>: kann null sein, wenn
-		// das Panel (noch) nicht gemountet ist (z.B. remote.html, oder
-		// Canvas rendert vor dem Panel). Dann einfach ueberspringen -
-		// der Marker ist rein informativ.
-		if (!autoZoomMarker || !autoZoomNote) return;
-		if (AUTO_ZOOM_MIN_PX <= 0) {
-			autoZoomMarker.style.display = 'none';
-			autoZoomNote.style.display = 'none';
-			return;
-		}
-		autoZoomMarker.style.display = 'block';
-		autoZoomMarker.style.left = autoZoomTAB * 100 + '%';
-		autoZoomNote.style.display = isActive ? 'block' : 'none';
-	}
-
 	// Debug-Overlay: Exponent (k) des tiefsten gemeinsamen Elternrestes der
 	// aktuell gezeichneten Reste. Wird über dem Bank-Bereich eingeblendet.
 	function drawCommonAncestorExponent(ctx, pieces, bankScreenX) {
@@ -1004,8 +995,6 @@
 		setDebugCanvas(canvasEl);
 		bankZoomLabel = document.getElementById('bankZoomLabel');
 		bankAreaLabel = document.getElementById('bankAreaLabel');
-		autoZoomMarker = document.getElementById('autoZoomMarker');
-		autoZoomNote = document.getElementById('autoZoomNote');
 		bankPanel = document.getElementById('bankPanel');
 		window.addEventListener('resize', resizeCanvas);
 		resizeCanvas();

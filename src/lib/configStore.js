@@ -4,6 +4,7 @@
 // (stores.js re-exportiert den Orchestrator, der wieder configStore braucht).
 import { writable } from 'svelte/store';
 import { parseConfigFromUrl } from './urlState.js';
+import { pxToLevel } from './autoZoomLevel.js';
 
 // Default-Werte gespiegelt aus den `value`-Attributen der bisherigen
 // Inputs in sqrt2.html - keine Verhaltensänderung, nur eine zweite
@@ -13,14 +14,21 @@ const DEFAULTS = {
 	depth: 16,
 	transformMode: 'S',
 	bankZoomThresholdPowers: 0,
-	autoZoomMinPx: 3,
 	zoomSpeedCoef: 0.012,
 	compactionEnabled: false,
 	compactionTransitionTicks: 3,
 	lineWidth: 0.3,
 	pauseDuration: 1.5,
 	playSpeed: 2.0,
-	modeAB: 0.0,
+	// Auto-Zoom: Aktivierung (linear, 0=aus/1=an) + Staerke (log-skaliert
+	// ueber levelToPx(), siehe autoZoomLevel.js) - ersetzt das fruehere
+	// Regler-Paar modeAB/autoZoomMinPx (siehe docs/Alternative
+	// Zoom-Steuerung,md). Die resultierende Basisverzerrung ("modeAB")
+	// ist damit KEIN eigenstaendiges Store-Feld mehr, sondern wird in
+	// TargetBankCanvas.svelte JEDEN Frame aus diesen beiden Werten
+	// berechnet.
+	zoomEngagement: 1.0,
+	zoomLevel: pxToLevel(3), // Default entspricht dem fruehereren autoZoomMinPx=3
 	// Flug-Morph: Teile drehen (true) oder nur strecken (false)
 	flightRotation: true,
 	// Transparenz fliegender Stücke (0 = unsichtbar, 1 = deckend)

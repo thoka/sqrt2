@@ -70,18 +70,32 @@ test('Remote-Ansicht zeigt nur Grundeinstellungen', () => {
 	unmount(app);
 });
 
-test('Modus-B-Regler (range) aktualisiert configStore.modeAB live bei "input"', () => {
+test('Auto-Zoom-Aktivierung (range) aktualisiert configStore.zoomEngagement live bei "input"', () => {
 	const app = mount(ControlPanel, { target: document.body });
-	// Der Zoom-Regler (modeAB) trägt das Label "Zoom".
-	const zoomLabel = [...document.querySelectorAll('.control-group')].find((g) =>
-		g.textContent.startsWith('Zoom'),
+	const label = [...document.querySelectorAll('.control-group')].find((g) =>
+		g.textContent.startsWith('Auto-Zoom: Aktivierung'),
 	);
-	const rangeInput = zoomLabel.querySelector('input[type=range]');
+	const rangeInput = label.querySelector('input[type=range]');
 
 	rangeInput.value = '0.5';
 	fire(rangeInput, 'input');
 	flushSync();
-	expect(get(configStore).modeAB).toBe(0.5);
+	expect(get(configStore).zoomEngagement).toBe(0.5);
+
+	unmount(app);
+});
+
+test('Auto-Zoom-Stärke (range) aktualisiert configStore.zoomLevel live bei "input"', () => {
+	const app = mount(ControlPanel, { target: document.body });
+	const label = [...document.querySelectorAll('.control-group')].find((g) =>
+		g.textContent.startsWith('Auto-Zoom: Stärke'),
+	);
+	const rangeInput = label.querySelector('input[type=range]');
+
+	rangeInput.value = '0.5';
+	fire(rangeInput, 'input');
+	flushSync();
+	expect(get(configStore).zoomLevel).toBe(0.5);
 
 	unmount(app);
 });

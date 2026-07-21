@@ -74,7 +74,7 @@ test('compiledStore reagiert auf configStore-Änderungen (asynchron)', async () 
 	await waitForCompiled();
 });
 
-test('compiledStore bleibt bei unveränderten Nicht-Compile-Feldern (z.B. modeAB) unverändert', async () => {
+test('compiledStore bleibt bei unveränderten Nicht-Compile-Feldern (z.B. zoomLevel) unverändert', async () => {
 	configStore.set({
 		base: 10,
 		depth: 3,
@@ -86,12 +86,12 @@ test('compiledStore bleibt bei unveränderten Nicht-Compile-Feldern (z.B. modeAB
 	});
 	runCompile();
 	let before = await waitForCompiled();
-	configStore.update((c) => ({ ...c, modeAB: 0.75 }));
+	configStore.update((c) => ({ ...c, zoomLevel: 0.75 }));
 	runCompile();
 	let after = await waitForCompiled();
 	assert.strictEqual(before.TOTAL_STEPS, after.TOTAL_STEPS);
 	assert.strictEqual(before.MAX_TIME, after.MAX_TIME);
-	configStore.update((c) => ({ ...c, modeAB: 0.0 }));
+	configStore.update((c) => ({ ...c, zoomLevel: 0.0 }));
 });
 
 test('playbackStore ist von configStore/compiledStore unabhängig (eigene Schicht, siehe Spec 3.1)', async () => {

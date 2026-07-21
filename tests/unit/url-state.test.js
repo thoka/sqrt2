@@ -15,14 +15,14 @@ const DEFAULT_CONFIG = {
 	depth: 16,
 	transformMode: 'S',
 	bankZoomThresholdPowers: 0,
-	autoZoomMinPx: 3,
+	zoomEngagement: 1.0,
+	zoomLevel: 0.5,
 	zoomSpeedCoef: 0.012,
 	compactionEnabled: false,
 	compactionTransitionTicks: 3,
 	lineWidth: 0.3,
 	pauseDuration: 1.5,
 	playSpeed: 2.0,
-	modeAB: 0.0,
 	hudUpdateEnabled: true,
 	bankRenderEnabled: true,
 	flightRotation: true,
@@ -60,9 +60,15 @@ test('parseConfigFromUrl(): Checkbox-Feld "compaction" wird als Boolean gelesen'
 	});
 });
 
-test('parseConfigFromUrl(): modeab wird auf [0,1] geklammert', () => {
-	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('modeab=5')), { modeAB: 1 });
-	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('modeab=-5')), { modeAB: 0 });
+test('parseConfigFromUrl(): zoomengage/zoomlevel werden auf [0,1] geklammert', () => {
+	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('zoomengage=5')), {
+		zoomEngagement: 1,
+	});
+	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('zoomengage=-5')), {
+		zoomEngagement: 0,
+	});
+	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('zoomlevel=5')), { zoomLevel: 1 });
+	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('zoomlevel=-5')), { zoomLevel: 0 });
 });
 
 test('parsePlaybackFromUrl(): "time" hat Vorrang vor "tick", falls beide angegeben sind', () => {
@@ -118,7 +124,14 @@ test('buildStateParams() schreibt "dir" aus dem playbackStore', () => {
 });
 
 test('buildStateParams() -> parseConfigFromUrl()/parsePlaybackFromUrl() ist ein Roundtrip (Export == Import)', () => {
-	let config = { ...DEFAULT_CONFIG, base: 7, depth: 12, compactionEnabled: true, modeAB: 0.42 };
+	let config = {
+		...DEFAULT_CONFIG,
+		base: 7,
+		depth: 12,
+		compactionEnabled: true,
+		zoomEngagement: 0.42,
+		zoomLevel: 0.73,
+	};
 	let playback = { time: 4.5, isPlaying: true, direction: -1 };
 	let params = buildStateParams(config, playback);
 
@@ -139,14 +152,14 @@ test('buildStateParams() setzt jeden erwarteten URL-Schlüssel', () => {
 		'depth',
 		'mode',
 		'zoomthresh',
-		'autozoom',
+		'zoomengage',
+		'zoomlevel',
 		'zoomspeed',
 		'linewidth',
 		'pause',
 		'compaction',
 		'speed',
 		'transition',
-		'modeab',
 		'rotate',
 		'flyalpha',
 		'flightmaxspeed',
