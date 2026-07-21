@@ -15,7 +15,16 @@ Später sollte auch das Einschalten der Beschriftung weiches Einblenden sein etc
 
 Ziel dieses Versuchs ist  über Konzentration auf die wesentliche Funktionalität den Nutzer zu entlasten und nur optimierte Defaults anzubieten.
 
-## Stand / Entscheidungen (umgesetzt)
+## Stand / Entscheidungen (ERSTER Versuch, seither beerdigt - siehe unten)
+
+> Der folgende Abschnitt beschreibt den ERSTEN Umsetzungsversuch
+> (Feder-Tween direkt auf `modeAB`/`autoZoomMinPx` + diskrete
+> Zustands-Radios). Er ist wegen der im Feedback unten beschriebenen
+> Probleme + der Erkenntnis "erst den Steuerungsraum umbauen, dann
+> darauf aufsetzen" komplett zurueckgebaut worden (Commit
+> "Feder-basierte Zoom-Zustands-Steuerung beerdigt"). Bleibt hier
+> stehen als Dokumentation DIESES Zwischenschritts, siehe "Status:
+> Grundlegender Umbau umgesetzt" ganz unten fuer den aktuellen Stand.
 
   - **Default aus, opt-in:** `configStore.edgeZoomControlMode` (Default
     `false`) schaltet die Alternativ-UI frei - solange sie aus ist, bleibt
@@ -204,17 +213,60 @@ bestaetigt haben:
     Robotik/CNC) spaeter nachgeruestet werden kann, ohne Embedding/Blend
     anzufassen.
 
-  **Offener Folgepunkt (User-Hinweis, noch zu klaeren/spezifizieren):** im
-  Modus "Regler statt diskrete Zustaende" (dem heutigen Zwei-Regler-UI)
-  soll statt des `modeAB`-Reglers ("Zoom") ein Schalter "Rand-Zoom
-  einschalten" hinzukommen - vermutlich gepaart mit dem (jetzt sauberen,
-  log-skalierten) `level`-Regler statt des bisherigen
-  "Auto-Zoom: Mindestpixelgroesse"-Reglers mit implizitem
-  Snap-auf-0-am-linken-Anschlag. Das würde beide UI-Modi auf dieselben
-  zwei zugrunde liegenden Dials (`engagement`/`level`) vereinheitlichen,
-  statt zwei sich gegenseitig ueberschreibende Regler zu zeigen (die
-  bestehende Notiz "Auto-Zoom aktiv - uebersteuert den Regler nach oben"
-  gesteht diese Verwirrung im heutigen UI bereits ein). Ob `modeAB` als
-  Store-/Render-Feld intern bestehen bleibt (Kompatibilitaet/Debug) oder
-  perspektivisch ganz entfaellt, ist NICHT Teil dieser Entscheidung -
-  hier geht es nur um den nutzersichtbaren Regler.
+  **Offener Folgepunkt - GEKLAERT:** statt eines Schalters ("Rand-Zoom
+  einschalten") ist `engagement` bewusst EBENFALLS ein stufenloser Regler
+  geworden (keine Checkbox) - Begruendung (User): vor einer spaeteren
+  Automatisierung (Radio-Buttons/Tween) soll sich die wahrgenommene
+  Gleichmaessigkeit JEDES einzelnen Reglers manuell durchziehen und
+  beurteilen lassen; eine Checkbox liesse das gar nicht pruefen. `modeAB`
+  ist als Store-/Render-Feld VOLLSTAENDIG entfallen (nicht nur
+  "unangetastet gelassen" wie urspruenglich hier geplant) - siehe
+  "Status: Grundlegender Umbau umgesetzt" unten.
+
+## Status: Grundlegender Umbau umgesetzt (engagement/level)
+
+**Reihenfolge-Entscheidung (User):** erst den zugrundeliegenden
+Steuerungsraum umbauen, DANN darauf eine diskrete Zustands-Umschaltung
+aufsetzen - nicht umgekehrt (nicht "optional hinterher"). Umgesetzt in
+zwei Schritten:
+
+1. **Beerdigt** (Commit "Feder-basierte Zoom-Zustands-Steuerung
+   beerdigt"): `src/lib/paramTween.js`, `src/lib/zoomStateTween.js`
+   (+Tests), die Store-Felder `edgeZoomControlMode`/`zoomState`/
+   `randZoomLevel`, die zugehoerige Radio-/Feinregler-UI, die
+   URL-Parameter `altzoom`/`zoomstate`/`randzoom`. Alles bleibt in der
+   Git-Historie (`bb14495`..`f69faa9`) auffindbar, nur nicht mehr Teil
+   des aktuellen Codes.
+2. **Neu aufgebaut** (Commit "Grundlegender Umbau: zoomEngagement/
+   zoomLevel statt modeAB+autoZoomMinPx"):
+   - `configStore.modeAB`/`configStore.autoZoomMinPx` ersetzt durch
+     `configStore.zoomEngagement` (linear 0..1, "ist Auto-Zoom aktiv")
+     + `configStore.zoomLevel` (log-skaliert 0..1, "wie aggressiv, wenn
+     aktiv"). Neues Modul `src/lib/autoZoomLevel.js`
+     (`levelToPx()`/`pxToLevel()`) als einzige Quelle dieser Abbildung.
+   - **Beide bewusst als stufenlose Regler**, KEINE Checkbox fuer
+     `engagement` (User-Entscheidung, siehe oben) - Grundeinstellungen
+     zeigt "Auto-Zoom: Aktivierung" + "Auto-Zoom: Stärke".
+   - `TargetBankCanvas.svelte`: die resultierende Basisverzerrung
+     (frueher `modeAB`) ist KEIN eigenstaendiges Store-Feld mehr,
+     sondern wird JEDEN Frame aus
+     `computeAutoZoomTAB(zoomEngagement * levelToPx(zoomLevel), scale,
+     targetExp)` berechnet - kein `max()` mit einem separat gesetzten
+     manuellen Wert mehr, damit auch keine "Auto-Zoom uebersteuert den
+     Regler"-Anzeige mehr noetig (strukturell unmoeglich geworden, nicht
+     nur ausgeblendet - `autoZoomMarker`/`autoZoomNote` entfernt).
+   - `urlState.js`: `modeab`/`autozoom` ersetzt durch
+     `zoomengage`/`zoomlevel`.
+   - Verifiziert: alle Tests gruen (dieselben vorbestehenden,
+     unabhaengigen Fails wie zu Sessionbeginn), manuell im Browser
+     (Playwright/Screenshots) - beide Regler laufen 0..100%/
+     0.001..100px sauber durch, sichtbarer Zoom-Effekt, keine
+     Konsolenfehler.
+
+**Naechster Schritt (jetzt erst moeglich):** die diskrete
+3-Zustands-Umschaltung (Flächentreu/Rand sichtbar/Gleichmäßig) obendrauf
+bauen - jetzt auf dem sauberen 2D-`(engagement, level)`-Raum statt auf
+dem alten `modeAB`/`autoZoomMinPx`-Paar. Dafuer die Bausteine aus
+`CLAUDE.md` Abschnitt "Schalter-Tweening" anwenden (Embedding/Blend/
+Treiber) - Embedding-Topologie und Treiber-Variante weiterhin bewusst
+NICHT vorentschieden, siehe dort.
