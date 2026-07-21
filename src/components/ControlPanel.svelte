@@ -92,25 +92,6 @@
 		return (e) => configStore.update((c) => ({ ...c, [field]: e.target.value }));
 	}
 
-	// Alternative Rand-Zoom-Steuerung (docs/Alternative Zoom-Steuerung,md):
-	// Radio-Klick setzt NUR zoomState - der eigentliche (weiche) Uebergang
-	// von modeAB/autoZoomMinPx auf das Preset dieses Zustands laeuft in
-	// zoomStateTween.js, angestossen durch genau diese Store-Aenderung.
-	function onZoomStateChange(state) {
-		return () => configStore.update((c) => ({ ...c, zoomState: state }));
-	}
-	// Feinregler fuer den Zustand "Rand sichtbar" (der bisherige "Zoom"-
-	// Schieberegler, im Alt-Modus in den Animation-Tab reloziert): direkte
-	// Regler-Bedienung bleibt live/ungedaempft (siehe CLAUDE.md - Maus-Drag
-	// ist von der C1-Glaettungspflicht ausgenommen), schreibt aber zusaetzlich
-	// randZoomLevel, damit der Wert einen Ausflug nach "Flaechentreu"/
-	// "Gleichmaessig" uebersteht.
-	function onRandZoomInput(e) {
-		let v = parseFloat(e.target.value);
-		if (Number.isNaN(v)) v = 0;
-		configStore.update((c) => ({ ...c, randZoomLevel: v, modeAB: v }));
-	}
-
 	// Zoom-Schwellwert: in der UI "Zoom-Schwellwert" (immer Basis 10), im
 	// Store als Potenzen zur echten Basis. Umrechnung 10/base (siehe
 	// INTERFACE-TODO Admin).
@@ -329,67 +310,34 @@
 			</label>
 		</div>
 
-		{#if !$configStore.edgeZoomControlMode}
-			<label class="control-group" style="margin-top:6px;"
-				>Auto-Zoom: Mindestpixelgröße
-				<input type="range" min="0" max="1" step="0.001" value={minPxPos} oninput={onMinPxInput} />
-				<span class="zoom-readout"
-					>{$configStore.autoZoomMinPx.toLocaleString('de-DE', {
-						minimumFractionDigits: 3,
-						maximumFractionDigits: 3,
-					})} px</span
-				>
-			</label>
+		<label class="control-group" style="margin-top:6px;"
+			>Auto-Zoom: Mindestpixelgröße
+			<input type="range" min="0" max="1" step="0.001" value={minPxPos} oninput={onMinPxInput} />
+			<span class="zoom-readout"
+				>{$configStore.autoZoomMinPx.toLocaleString('de-DE', {
+					minimumFractionDigits: 3,
+					maximumFractionDigits: 3,
+				})} px</span
+			>
+		</label>
 
-			<label class="control-group" style="margin-top: 5px;"
-				>Zoom
-				<div class="slider-with-marker">
-					<input
-						type="range"
-						min="0"
-						max="1"
-						step="0.01"
-						value={$configStore.modeAB}
-						oninput={onInputFloat('modeAB', 0)}
-					/>
-					<div class="auto-zoom-marker" id="autoZoomMarker" title="Auto-Zoom-Mindestwert"></div>
-				</div>
-			</label>
-			<div class="auto-zoom-note" id="autoZoomNote">
-				Auto-Zoom aktiv - übersteuert den Regler nach oben
+		<label class="control-group" style="margin-top: 5px;"
+			>Zoom
+			<div class="slider-with-marker">
+				<input
+					type="range"
+					min="0"
+					max="1"
+					step="0.01"
+					value={$configStore.modeAB}
+					oninput={onInputFloat('modeAB', 0)}
+				/>
+				<div class="auto-zoom-marker" id="autoZoomMarker" title="Auto-Zoom-Mindestwert"></div>
 			</div>
-		{:else}
-			<fieldset class="control-group zoom-state-group" style="margin-top:6px;">
-				<legend>Zoom</legend>
-				<label class="radio-row">
-					<input
-						type="radio"
-						name="zoomState"
-						checked={$configStore.zoomState === 'flaechentreu'}
-						onchange={onZoomStateChange('flaechentreu')}
-					/>
-					Flächentreu
-				</label>
-				<label class="radio-row">
-					<input
-						type="radio"
-						name="zoomState"
-						checked={$configStore.zoomState === 'rand'}
-						onchange={onZoomStateChange('rand')}
-					/>
-					Rand sichtbar
-				</label>
-				<label class="radio-row">
-					<input
-						type="radio"
-						name="zoomState"
-						checked={$configStore.zoomState === 'gleichmaessig'}
-						onchange={onZoomStateChange('gleichmaessig')}
-					/>
-					Gleichmäßig
-				</label>
-			</fieldset>
-		{/if}
+		</label>
+		<div class="auto-zoom-note" id="autoZoomNote">
+			Auto-Zoom aktiv - übersteuert den Regler nach oben
+		</div>
 
 		<label
 			class="control-group"
@@ -424,21 +372,6 @@
 				<option value="Z">Z: Zerschneiden (Montessori) - Rück-Verschmelzung noch buggy</option>
 			</select>
 		</label>
-
-		{#if $configStore.edgeZoomControlMode}
-			<label class="control-group" style="margin-top: 5px;"
-				>Zoom (Feinregler für "Rand sichtbar")
-				<input
-					type="range"
-					min="0"
-					max="1"
-					step="0.01"
-					value={$configStore.randZoomLevel}
-					disabled={$configStore.zoomState !== 'rand'}
-					oninput={onRandZoomInput}
-				/>
-			</label>
-		{/if}
 
 		<label class="control-group" style="margin-top:6px;"
 			>Zoom-Trägheit (kleiner = schneller)
@@ -541,20 +474,7 @@
 	{/if}
 
 	{#if showTab('Admin') && activeTab === 'Admin'}
-		<label
-			class="control-group"
-			style="margin-top: 5px; flex-direction: row; align-items: center; gap: 8px;"
-		>
-			<input
-				type="checkbox"
-				style="width: auto;"
-				checked={$configStore.edgeZoomControlMode}
-				onchange={onChangeChecked('edgeZoomControlMode')}
-			/>
-			Alternative Rand-Zoom-Steuerung (3 Zustände statt 2 Regler)
-		</label>
-
-		<label class="control-group" style="margin-top: 10px;"
+		<label class="control-group" style="margin-top: 5px;"
 			>Zoom-Schwellwert
 			<input
 				type="number"
@@ -710,24 +630,5 @@
 	.muted-note {
 		color: #64748b;
 		font-size: 0.78em;
-	}
-	.zoom-state-group {
-		border: none;
-		margin: 0;
-		padding: 0;
-	}
-	.zoom-state-group legend {
-		font-size: 0.9em;
-		padding: 0;
-		margin-bottom: 2px;
-	}
-	.radio-row {
-		display: flex;
-		flex-direction: row;
-		align-items: center;
-		gap: 8px;
-	}
-	.radio-row input[type='radio'] {
-		width: auto;
 	}
 </style>

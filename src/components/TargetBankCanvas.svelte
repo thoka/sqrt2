@@ -23,7 +23,6 @@
 	import { applyCompactionFit } from '../lib/bank-core.js';
 	import { layoutCentered, findRect, commonAncestor } from '../lib/recursive-layout.js';
 	import { configStore, playbackStore, compiledStore } from '../lib/stores.js';
-	import { initZoomStateTween } from '../lib/zoomStateTween.js';
 	import { computeLiveL } from '../lib/compiler.js';
 	import { formatLiveNumbers, formatAxisDenominator } from '../lib/numberRenderer.js';
 	import { drawScript } from '../lib/mathCanvasRenderer.js';
@@ -1001,12 +1000,6 @@
 	}
 
 	onMount(() => {
-		// Treibt den weichen Uebergang zwischen den drei Voreinstellungen der
-		// Alternativen Rand-Zoom-Steuerung (schreibt modeAB/autoZoomMinPx in
-		// configStore, siehe zoomStateTween.js) - hier registriert, weil diese
-		// Komponente ohnehin die einzige Instanz des configStore-Subscribe/
-		// rAF-Rendering-Verbunds fuer den Zoom ist.
-		initZoomStateTween();
 		ctx = canvasEl.getContext('2d');
 		setDebugCanvas(canvasEl);
 		bankZoomLabel = document.getElementById('bankZoomLabel');
