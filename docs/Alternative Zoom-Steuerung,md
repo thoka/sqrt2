@@ -561,3 +561,27 @@ kurzen Dauern, bindet im Normalfall nicht.
   (Gleichmaessig->Rand->Flaechentreu, je 150ms Abstand) zeigt eine
   durchgehend monotone Bewegung ohne Sprung/Richtungswechsel - keine
   Blitze mehr, keine Konsolenfehler.
+
+## Status: TODO.md "Steuerung" umgesetzt (Default an + Tempo erhoeht)
+
+Zwei passende, bereits vorgemerkte Punkte aus `TODO.md` direkt umgesetzt:
+
+- **`edgeZoomControlMode` jetzt `true` als Default** - die 3-Zustaende-
+  Radio-UI ist das, was Besucher:innen sofort sehen. Der klassische
+  Regler-Modus (Aktivierung/Staerke/Abstraktion) bleibt ueber die
+  Admin-Checkbox weiterhin voll erreichbar, nur nicht mehr die
+  Voreinstellung.
+- **`zoomStateTransitionDuration`-Default von 1,0s auf 0,2s reduziert**
+  ("Beschleunigung wesentlich erhoehen... gefuehlt instantan") - macht
+  sofort ersichtlich, dass ein neuer Zustand angewaehlt wurde, bleibt
+  aber dank des geschwindigkeitsstetigen Treibers (siehe oben) weiterhin
+  ohne Blitze, auch bei schnellem Umschalten.
+
+Betroffene Tests (die implizit den alten Default
+`edgeZoomControlMode=false` voraussetzten) in `ControlPanel.test.js`
+angepasst - setzen jetzt explizit `edgeZoomControlMode: false`, bevor sie
+den klassischen Regler-Modus pruefen, statt sich auf den globalen Default
+zu verlassen. Verifiziert im Browser: Standardansicht zeigt sofort die 3
+Radios (keine alten Regler mehr sichtbar), ein Uebergang
+(Flaechentreu→Gleichmaessig) settled jetzt in ca. 300ms statt 1-2s, keine
+Konsolenfehler. Tests gruen (dieselben vorbestehenden Fails).

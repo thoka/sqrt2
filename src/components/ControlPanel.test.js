@@ -71,6 +71,9 @@ test('Remote-Ansicht zeigt nur Grundeinstellungen', () => {
 });
 
 test('Auto-Zoom-Aktivierung (range) aktualisiert configStore.zoomEngagement live bei "input"', () => {
+	// Klassischer Regler-Modus (edgeZoomControlMode=false) ist seit TODO.md
+	// "Steuerung" nicht mehr der Default - fuer diesen Test explizit setzen.
+	configStore.update((c) => ({ ...c, edgeZoomControlMode: false }));
 	const app = mount(ControlPanel, { target: document.body });
 	const label = [...document.querySelectorAll('.control-group')].find((g) =>
 		g.textContent.startsWith('Auto-Zoom: Aktivierung'),
@@ -101,6 +104,9 @@ test('Auto-Zoom-Stärke (range) aktualisiert configStore.zoomLevel live bei "inp
 });
 
 test('Abstraktion (range) aktualisiert configStore.abstraction live bei "input"', () => {
+	// Klassischer Regler-Modus (edgeZoomControlMode=false) ist seit TODO.md
+	// "Steuerung" nicht mehr der Default - fuer diesen Test explizit setzen.
+	configStore.update((c) => ({ ...c, edgeZoomControlMode: false }));
 	const app = mount(ControlPanel, { target: document.body });
 	const label = [...document.querySelectorAll('.control-group')].find((g) =>
 		g.textContent.startsWith('Abstraktion'),
@@ -124,6 +130,10 @@ function goToTab(name) {
 }
 
 test('Admin: Checkbox "Alternative Rand-Zoom-Steuerung" schaltet configStore.edgeZoomControlMode um', () => {
+	// Startzustand fuer diesen Test explizit auf "aus" setzen (Default ist
+	// inzwischen "an", siehe TODO.md "Steuerung") - der Test prueft das
+	// Umschalten selbst, nicht den Default-Wert.
+	configStore.update((c) => ({ ...c, edgeZoomControlMode: false }));
 	const app = mount(ControlPanel, { target: document.body });
 	goToTab('Admin');
 	const checkbox = [...document.querySelectorAll('.control-group')]

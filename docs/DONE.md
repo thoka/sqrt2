@@ -247,3 +247,59 @@
   Kernversprechen - 1. Seitenaufruf laedt den `mathJaxRenderer`-Chunk
   (Netzwerk-Request beobachtet), 2. Aufruf (gleicher Browser-Context) NICHT
   mehr, keine Laufzeitfehler in beiden Faellen.
+
+
+## Einstellungen aufräumen
+- [x] Geschwindigkeit: wird im Config-Tab nicht gebraucht. 
+- [x] Den Bereich, der die Einstellungen öffnet auf die ganze Höhe des Hauptfenster ausrichten. Breite: 153 px vom rechten Rand
+- [x] Pieces drehen: einzeilig und in den Animations-Tab verschieben
+- [x] Fliegende Transparenz: in den Animations-Tab verschieben
+- [x] "Zoom" unter "Auto-Zoom"
+- [x] "Kompaktierung" gibt es nicht mehr
+
+## Remote-Steuerung
+ - [x] Zeitregler volle Breite
+ - [x] Geschwindigkeitsregeler soll direkt über der Zeit  sichbar sein.
+ - [x] Buttons für alle Tastatureingaben (außer "?" vorhehen)
+ 
+## Steuerung
+- [x] Solange ein slider bewegt wird, soll das verlassen des parents nicht den Dialog schhließen. Das passiert zuerzeit in den Einstellungen.
+
+## Darstellung
+- [x] einen Konfigurationsoption "Beschriftung an/aus" in den Basiseinstellungen und im Remote einbauen
+- [x] wenn diese eingeschaltet ist:
+   - [x] über dem unteren Rand der einzelnen untersten Quadrate im Ziel  (1/basis)^exponent anzeigen , wenn die breite des Rechtecks dazu ausreicht
+   - [x] neben dem linken Rand der einlenen linkesten Quadrate im Ziel auch die Beschriftung anzeigen, jedoch ausgerechnet. D.h. im Fall von Basis = 2  1 (weises Grundquadrat); 1/2;  1/4; 1/8 etc
+  Wichtig: nicht mathjax nutzen. ist zu langsam
+- [x] Brüche/Exponenten sollen optisch wie MathJax aussehen, OHNE MathJax zur
+      Laufzeit zu nutzen: MathJax offline vermessen (`scripts/mathjax-metrics.mjs`)
+      + eigener Canvas-Bruch-/Exponenten-Renderer (`src/lib/mathCanvasRenderer.js`,
+      Konstanten in `src/lib/mathMetrics.js`) - siehe `docs/MATHJAX_METRICS.md`.
+
+## Flug-Animation
+- [x] Die Flug-Animation soll ab einer bestimmten Geschwindigkeit ausgeschaltet werden.
+- [x] Diese Geschwindigkeit (Vorgabe 3) soll einstellbar sein in den Animations-Optionen.
+- [x] Kein Recompile bei Ändeerungen.
+
+## Tastensteuerung
+
+- [x] Space: start / stop
+- [x] left: tick zurück
+- [x] right: tick vorwärts
+- [x] pg-up: schale vorwärts
+- [x] pg-down: schale zurück
+- [x] Return: Richtungswechsel
+- [x] +: schneller (Faktor `SPEED_STEP`, Default 1.3)
+- [x] -: langsamer (Faktor 1/SPEED_STEP)
+- [x] ?: Hilfe-Overlay
+
+## DOKUMENTATION
+
+- [x] **`docs/DEPLOYMENT.md`** als zentrale Betriebs-Anleitung — erstellt,
+      aber noch mit README/TOOLING-SPEC cross-verlinken.
+- [x] **`docs/TOOLING_SPEC.md`** Phase 8 (embedded Relay) + Phase 6-Status
+      konsistent halten.
+- [x] **`docs/CONNECTION_SERVICE_SPEC.md`** §10/§12 mit DEPLOYMENT.md verknüpfen.
+- [x] **README §10 „Zukünftige Vision"** aktualisieren: Mehrbildschirm/QR als
+      erledigt markieren, Phase 6 als offen. (War bereits erledigt markiert -
+      nur Phase-6-Querverweis präzisiert.)

@@ -4,42 +4,14 @@ Offene Punkte, nach Relevanz sortiert. Erledigtes wird durchgestrichen
 (`~~`). Jede Stufe bekommt eigene Tests (Unit und/oder e2e) — siehe
 `AGENTS.md` ("Tests für alle Stufen"). Vor Commit: `pnpm format` + `pnpm check`.
 
-## Einstellungen aufräumen
-- [x] Geschwindigkeit: wird im Config-Tab nicht gebraucht. 
-- [x] Den Bereich, der die Einstellungen öffnet auf die ganze Höhe des Hauptfenster ausrichten. Breite: 153 px vom rechten Rand
-- [x] Pieces drehen: einzeilig und in den Animations-Tab verschieben
-- [x] Fliegende Transparenz: in den Animations-Tab verschieben
-- [x] "Zoom" unter "Auto-Zoom"
-- [x] "Kompaktierung" gibt es nicht mehr
-
-## Remote-Steuerung
- - [x] Zeitregler volle Breite
- - [x] Geschwindigkeitsregeler soll direkt über der Zeit  sichbar sein.
- - [x] Buttons für alle Tastatureingaben (außer "?" vorhehen)
- 
 ## Steuerung
-- [x] Solange ein slider bewegt wird, soll das verlassen des parents nicht den Dialog schhließen. Das passiert zuerzeit in den Einstellungen.
+- [x] neue Umschaltung über Zustände zum Default machen (`configStore.edgeZoomControlMode` jetzt `true` als Default - klassische Regler bleiben über die Admin-Checkbox erreichbar, siehe docs/Alternative Zoom-Steuerung,md)
+- [x] Beschleunigung wesentlich erhöhen. Geschwindigkeit kann gerne gefühlt instantan erreicht werden. Dann ist ersichtlicher, wenn der neue Modus erreicht wurde. (Default von "Zustands-Übergang: Dauer" von 1,0s auf 0,2s reduziert - Übergänge bleiben dank des geschwindigkeitsstetigen Feder-Treibers weiterhin ohne "Blitze", auch bei schnellem Umschalten)
 
-## Darstellung
-- [x] einen Konfigurationsoption "Beschriftung an/aus" in den Basiseinstellungen und im Remote einbauen
-- [x] wenn diese eingeschaltet ist:
-   - [x] über dem unteren Rand der einzelnen untersten Quadrate im Ziel  (1/basis)^exponent anzeigen , wenn die breite des Rechtecks dazu ausreicht
-   - [x] neben dem linken Rand der einlenen linkesten Quadrate im Ziel auch die Beschriftung anzeigen, jedoch ausgerechnet. D.h. im Fall von Basis = 2  1 (weises Grundquadrat); 1/2;  1/4; 1/8 etc
-  Wichtig: nicht mathjax nutzen. ist zu langsam
-- [x] Brüche/Exponenten sollen optisch wie MathJax aussehen, OHNE MathJax zur
-      Laufzeit zu nutzen: MathJax offline vermessen (`scripts/mathjax-metrics.mjs`)
-      + eigener Canvas-Bruch-/Exponenten-Renderer (`src/lib/mathCanvasRenderer.js`,
-      Konstanten in `src/lib/mathMetrics.js`) - siehe `docs/MATHJAX_METRICS.md`.
-
-## Sync-Isolierung via Pin (BroadcastChannel) — optional
-- [ ] Pin als Teil des `BroadcastChannel`-Namens (`sqrt2-state-<pin>`): Tabs mit
-      gleichem Pin teilen einen Kanal, ungleiche/no-Pin sind isoliert.
-- [ ] Pin-Eingabe im ControlPanel/Settings + als URL-Parameter (`?pin=1234`)
-      zum Teilen vorkonfigurierter Links (analog zu urlState.js).
-- [ ] Pin-Wechsel zur Laufzeit: Channel neu aufmachen, wenn sich der Pin
-      ändert (bestehender Listener schließen + neuer öffnen).
-- [ ] (Nett, aber NICHT zwingend für Virtual-Canvas — dort identifiziert
-      jedes Fenster sich über eine eigene zufällige ID, siehe unten.)
+## Intro-Screen
+- [x] Anzeige eines Intro-Screens für kurze Zeit beim Start. Ausschalten bei Play.
+- [x] Hinweis auf Einstellungen oben rechts
+- [ ] Hinweise auf die Einstellungen viel größer. Ist momentan sehr dezent.
 
 ## Virtual Canvas / Multi-Viewport (Mehrbildschirm-Exponat)
 Konzept: ein gemeinsamer VIRTUELLER Canvas-Koordinatenraum, zusammengesetzt
@@ -76,26 +48,17 @@ Welt-Position eines Stücks berechnen).
       rendern denselben Welt-Punkt an der korrekten, sich ergänzenden Stelle;
       ein fliegendes Stück überquert die Grenze ohne Sprung.
 
-## Flug-Animation
-- [x] Die Flug-Animation soll ab einer bestimmten Geschwindigkeit ausgeschaltet werden.
-- [x] Diese Geschwindigkeit (Vorgabe 3) soll einstellbar sein in den Animations-Optionen.
-- [x] Kein Recompile bei Ändeerungen.
+## Sync-Isolierung via Pin (BroadcastChannel) — optional
+- [ ] Pin als Teil des `BroadcastChannel`-Namens (`sqrt2-state-<pin>`): Tabs mit
+      gleichem Pin teilen einen Kanal, ungleiche/no-Pin sind isoliert.
+- [ ] Pin-Eingabe im ControlPanel/Settings + als URL-Parameter (`?pin=1234`)
+      zum Teilen vorkonfigurierter Links (analog zu urlState.js).
+- [ ] Pin-Wechsel zur Laufzeit: Channel neu aufmachen, wenn sich der Pin
+      ändert (bestehender Listener schließen + neuer öffnen).
+- [ ] (Nett, aber NICHT zwingend für Virtual-Canvas — dort identifiziert
+      jedes Fenster sich über eine eigene zufällige ID, siehe unten.)
 
-## Tastensteuerung
 
-- [x] Space: start / stop
-- [x] left: tick zurück
-- [x] right: tick vorwärts
-- [x] pg-up: schale vorwärts
-- [x] pg-down: schale zurück
-- [x] Return: Richtungswechsel
-- [x] +: schneller (Faktor `SPEED_STEP`, Default 1.3)
-- [x] -: langsamer (Faktor 1/SPEED_STEP)
-- [x] ?: Hilfe-Overlay
-
-## Intro-Screen
-- [x] Anzeige eines Intro-Screens für kurze Zeit beim Start. Ausschalten bei Play.
-- [x] Hinweis auf Einstellungen oben rechts
 
 ## Fernsteuerung / Connection (Nachpflege)
 

@@ -46,17 +46,22 @@ const DEFAULTS = {
 	// Zoom-Steuerung,md "Schalter-Tweening"): statt der drei einzelnen
 	// Regler (Aktivierung/Abstraktion; zoomLevel bleibt unabhaengig davon
 	// immer als Regler sichtbar) nur 3 diskrete Zustaende zur Auswahl,
-	// weich animiert beim Wechsel (src/lib/zoomStateTween.js). Default AUS,
-	// damit sich am Regler-Verhalten nichts aendert - zuschaltbar per
-	// Checkbox im Admin-Tab.
-	edgeZoomControlMode: false,
+	// weich animiert beim Wechsel (src/lib/zoomStateTween.js). Jetzt
+	// DEFAULT AN (TODO.md "Steuerung": "neue Umschaltung über Zustände zum
+	// Default machen") - die klassischen 2(+1)-Regler bleiben ueber die
+	// Admin-Checkbox weiterhin erreichbar.
+	edgeZoomControlMode: true,
 	// 'flaechentreu' | 'rand' | 'gleichmaessig' - nur wirksam, wenn
 	// edgeZoomControlMode true ist.
 	zoomState: 'rand',
 	// Dauer (Sekunden) fuer einen KOMPLETTEN Uebergang zwischen 2 Zustaenden
 	// (src/lib/zoomStateTween.js) - Regler "Zustands-Übergang: Dauer" im
-	// Animation-Tab, Bereich 0..10s.
-	zoomStateTransitionDuration: 1.0,
+	// Animation-Tab, Bereich 0..10s. Bewusst kurz (TODO.md "Steuerung":
+	// "Beschleunigung wesentlich erhoehen, Geschwindigkeit kann gerne
+	// gefuehlt instantan erreicht werden") - macht deutlicher erkennbar,
+	// wann der neue Zustand erreicht wurde, bleibt aber dank des
+	// geschwindigkeitsstetigen Treibers weiterhin ohne "Blitze".
+	zoomStateTransitionDuration: 0.2,
 	// Flug-Morph: Teile drehen (true) oder nur strecken (false)
 	flightRotation: true,
 	// Transparenz fliegender Stücke (0 = unsichtbar, 1 = deckend)
