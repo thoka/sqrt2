@@ -22,7 +22,7 @@
 	import { applyCompactionFit } from '../lib/bank-core.js';
 	import { layoutCentered, findRect, commonAncestor } from '../lib/recursive-layout.js';
 	import { configStore, playbackStore, compiledStore } from '../lib/stores.js';
-	import { levelToPx } from '../lib/autoZoomLevel.js';
+	import { levelToPx, autoZoomMaxPxStore } from '../lib/autoZoomLevel.js';
 	import { computeLiveL } from '../lib/compiler.js';
 	import { formatLiveNumbers, formatAxisDenominator } from '../lib/numberRenderer.js';
 	import { drawScript } from '../lib/mathCanvasRenderer.js';
@@ -102,6 +102,10 @@
 	// Store-Feld mehr, siehe docs/Alternative Zoom-Steuerung,md.
 	let zoomEngagement = 1.0;
 	let zoomLevel = 0.0;
+	// Zuletzt an autoZoomMaxPxStore gemeldeter Wert (siehe renderFrame()) -
+	// vermeidet Store-Schreibvorgaenge (und damit ControlPanel-Re-Renders)
+	// bei jedem Frame, obwohl sich der Wert praktisch nie aendert.
+	let _lastMaxWidthPx = -1;
 	let RENDER_SCALE = 1;
 	let EDGE_BLUR_PX = 0;
 	let LINE_WIDTH_PX = 0.3;
@@ -261,26 +265,31 @@
 		return GLOBAL_AUTO_ZOOM_SPLINE(time);
 	}
 
+	// Gerenderte Breite der jeweils relevanten Ziffernstelle bei gegebener
+	// Basisverzerrung t_AB (0=Flächentreu .. 1=voller Zoom) - Kern-Formel
+	// sowohl fuer die Schwellwert-Suche in computeAutoZoomTAB() als auch fuer
+	// die maximal erreichbare Breite in maxAutoZoomWidthPx() (siehe dort).
+	function widthAt(t_AB, scale, targetExp) {
+		let b_eff = Math.pow(BASE, 1.0 - t_AB);
+		if (b_eff < 1.000001) b_eff = 1.000001;
+		let sumA = 1.0;
+		for (let i = 1; i < TOTAL_STEPS; i++) sumA += Math.pow(b_eff, -axes[i].exp);
+		let DYN_W = sumA + Math.pow(b_eff, -(N_MAX + 1));
+		let V_SCALE_TARGET = P_FINAL / DYN_W;
+		return Math.pow(b_eff, -targetExp) * V_SCALE_TARGET * scale;
+	}
+
 	function computeAutoZoomTAB(thresholdPx, scale, targetExp) {
 		if (thresholdPx <= 0 || TOTAL_STEPS <= 1) return 0;
-		function widthAt(t_AB) {
-			let b_eff = Math.pow(BASE, 1.0 - t_AB);
-			if (b_eff < 1.000001) b_eff = 1.000001;
-			let sumA = 1.0;
-			for (let i = 1; i < TOTAL_STEPS; i++) sumA += Math.pow(b_eff, -axes[i].exp);
-			let DYN_W = sumA + Math.pow(b_eff, -(N_MAX + 1));
-			let V_SCALE_TARGET = P_FINAL / DYN_W;
-			return Math.pow(b_eff, -targetExp) * V_SCALE_TARGET * scale;
-		}
 		const STEPS = 200;
 		let prevT = 0,
-			prevWidth = widthAt(0);
+			prevWidth = widthAt(0, scale, targetExp);
 		if (prevWidth >= thresholdPx) return 0;
 		let bestT = 0,
 			bestWidth = prevWidth;
 		for (let i = 1; i <= STEPS; i++) {
 			let t = i / STEPS;
-			let w = widthAt(t);
+			let w = widthAt(t, scale, targetExp);
 			if (w > bestWidth) {
 				bestWidth = w;
 				bestT = t;
@@ -293,6 +302,18 @@
 			prevWidth = w;
 		}
 		return bestT;
+	}
+
+	// Maximal erreichbare Breite (bei vollem Zoom, t_AB=1) fuer die aktuelle
+	// Konfiguration/Fensterhoehe - der tatsaechliche obere Anschlag des
+	// "Auto-Zoom: Staerke"-Reglers (siehe docs/Alternative Zoom-Steuerung,md,
+	// "toter Regelbereich"/"Gleichmaessigkeit bei kleiner Schalenanzahl").
+	// targetExp spielt bei t_AB=1 praktisch keine Rolle mehr (b_eff ist dort
+	// immer ~1, siehe widthAt()) - daher hier fest 0. Haengt NUR von
+	// Basis/Tiefe/Fenstergroesse ab, NICHT von der Animationszeit - bleibt
+	// waehrend einer laufenden Wiedergabe stabil.
+	function maxAutoZoomWidthPx(scale) {
+		return widthAt(1, scale, 0);
 	}
 
 	function renderFrame() {
@@ -338,7 +359,22 @@
 		// kompensieren). Das Ergebnis (autoZoomTAB) ist dagegen IMMER auf
 		// [0,1] begrenzt und daher robust linear skalierbar.
 		let autoZoomTargetExp = getSmoothedAutoZoomExp(u_time);
-		let autoZoomTAB = computeAutoZoomTAB(levelToPx(zoomLevel), scale, autoZoomTargetExp);
+		// Maximal erreichbare Breite haengt nur von Basis/Tiefe/Fenstergroesse
+		// ab, nicht von der Animationszeit (siehe maxAutoZoomWidthPx()) - hier
+		// trotzdem pro Frame frisch berechnet (billig, EIN widthAt()-Aufruf)
+		// statt eigens auf Resize/Recompile zu horchen; nur bei tatsaechlicher
+		// Aenderung an den Store gemeldet, damit ControlPanel nicht bei jedem
+		// Frame neu rendert.
+		let maxWidthPx = maxAutoZoomWidthPx(scale);
+		if (Math.abs(maxWidthPx - _lastMaxWidthPx) > 1e-6 * Math.max(1, _lastMaxWidthPx)) {
+			_lastMaxWidthPx = maxWidthPx;
+			autoZoomMaxPxStore.set(maxWidthPx);
+		}
+		let autoZoomTAB = computeAutoZoomTAB(
+			levelToPx(zoomLevel, maxWidthPx),
+			scale,
+			autoZoomTargetExp,
+		);
 		let effective_t_AB = zoomEngagement * autoZoomTAB;
 
 		updateDynamicLayout(effective_t_AB);
