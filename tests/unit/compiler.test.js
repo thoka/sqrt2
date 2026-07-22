@@ -83,10 +83,10 @@ test('MAX_TIME ist endlich und positiv', () => {
 	assert.ok(r.MAX_TIME > 0);
 });
 
-test('GLOBAL_AUTO_ZOOM_SPLINE: startet bei Exponent 0 und erreicht am Ende der Animation depth', () => {
+test('GLOBAL_TARGET_DISPLAY_SPLINE: startet bei Exponent 0 und erreicht am Ende der Animation depth', () => {
 	let r = compileSystem(BASE_CONFIG);
-	assert.strictEqual(r.GLOBAL_AUTO_ZOOM_SPLINE(0), 0);
-	assert.strictEqual(r.GLOBAL_AUTO_ZOOM_SPLINE(r.MAX_TIME), BASE_CONFIG.depth);
+	assert.strictEqual(r.GLOBAL_TARGET_DISPLAY_SPLINE(0), 0);
+	assert.strictEqual(r.GLOBAL_TARGET_DISPLAY_SPLINE(r.MAX_TIME), BASE_CONFIG.depth);
 });
 
 test('transformMode S vs. Z erzeugt unterschiedliche Bank-Belegungen bei sonst gleicher Config', () => {

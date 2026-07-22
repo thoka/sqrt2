@@ -129,7 +129,7 @@ keine partiellen/Teilergebnisse, keine Änderung an `bank-core.js`/
    `transformMode`, `compactionEnabled` true/false) liefert
    `finalizeCompiled(compileSystemData(c), c)` ein zu `compileSystem(c)`
    identisches Ergebnis - inkl. Stichproben-Auswertung der Closures
-   (`GLOBAL_TTM.timeToTick`/`tickToTime`, `GLOBAL_AUTO_ZOOM_SPLINE`,
+   (`GLOBAL_TTM.timeToTick`/`tickToTime`, `GLOBAL_TARGET_DISPLAY_SPLINE`,
    `GLOBAL_BANK_ZOOM_SPLINE`) an mehreren `t`-Werten, nicht nur
    Referenzgleichheit der Objekte.
 2. **Bestehende Suite unverändert grün:** `compiler.test.js`,

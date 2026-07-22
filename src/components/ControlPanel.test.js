@@ -70,18 +70,106 @@ test('Remote-Ansicht zeigt nur Grundeinstellungen', () => {
 	unmount(app);
 });
 
-test('Modus-B-Regler (range) aktualisiert configStore.modeAB live bei "input"', () => {
+test('Auto-Zoom-Aktivierung (range) aktualisiert configStore.zoomEngagement live bei "input"', () => {
+	// Klassischer Regler-Modus (edgeZoomControlMode=false) ist seit TODO.md
+	// "Steuerung" nicht mehr der Default - fuer diesen Test explizit setzen.
+	configStore.update((c) => ({ ...c, edgeZoomControlMode: false }));
 	const app = mount(ControlPanel, { target: document.body });
-	// Der Zoom-Regler (modeAB) trägt das Label "Zoom".
-	const zoomLabel = [...document.querySelectorAll('.control-group')].find((g) =>
-		g.textContent.startsWith('Zoom'),
+	const label = [...document.querySelectorAll('.control-group')].find((g) =>
+		g.textContent.startsWith('Auto-Zoom: Aktivierung'),
 	);
-	const rangeInput = zoomLabel.querySelector('input[type=range]');
+	const rangeInput = label.querySelector('input[type=range]');
 
 	rangeInput.value = '0.5';
 	fire(rangeInput, 'input');
 	flushSync();
-	expect(get(configStore).modeAB).toBe(0.5);
+	expect(get(configStore).zoomEngagement).toBe(0.5);
+
+	unmount(app);
+});
+
+test('Auto-Zoom-Stärke (range) aktualisiert configStore.zoomLevel live bei "input"', () => {
+	const app = mount(ControlPanel, { target: document.body });
+	const label = [...document.querySelectorAll('.control-group')].find((g) =>
+		g.textContent.startsWith('Auto-Zoom: Stärke'),
+	);
+	const rangeInput = label.querySelector('input[type=range]');
+
+	rangeInput.value = '0.5';
+	fire(rangeInput, 'input');
+	flushSync();
+	expect(get(configStore).zoomLevel).toBe(0.5);
+
+	unmount(app);
+});
+
+test('Abstraktion (range) aktualisiert configStore.abstraction live bei "input"', () => {
+	// Klassischer Regler-Modus (edgeZoomControlMode=false) ist seit TODO.md
+	// "Steuerung" nicht mehr der Default - fuer diesen Test explizit setzen.
+	configStore.update((c) => ({ ...c, edgeZoomControlMode: false }));
+	const app = mount(ControlPanel, { target: document.body });
+	const label = [...document.querySelectorAll('.control-group')].find((g) =>
+		g.textContent.startsWith('Abstraktion'),
+	);
+	const rangeInput = label.querySelector('input[type=range]');
+
+	rangeInput.value = '0.7';
+	fire(rangeInput, 'input');
+	flushSync();
+	expect(get(configStore).abstraction).toBeCloseTo(0.7);
+
+	unmount(app);
+});
+
+// --- Alternative Rand-Zoom-Steuerung (docs/Alternative Zoom-Steuerung,md) ---
+
+function goToTab(name) {
+	const btn = [...document.querySelectorAll('.tab-btn')].find((b) => b.textContent === name);
+	btn.click();
+	flushSync();
+}
+
+test('Admin: Checkbox "Alternative Rand-Zoom-Steuerung" schaltet configStore.edgeZoomControlMode um', () => {
+	// Startzustand fuer diesen Test explizit auf "aus" setzen (Default ist
+	// inzwischen "an", siehe TODO.md "Steuerung") - der Test prueft das
+	// Umschalten selbst, nicht den Default-Wert.
+	configStore.update((c) => ({ ...c, edgeZoomControlMode: false }));
+	const app = mount(ControlPanel, { target: document.body });
+	goToTab('Admin');
+	const checkbox = [...document.querySelectorAll('.control-group')]
+		.find((g) => g.textContent.includes('Alternative Rand-Zoom-Steuerung'))
+		.querySelector('input[type=checkbox]');
+
+	expect(get(configStore).edgeZoomControlMode).toBe(false);
+	checkbox.checked = true;
+	fire(checkbox, 'change');
+	flushSync();
+	expect(get(configStore).edgeZoomControlMode).toBe(true);
+
+	unmount(app);
+});
+
+test('Grundeinstellungen: bei edgeZoomControlMode=true ersetzen 3 Radio-Buttons Aktivierung+Abstraktion', () => {
+	configStore.update((c) => ({ ...c, edgeZoomControlMode: true, zoomState: 'rand' }));
+	const app = mount(ControlPanel, { target: document.body });
+
+	expect(document.body.textContent).toContain('Flächentreu');
+	expect(document.body.textContent).toContain('Rand sichtbar');
+	expect(document.body.textContent).toContain('Gleichmäßig');
+	// Die alte "Auto-Zoom: Aktivierung"-Beschriftung ist im Alt-Modus weg.
+	expect(document.body.textContent).not.toContain('Auto-Zoom: Aktivierung');
+	// "Auto-Zoom: Stärke" bleibt unabhaengig vom Zustand immer sichtbar.
+	expect(document.body.textContent).toContain('Auto-Zoom: Stärke');
+
+	const radios = document.querySelectorAll('input[type=radio][name=zoomState]');
+	expect(radios.length).toBe(3);
+	const gleichmaessigRadio = [...radios].find(
+		(r) => r.closest('label').textContent.trim() === 'Gleichmäßig',
+	);
+	gleichmaessigRadio.checked = true;
+	fire(gleichmaessigRadio, 'change');
+	flushSync();
+	expect(get(configStore).zoomState).toBe('gleichmaessig');
 
 	unmount(app);
 });

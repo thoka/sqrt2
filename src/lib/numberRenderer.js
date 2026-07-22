@@ -58,3 +58,13 @@ export function formatLiveNumbers(N_l, N_R, GRID, AREA_SCALE, BASE) {
 
 	return { P_str, P2_str, rem_str };
 }
+
+// Nenner fuer die Achsen-Beschriftung der Ziel-Quadrate (TODO.md
+// "Darstellung"): Zaehler ist in beiden Beschriftungen (Formel unten, Wert
+// links) immer "1" - nur der NENNER unterscheidet sich (Basis^Exponent,
+// exakt als BigInt, kein Float-Rundungsfehler). Fuer exp=0 (weisses
+// Grundquadrat) wird KEIN Bruch gezeichnet (Aufrufer zeigt stattdessen "1"),
+// dieser Fall wird hier trotzdem korrekt bedient (Denominator "1").
+export function formatAxisDenominator(base, exp) {
+	return (BigInt(base) ** BigInt(exp)).toString();
+}

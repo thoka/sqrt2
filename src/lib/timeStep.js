@@ -12,3 +12,10 @@ export function clampDt(dt, maxDt) {
 	if (!(dt > 0) || dt > maxDt) return maxDt;
 	return dt;
 }
+
+// Ab `threshold` (playSpeed, TODO.md "Flug-Animation") ist die Bank->Ziel-
+// Flug-Animation praktisch nicht mehr wahrnehmbar (nur noch Ruckeln) - ab
+// dort wird sie abgeschaltet, Stuecke erscheinen direkt an der Zielposition.
+export function isFlightAnimationEnabled(playSpeed, threshold) {
+	return playSpeed < threshold;
+}

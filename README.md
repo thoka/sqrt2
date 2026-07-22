@@ -8,6 +8,14 @@ Kernidee: √2 wird ziffernweise (digit-by-digit) über ein geometrisches Fläch
 
 Steuerung über ein Gerät des Betrachtenden wird möglich sein.
 
+Nebenziel: dieses Projekt dient auch als Testfeld für **allgemeine,
+projektübergreifend wiederverwendbare Entwurfsprinzipien für grafische
+Exponate** (z.B. weiche Übergänge zwischen diskreten Steuerungs-
+Zuständen, Kopplung an eine gemeinsame Geschwindigkeits-Wahrnehmung) -
+siehe `CLAUDE.md` Abschnitt "Schalter-Tweening" für das aktuell
+erarbeitete Prinzip und `docs/Alternative Zoom-Steuerung,md` als
+konkretes Fallbeispiel.
+
 ## 2. Schnellstart: aktuellen Stand ausprobieren
 
 ```bash
@@ -51,6 +59,8 @@ pnpm test             # node --test *.test.js (reine Logik) UND vitest run (Svel
 | `p.html` | Referenz-Prototyp (Slot-basiertes Repacking, **verworfen**, nur als Vergleich). | historisch |
 | `bank-core.js` | **Gemeinsame Bibliothek** (ES-Modul), von beiden HTML-Tools importiert: Bank-Algorithmus + Kompaktierung + bijektive Tick↔Zeit-Abbildung. | Fertig, in Node getestet |
 | `src/lib/smoothing.js` | **Gemeinsame Glättungs-Bibliothek** (3 Bausteine, siehe §6.1). | Fertig, persistent getestet |
+| `src/lib/paramTween.js` | **Echtzeit-Feder-Tweener** (`createSpringTween()`) für Live-Parameter, die zu beliebiger, vorher unbekannter Echtzeit neu verzielt werden (Abgrenzung zu `smoothing.js` im Modul-Kopfkommentar). | Fertig, `paramTween.test.js` |
+| `src/lib/zoomStateTween.js` | Treiber für die **Alternative Rand-Zoom-Steuerung** (`docs/Alternative Zoom-Steuerung,md`): animiert `modeAB`/`autoZoomMinPx` weich auf das Preset des gewählten Zoom-Zustands. | Fertig, `zoomStateTween.test.js` |
 | `src/lib/compiler.js` | `compileSystem()` als reine Funktion (Config rein, kompilierter Zustand raus). | Fertig, `compiler.test.js` |
 | `src/lib/stores.js` | `configStore`/`playbackStore` (writable) + `compiledStore` (derived) + `displayStore` (lokaler UI-State, **nicht** synchronisiert). | Fertig |
 | `src/lib/urlState.js` | `parseConfigFromUrl`/`parsePlaybackFromUrl`/`buildStateParams`. | Fertig, `url-state.test.js` |
@@ -60,6 +70,7 @@ pnpm test             # node --test *.test.js (reine Logik) UND vitest run (Svel
 | `TOOLING_SPEC.md` | **Lebendige Migrations-Spezifikation** (Phasen 0-5 + 8, Stand je Step). Bei jeder Änderung aktualisieren. | gepflegt |
 | `docs/DEPLOYMENT.md` | **Zentrale Betriebsanleitung**: ein Server pro Exponat, embedded Relay, QR-Fernsteuerung, Tailscale. | gepflegt |
 | `docs/CONNECTION_SERVICE_SPEC.md` | Relay-Protokoll (Token/PIN/WS, embedded Betriebsmodell). | gepflegt |
+| `docs/MATHJAX_METRICS.md` | MathJax-Optik (Brüche/Exponenten) ohne MathJax-Laufzeit nachgebaut - Mess-Tool + Konstanten. | gepflegt |
 | `CLAUDE.md` | Agentenregeln (stetige Ableitung, Layout-Masse, SETTINGS-EIN-Objekt, Tooling-Updates, Svelte-Tests). | gepflegt |
 | `AGENTS.md` | Kurzübersicht + Gotchas für Agents (Build/Test, toter Code, Store-Pitfalls, npm-blockiert). | gepflegt |
 | `TODO.md` | Offene Punkte / Checkliste (nächste Stufen + Politur). | lebendig |
@@ -212,8 +223,9 @@ hartkodiertes `0.03`).
 - **QR-Code-Verbindung (Besucher-Handy):** **umgesetzt** — Token/PIN-Minting
   im `ControlPanel`, Gast joint per QR-Link über embedded Relay
   (`src/lib/connection.js`). Details in `docs/DEPLOYMENT.md` §4.
-- **Admin-konfigurierbare Steuerungs-Komplexität:** offen (Konfigurations-
-  objekt, welche Regler sichtbar sind) - baut auf der Store-Architektur auf.
+- **Admin-konfigurierbare Steuerungs-Komplexität:** offen (`TOOLING_SPEC.md`
+  Phase 6 "Politur" - Konfigurationsobjekt, welche Regler sichtbar sind) -
+  baut auf der Store-Architektur auf.
 - **Z/R-Modi vollständig neu (C¹):** eigenständiges Thema (§7).
 - **Tiefe-Standardwert** im Haupttool (`3`) vs Test-Tool (`10`): weiterhin
   nicht synchronisiert (offene Entscheidung).

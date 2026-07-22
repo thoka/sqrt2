@@ -13,19 +13,25 @@
 	// schreibt die fortschreitende Zeit zurück in playbackStore - genau
 	// wie zuvor in sqrt2.html, nur in der Komponente gekapselt.
 	//
-	// Cross-Komponenten-DOM (bankZoomLabel/bankAreaLabel/autoZoomMarker/
-	// autoZoomNote werden in <ControlPanel> gerendert, #bankPanel für
-	// renderAreaWidth) wird per getElementById geholt - dieselben globalen
-	// Elemente wie vorher, nur dass die Komponente sie liest statt
-	// sqrt2.html.
+	// Cross-Komponenten-DOM (bankZoomLabel/bankAreaLabel werden in
+	// <ControlPanel> gerendert, #bankPanel für renderAreaWidth) wird per
+	// getElementById geholt - dieselben globalen Elemente wie vorher, nur
+	// dass die Komponente sie liest statt sqrt2.html.
 	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
 	import { applyCompactionFit } from '../lib/bank-core.js';
 	import { layoutCentered, findRect, commonAncestor } from '../lib/recursive-layout.js';
 	import { configStore, playbackStore, compiledStore } from '../lib/stores.js';
+	import { levelToPx, targetDisplayMaxPxStore } from '../lib/targetDisplayLevel.js';
+	import { initTargetDisplayStateTween } from '../lib/targetDisplayStateTween.js';
 	import { computeLiveL } from '../lib/compiler.js';
-	import { formatLiveNumbers } from '../lib/numberRenderer.js';
-	import { clampDt } from '../lib/timeStep.js';
+	import { formatLiveNumbers, formatAxisDenominator } from '../lib/numberRenderer.js';
+	import { drawScript } from '../lib/mathCanvasRenderer.js';
+	import { MATH_METRICS } from '../lib/mathMetrics.js';
+	import { ensureMathFont, MATH_FONT_STACK } from '../lib/mathFont.js';
+	import { getLabelImage, requestLabelImage } from '../lib/mathJaxLabelCache.js';
+	import { buildDampedFilter } from '../lib/smoothing.js';
+	import { clampDt, isFlightAnimationEnabled } from '../lib/timeStep.js';
 	import { morphRect, computeRotation, rotationAngle } from '../lib/morphRect.js';
 	import {
 		setDebugCanvas,
@@ -65,8 +71,8 @@
 	let GLOBAL_N_ARR = [];
 	let GLOBAL_SHELL_START = [];
 	let BANK_ZOOM_THRESHOLD_POWERS = 0;
-	let GLOBAL_AUTO_ZOOM_CHECKPOINTS = [];
-	let GLOBAL_AUTO_ZOOM_SPLINE = null;
+	let GLOBAL_TARGET_DISPLAY_CHECKPOINTS = [];
+	let GLOBAL_TARGET_DISPLAY_SPLINE = null;
 	// TEIL D (REST-PRECISION-PLAN): rekursives Box-in-Boxes-Modell ersetzt die
 	// Kompaktierungs-Wegpunkte (Teil C) als BANK-Rendering-/Zoom-Quelle -
 	// bank_root ist der Wurzel-Knoten von bank_pieces (id 0), aus dem
@@ -85,19 +91,71 @@
 	let animDirection = 1;
 	let animPause = 0;
 	let u_time = 0.0;
-	let u_mode_AB = 0.0;
 	// Vollstaendiger kompilierter Zustand (fuer computeLiveL der
 	// Canvas-gezeichneten Zahlentafel l/l²/R) - nur in applyConfig
 	// frisch gesetzt, NICHT pro Frame neu geholt.
 	let compiledRef = null;
 
-	let AUTO_ZOOM_MIN_PX = 0;
+	// Ziel-Darstellung: Aktivierung (linear) + Staerke (log-skaliert ueber
+	// levelToPx(), siehe targetDisplayLevel.js) + Abstraktion (manueller,
+	// von Ziel-Darstellung unabhaengiger Basis-b->1-Override). Die
+	// resultierende Basisverzerrung (frueher "modeAB") wird daraus JEDEN
+	// Frame in renderFrame() berechnet (computeTargetDisplayTab()) - kein
+	// eigenstaendiges Store-Feld mehr, siehe docs/Alternative
+	// Ziel-Darstellung-Steuerung.md.
+	let targetDisplayEngagement = 1.0;
+	let targetDisplayLevel = 0.0;
+	let abstraction = 0.0;
+	// Zuletzt an targetDisplayMaxPxStore gemeldeter Wert (siehe renderFrame()) -
+	// vermeidet Store-Schreibvorgaenge (und damit ControlPanel-Re-Renders)
+	// bei jedem Frame, obwohl sich der Wert praktisch nie aendert.
+	let _lastMaxWidthPx = -1;
 	let RENDER_SCALE = 1;
 	let EDGE_BLUR_PX = 0;
 	let LINE_WIDTH_PX = 0.3;
 	let ANIM_PAUSE_DURATION = 1.5;
 	let ANIM_SPEED = 2.0;
 	let FLYING_ALPHA = 0.59;
+	// Ab dieser playSpeed wird die Flug-Animation abgeschaltet (Stücke
+	// erscheinen direkt an der Zielposition statt zu fliegen) - siehe
+	// drawPiece(): flightAnimEnabled steuert NUR den fly_t-Tween, NICHT die
+	// Sichtbarkeits-Fenster selbst (die bleiben unverändert).
+	let FLIGHT_ANIM_SPEED_THRESHOLD = 3.0;
+	// Beschriftung der Ziel-Quadrate (TODO.md "Darstellung"): unten die
+	// symbolische Formel, links der ausgerechnete Wert - siehe drawTargetLabels().
+	let SHOW_LABELS = false;
+	const LABEL_FONT_PX = 12;
+	const LABEL_PAD_PX = 4;
+	// Weiches Ein-/Ausblenden der Beschriftung über den Alpha-Kanal
+	// (docs/Beschriftung.md "Der Schalter 'Beschriftung an/aus' soll weich
+	// animiert sein") - `buildDampedFilter()` aus smoothing.js (stetige
+	// Ableitung, siehe CLAUDE.md), aber mit ECHTER Wanduhrzeit statt
+	// Simulationszeit als Achse: der Schalter ist eine UI-Aktion, die auch
+	// bei pausierter/gescrubbter Animation weich reagieren soll. Startet
+	// beim konfigurierten Default (aus), kein Fade beim allerersten Frame.
+	const LABELS_FADE_TAU = 0.09; // ~0.45s bis 96% des Zielwerts
+	let labelsAlphaPoints = [{ t: 0, v: 0 }];
+	let labelsAlphaFilter = buildDampedFilter(labelsAlphaPoints, LABELS_FADE_TAU);
+	let _fadeTickerRunning = false;
+	// Separater rAF-Ticker NUR für die Alpha-Blende: die Haupt-Render-Loop
+	// (loop(), unten) läuft nur während isPlaying - ein Fade muss aber auch
+	// bei pausierter Animation sichtbar ablaufen (User klickt oft im
+	// Stillstand auf die Checkbox).
+	function kickLabelsFadeTicker() {
+		if (_fadeTickerRunning) return;
+		_fadeTickerRunning = true;
+		function tick() {
+			renderFrame();
+			let target = SHOW_LABELS ? 1 : 0;
+			let current = labelsAlphaFilter(performance.now() / 1000);
+			if (Math.abs(current - target) > 0.002) {
+				requestAnimationFrame(tick);
+			} else {
+				_fadeTickerRunning = false;
+			}
+		}
+		requestAnimationFrame(tick);
+	}
 	// Maximal erlaubter Zeitschritt pro Frame (Sekunden). Ein einzelner
 	// langer Frame (GC/Compile/Tab-Throttle) wird darauf begrenzt, damit
 	// die Simulation keinen sichtbaren Vorwaertssprung macht.
@@ -107,7 +165,7 @@
 	// === Canvas ===
 	let canvasEl = $state();
 	let ctx = null;
-	let bankZoomLabel, bankAreaLabel, autoZoomMarker, autoZoomNote, bankPanel;
+	let bankZoomLabel, bankAreaLabel, bankPanel;
 
 	let lastTime = performance.now();
 	let _lastCompileKey;
@@ -130,13 +188,24 @@
 			N_MAX = c.depth;
 			BASE = c.base;
 			BANK_ZOOM_THRESHOLD_POWERS = c.bankZoomThresholdPowers;
-			u_mode_AB = c.modeAB;
-			AUTO_ZOOM_MIN_PX = c.autoZoomMinPx;
+			targetDisplayEngagement = c.targetDisplayEngagement;
+			targetDisplayLevel = c.targetDisplayLevel;
+			abstraction = c.abstraction;
 			LINE_WIDTH_PX = c.lineWidth;
 			ANIM_PAUSE_DURATION = c.pauseDuration;
 			ANIM_SPEED = c.playSpeed;
 			FLYING_ALPHA = c.flyingAlpha;
 			bankRenderEnabled = c.bankRenderEnabled;
+			if (c.showLabels !== SHOW_LABELS) {
+				SHOW_LABELS = c.showLabels;
+				labelsAlphaPoints = [
+					...labelsAlphaPoints.slice(-3),
+					{ t: performance.now() / 1000, v: SHOW_LABELS ? 1 : 0 },
+				];
+				labelsAlphaFilter = buildDampedFilter(labelsAlphaPoints, LABELS_FADE_TAU);
+				kickLabelsFadeTicker();
+			}
+			FLIGHT_ANIM_SPEED_THRESHOLD = c.flightAnimSpeedThreshold;
 
 			let compiled = get(compiledStore);
 			compiledRef = compiled;
@@ -154,8 +223,8 @@
 			GLOBAL_N_ARR = compiled.GLOBAL_N_ARR;
 			P_FINAL = compiled.P_FINAL;
 			GLOBAL_SHELL_START = compiled.GLOBAL_SHELL_START;
-			GLOBAL_AUTO_ZOOM_CHECKPOINTS = compiled.GLOBAL_AUTO_ZOOM_CHECKPOINTS;
-			GLOBAL_AUTO_ZOOM_SPLINE = compiled.GLOBAL_AUTO_ZOOM_SPLINE;
+			GLOBAL_TARGET_DISPLAY_CHECKPOINTS = compiled.GLOBAL_TARGET_DISPLAY_CHECKPOINTS;
+			GLOBAL_TARGET_DISPLAY_SPLINE = compiled.GLOBAL_TARGET_DISPLAY_SPLINE;
 			GLOBAL_TEIL_D_ZOOM_SPLINE = compiled.GLOBAL_TEIL_D_ZOOM_SPLINE;
 			bank_root = bank_pieces.length > 0 ? bank_pieces[0] : null;
 			MAX_TIME = compiled.MAX_TIME;
@@ -196,31 +265,36 @@
 		DYN_TARGET_W = sumA + nextDigitMargin;
 	}
 
-	function getSmoothedAutoZoomExp(time) {
-		if (GLOBAL_AUTO_ZOOM_CHECKPOINTS.length === 0) return 0;
-		return GLOBAL_AUTO_ZOOM_SPLINE(time);
+	function getSmoothedTargetDisplayExp(time) {
+		if (GLOBAL_TARGET_DISPLAY_CHECKPOINTS.length === 0) return 0;
+		return GLOBAL_TARGET_DISPLAY_SPLINE(time);
 	}
 
-	function computeAutoZoomTAB(thresholdPx, scale, targetExp) {
+	// Gerenderte Breite der jeweils relevanten Ziffernstelle bei gegebener
+	// Basisverzerrung t_AB (0=Flächentreu .. 1=voller Zoom) - Kern-Formel
+	// sowohl fuer die Schwellwert-Suche in computeAutoZoomTAB() als auch fuer
+	// die maximal erreichbare Breite in maxAutoZoomWidthPx() (siehe dort).
+	function widthAt(t_AB, scale, targetExp) {
+		let b_eff = Math.pow(BASE, 1.0 - t_AB);
+		if (b_eff < 1.000001) b_eff = 1.000001;
+		let sumA = 1.0;
+		for (let i = 1; i < TOTAL_STEPS; i++) sumA += Math.pow(b_eff, -axes[i].exp);
+		let DYN_W = sumA + Math.pow(b_eff, -(N_MAX + 1));
+		let V_SCALE_TARGET = P_FINAL / DYN_W;
+		return Math.pow(b_eff, -targetExp) * V_SCALE_TARGET * scale;
+	}
+
+	function computeTargetDisplayTab(thresholdPx, scale, targetExp) {
 		if (thresholdPx <= 0 || TOTAL_STEPS <= 1) return 0;
-		function widthAt(t_AB) {
-			let b_eff = Math.pow(BASE, 1.0 - t_AB);
-			if (b_eff < 1.000001) b_eff = 1.000001;
-			let sumA = 1.0;
-			for (let i = 1; i < TOTAL_STEPS; i++) sumA += Math.pow(b_eff, -axes[i].exp);
-			let DYN_W = sumA + Math.pow(b_eff, -(N_MAX + 1));
-			let V_SCALE_TARGET = P_FINAL / DYN_W;
-			return Math.pow(b_eff, -targetExp) * V_SCALE_TARGET * scale;
-		}
 		const STEPS = 200;
 		let prevT = 0,
-			prevWidth = widthAt(0);
+			prevWidth = widthAt(0, scale, targetExp);
 		if (prevWidth >= thresholdPx) return 0;
 		let bestT = 0,
 			bestWidth = prevWidth;
 		for (let i = 1; i <= STEPS; i++) {
 			let t = i / STEPS;
-			let w = widthAt(t);
+			let w = widthAt(t, scale, targetExp);
 			if (w > bestWidth) {
 				bestWidth = w;
 				bestT = t;
@@ -233,6 +307,19 @@
 			prevWidth = w;
 		}
 		return bestT;
+	}
+
+	// Maximal erreichbare Breite (bei vollem Zoom, t_AB=1) fuer die aktuelle
+	// Konfiguration/Fensterhoehe - der tatsaechliche obere Anschlag des
+	// "Ziel-Darstellung: Staerke"-Reglers (siehe docs/Alternative
+	// Ziel-Darstellung-Steuerung.md, "toter Regelbereich"/
+	// "Gleichmaessigkeit bei kleiner Schalenanzahl"). targetExp spielt bei
+	// t_AB=1 praktisch keine Rolle mehr (b_eff ist dort immer ~1, siehe
+	// widthAt()) - daher hier fest 0. Haengt NUR von Basis/Tiefe/
+	// Fenstergroesse ab, NICHT von der Animationszeit - bleibt waehrend
+	// einer laufenden Wiedergabe stabil.
+	function maxTargetDisplayWidthPx(scale) {
+		return widthAt(1, scale, 0);
 	}
 
 	function renderFrame() {
@@ -260,11 +347,55 @@
 		// Tafel NICHT beginnen.)
 		hudX0 = (40 + scale * SQRT2) * RENDER_SCALE + 28;
 
-		let autoZoomTargetExp = getSmoothedAutoZoomExp(u_time);
-		let autoZoomTAB = computeAutoZoomTAB(AUTO_ZOOM_MIN_PX, scale, autoZoomTargetExp);
-
-		let effective_t_AB = Math.max(u_mode_AB, autoZoomTAB);
-		updateAutoZoomIndicator(autoZoomTAB, effective_t_AB > u_mode_AB + 1e-9);
+		// Die resultierende Basisverzerrung ("modeAB") ist kein eigenstaendiges
+		// Store-Feld mehr, sondern wird HIER JEDEN Frame aus Aktivierung x
+		// Staerke UND dem unabhaengigen "Abstraktion"-Regler berechnet (siehe
+		// docs/Alternative Zoom-Steuerung,md).
+		//
+		// WICHTIG: `abstraction` wird NICHT per max() mit dem Auto-Zoom-
+		// Ergebnis verrechnet (das war der erste Versuch) - ein max()-Floor
+		// wird naemlich genau dann wirkungslos, wenn der Auto-Zoom-Anteil
+		// bereits ueber dem Regler-Wert liegt (z.B. spaet in der Wiedergabe,
+		// wenn Auto-Zoom ohnehin schon stark zoomt) - exakt dasselbe
+		// "eine Steuerung uebersteuert die andere ueber einen Teil ihres
+		// Bereichs"-Problem, das schon die alte modeAB/autoZoomMinPx-
+		// Kombination hatte (User-Beobachtung: Regler wirkt nur noch auf der
+		// letzten Strecke von [0,1]). Stattdessen eine LINEARE MISCHUNG
+		// zwischen dem Auto-Zoom-Ergebnis (bei abstraction=0) und 1 (bei
+		// abstraction=1) - dadurch bewirkt der Regler IMMER eine
+		// proportionale Aenderung, unabhaengig vom aktuellen Auto-Zoom-Stand.
+		//
+		// WICHTIG: zoomEngagement multipliziert das ERGEBNIS (autoZoomTAB,
+		// bereits auf [0,1] begrenzt), NICHT den rohen Pixel-Schwellwert
+		// davor. Die natuerliche (unverzerrte) Breite der jeweils relevanten
+		// Ziffernstelle (widthAt(0) in computeAutoZoomTAB) schrumpft waehrend
+		// der Wiedergabe um viele Groessenordnungen (gemessen: 13.5px bei
+		// flachen Stellen bis 1e-11px bei tiefen) - eine Multiplikation auf
+		// den Schwellwert wuerde daher bei jeder noch so kleinen Aktivierung
+		// (schon 0.01%) sofort kraeftig zoomen, sobald die aktuelle Stelle
+		// tief genug ist (die "harmlose" Uebergangszone verschiebt sich
+		// staendig mit der Tiefe - eine feste Reglerkurve koennte das nicht
+		// kompensieren). Das Ergebnis (targetDisplayTab) ist dagegen IMMER auf
+		// [0,1] begrenzt und daher robust linear skalierbar.
+		let targetDisplayTargetExp = getSmoothedTargetDisplayExp(u_time);
+		// Maximal erreichbare Breite haengt nur von Basis/Tiefe/Fenstergroesse
+		// ab, nicht von der Animationszeit (siehe maxTargetDisplayWidthPx()) -
+		// hier trotzdem pro Frame frisch berechnet (billig, EIN widthAt()-Aufruf)
+		// statt eigens auf Resize/Recompile zu horchen; nur bei tatsaechlicher
+		// Aenderung an den Store gemeldet, damit ControlPanel nicht bei jedem
+		// Frame neu rendert.
+		let maxWidthPx = maxTargetDisplayWidthPx(scale);
+		if (Math.abs(maxWidthPx - _lastMaxWidthPx) > 1e-6 * Math.max(1, _lastMaxWidthPx)) {
+			_lastMaxWidthPx = maxWidthPx;
+			targetDisplayMaxPxStore.set(maxWidthPx);
+		}
+		let targetDisplayTab = computeTargetDisplayTab(
+			levelToPx(targetDisplayLevel, maxWidthPx),
+			scale,
+			targetDisplayTargetExp,
+		);
+		let targetDisplayComponent = targetDisplayEngagement * targetDisplayTab;
+		let effective_t_AB = targetDisplayComponent + abstraction * (1 - targetDisplayComponent);
 
 		updateDynamicLayout(effective_t_AB);
 
@@ -326,6 +457,116 @@
 			let final_w = r.w * V_SCALE_BANK;
 			let final_h = r.h * V_SCALE_BANK;
 			return [final_x * scale, final_y * scale, final_w * scale, final_h * scale];
+		}
+
+		// Beschriftung der Ziel-Quadrate (TODO.md "Darstellung", Konfig-Option
+		// "Beschriftung an/aus", Feinschliff siehe docs/Beschriftung.md): Text
+		// wird INNERHALB des schon gespiegelten ctx (translate(50,H-50)+
+		// scale(1,-1) weiter oben) gezeichnet - daher lokal um den Ankerpunkt
+		// nochmal gespiegelt, sonst stuenden die Glyphen auf dem Kopf. `fn`
+		// zeichnet danach mit normaler Canvas-Konvention (y wächst nach
+		// unten) relativ zu lokal (0,0).
+		function withUprightOrigin(x, y, fn) {
+			ctx.save();
+			ctx.translate(x, y);
+			ctx.scale(1, -1);
+			fn();
+			ctx.restore();
+		}
+		// TeX-Quellen fuer die beiden Beschriftungs-Sorten (docs/Beschriftung.md).
+		// exp=0 (Einheitsquadrat) bewusst UEBER denselben Pfad wie alle
+		// anderen Schalen ("1" ist einfach der Sonderfall eines Bruchs/einer
+		// Potenz mit trivialem Ergebnis) - kein separater Code-Pfad mehr, das
+		// war der eigentliche Grund fuer "kein Unterschied zwischen
+		// Einheitsquadrat und Schalen".
+		function bottomLabelTex(exp) {
+			return exp === 0 ? '1' : `\\left(\\frac{1}{${BASE}}\\right)^{${exp}}`;
+		}
+		function leftLabelTex(exp) {
+			// "Schraeger" (einzeiliger) Bruch: hochgestellter Zaehler, normaler
+			// Schraegstrich, tiefgestellter Nenner - TeX hat dafuer kein
+			// eingebautes Kommando, `{}^{a}/_{b}` (OHNE `\!`, das erzeugte einen
+			// Rendering-Defekt) ist die empirisch geprueft sauber gerenderte
+			// Variante (siehe docs/Beschriftung.md Diskussion).
+			return exp === 0 ? '1' : `{}^{1}/_{${formatAxisDenominator(BASE, exp)}}`;
+		}
+
+		// Liefert {w,h,draw} fuer ein gecachtes Label-Bild, oder `null`, wenn
+		// es noch nicht bereit ist (MathJax rendert dann im Hintergrund neu -
+		// siehe mathJaxLabelCache.js). KEIN Fallback-Renderer waehrend MathJax
+		// noch laedt/rendert: der Aufrufer laesst das Label diesen Frame
+		// einfach weg, `requestLabelImage()`s `onReady`-Callback stoesst bei
+		// Bedarf (pausierte Animation) einen Redraw an, sobald es fertig ist
+		// (docs/Beschriftung.md: "Solange warten wir einfach").
+		function mathLabelBox(tex, fontPx, x, y, anchor) {
+			let entry = getLabelImage(tex);
+			if (!entry) {
+				requestLabelImage(tex, tex, () => renderFrame());
+				return null;
+			}
+			let w = entry.widthEx * fontPx;
+			let h = entry.heightEx * fontPx;
+			return {
+				w,
+				h,
+				draw() {
+					withUprightOrigin(x, y, () => {
+						if (anchor === 'bottom-center') ctx.drawImage(entry.img, -w / 2, -h, w, h);
+						else ctx.drawImage(entry.img, 0, -h / 2, w, h);
+					});
+				},
+			};
+		}
+
+		// Pro Achsen-Index i (= eine Spalte UND eine Zeile im (u,v)-Gitter des
+		// Ziel-Quadrats, siehe recursive-layout.js/bank-core.js axes[]):
+		// - unterste Reihe (v=0): Formel "(1/basis)^exponent" ueber dem
+		//   unteren Rand der Spalte i, ECHT von MathJax gerendert (gecacht,
+		//   siehe mathJaxLabelCache.js), NUR wenn die Breite reicht (TODO-
+		//   Vorgabe).
+		// - linkeste Spalte (u=0): derselbe Wert AUSGERECHNET, als schraeger
+		//   (einzeiliger) Bruch - docs/Beschriftung.md: braucht weniger Hoehe
+		//   als ein gestapelter Bruch.
+		// Nur Achsen, deren Schale schon gerendert wurde (u_time >=
+		// GLOBAL_SHELL_START[i]) werden beschriftet (docs/Beschriftung.md
+		// "Noch nicht gerenderte Schalen sollen nicht beschriftet werden").
+		function drawTargetLabels() {
+			if (TOTAL_STEPS === 0) return;
+			let alpha = labelsAlphaFilter(performance.now() / 1000);
+			if (alpha <= 0.002) return;
+			ctx.save();
+			ctx.globalAlpha *= alpha;
+			for (let i = 0; i < TOTAL_STEPS; i++) {
+				if (GLOBAL_SHELL_START[i] !== undefined && u_time < GLOBAL_SHELL_START[i]) continue;
+				let exp = axes[i].exp;
+
+				let [bx, by, bw] = project(dyn_prefA[i], dyn_prefA[0], dyn_axes_w[i], dyn_axes_w[0], true);
+				let bottomBox = mathLabelBox(
+					bottomLabelTex(exp),
+					LABEL_FONT_PX,
+					bx + bw / 2,
+					by + LABEL_PAD_PX,
+					'bottom-center',
+				);
+				if (bottomBox && bw >= bottomBox.w + LABEL_PAD_PX) bottomBox.draw();
+
+				let [lx, ly, , lh] = project(
+					dyn_prefA[0],
+					dyn_prefA[i],
+					dyn_axes_w[0],
+					dyn_axes_w[i],
+					true,
+				);
+				let leftBox = mathLabelBox(
+					leftLabelTex(exp),
+					LABEL_FONT_PX,
+					lx + LABEL_PAD_PX,
+					ly + lh / 2,
+					'left-middle',
+				);
+				if (leftBox && lh >= leftBox.h + LABEL_PAD_PX) leftBox.draw();
+			}
+			ctx.restore();
 		}
 
 		// Herkunfts-Position eines fliegenden Stücks: EIN fester Zeitpunkt
@@ -474,7 +715,15 @@
 			if (!is_visible) return;
 
 			let fly_t = Math.max(0, Math.min(1, (u_time - p.time_fly) / 0.8));
-			if (p.type === 'Z_source' || p.type === 'Z_ghost') fly_t = p.type === 'Z_ghost' ? 1 : 0;
+			if (p.type === 'Z_source' || p.type === 'Z_ghost') {
+				fly_t = p.type === 'Z_ghost' ? 1 : 0;
+			} else if (!isFlightAnimationEnabled(ANIM_SPEED, FLIGHT_ANIM_SPEED_THRESHOLD)) {
+				// Flug-Animation ab dieser Geschwindigkeit abgeschaltet (TODO.md
+				// "Flug-Animation"): Stück erscheint direkt an der Zielposition,
+				// kein Tween - die Sichtbarkeits-Fenster (is_visible) bleiben
+				// unveraendert, nur der Bank->Ziel-Uebergang selbst entfaellt.
+				fly_t = 1;
+			}
 			fly_t = fly_t * fly_t * (3.0 - 2.0 * fly_t);
 
 			const landed = fly_t >= 0.999;
@@ -580,6 +829,8 @@
 
 		for (let p of render_pipeline) drawPiece(p, true);
 
+		drawTargetLabels();
+
 		// Rechte Kante der Bank-Bounding-Box beim Start (fix, nicht animiert).
 		if (_initialBankRightEdge === null && bank_root) {
 			let initFrame = layoutCentered(bank_root, 0, []);
@@ -596,22 +847,6 @@
 		renderHud(ctx, teilDCamera.z, bankRightEdge);
 
 		ctx.restore();
-	}
-
-	function updateAutoZoomIndicator(autoZoomTAB, isActive) {
-		// Cross-Komponenten-DOM aus <ControlPanel>: kann null sein, wenn
-		// das Panel (noch) nicht gemountet ist (z.B. remote.html, oder
-		// Canvas rendert vor dem Panel). Dann einfach ueberspringen -
-		// der Marker ist rein informativ.
-		if (!autoZoomMarker || !autoZoomNote) return;
-		if (AUTO_ZOOM_MIN_PX <= 0) {
-			autoZoomMarker.style.display = 'none';
-			autoZoomNote.style.display = 'none';
-			return;
-		}
-		autoZoomMarker.style.display = 'block';
-		autoZoomMarker.style.left = autoZoomTAB * 100 + '%';
-		autoZoomNote.style.display = isActive ? 'block' : 'none';
 	}
 
 	// Debug-Overlay: Exponent (k) des tiefsten gemeinsamen Elternrestes der
@@ -705,8 +940,8 @@
 			// Zeile (Wert + Luecke + Basis-Subscript) die verfuegbare
 			// Breite (von x0 bis W - padX) ueberschreitet.
 			let fontSize = Math.round(lineH * 0.8);
-			let subFont = Math.round(fontSize * 0.7);
-			let fontFor = (s) => `${s}px ui-monospace, monospace`;
+			let subFont = Math.round(fontSize * MATH_METRICS.SCRIPT_SCALE);
+			let fontFor = (s) => `${s}px ${MATH_FONT_STACK}`;
 			let avail = W - padX - x0;
 			c.font = fontFor(fontSize);
 			let longest = 0;
@@ -718,7 +953,7 @@
 			if (longest > avail && longest > 0) {
 				let factor = avail / longest;
 				fontSize = Math.max(10, Math.floor(fontSize * factor));
-				subFont = Math.round(fontSize * 0.7);
+				subFont = Math.round(fontSize * MATH_METRICS.SCRIPT_SCALE);
 				c.font = fontFor(fontSize);
 			}
 
@@ -728,14 +963,16 @@
 			let x = x0;
 			let y = padY + fontSize;
 			for (const [lab, val, base] of rows) {
-				c.font = fontFor(fontSize);
-				c.fillText(lab + val, x, y);
-				// Basis als Subscript: eine Stufe kleinere Schrift,
-				// leicht abgesenkt, direkt NACH dem Wert.
 				if (base) {
-					let wval = c.measureText(lab + val).width;
-					c.font = fontFor(subFont);
-					c.fillText(String(base), x + wval + 6, y + fontSize - subFont);
+					// Basis als Subscript - EIN gemeinsamer Renderer mit den
+					// Achsen-Beschriftungen (drawScript(), mathCanvasRenderer.js).
+					drawScript(c, x, y, lab + val, String(base), fontSize, 'sub', {
+						color: 'rgba(148,163,184,0.95)',
+						font: MATH_FONT_STACK,
+					});
+				} else {
+					c.font = fontFor(fontSize);
+					c.fillText(lab + val, x, y);
 				}
 				y += lineH;
 			}
@@ -823,15 +1060,31 @@
 	}
 
 	onMount(() => {
+		// Treibt den weichen Uebergang zwischen den drei Voreinstellungen der
+		// Alternativen Rand-Ziel-Darstellung-Steuerung (schreibt
+		// targetDisplayEngagement/abstraction in configStore, siehe
+		// targetDisplayStateTween.js) - hier registriert, weil diese Komponente
+		// ohnehin die einzige Instanz des configStore-Subscribe/rAF-Rendering-
+		// Verbunds fuer die Ziel-Darstellung ist.
+		initTargetDisplayStateTween();
 		ctx = canvasEl.getContext('2d');
 		setDebugCanvas(canvasEl);
 		bankZoomLabel = document.getElementById('bankZoomLabel');
 		bankAreaLabel = document.getElementById('bankAreaLabel');
-		autoZoomMarker = document.getElementById('autoZoomMarker');
-		autoZoomNote = document.getElementById('autoZoomNote');
 		bankPanel = document.getElementById('bankPanel');
 		window.addEventListener('resize', resizeCanvas);
 		resizeCanvas();
+		// MathJax-Font fuer Beschriftung + Zahlentafel (siehe mathFont.js)
+		// laedt asynchron - sobald verfuegbar, EINMAL neu zeichnen, damit
+		// nichts dauerhaft im Fallback-Font haengen bleibt (spaetere Frames
+		// wuerden das ohnehin selbst holen, das hier ist nur fuer den Fall,
+		// dass gerade nicht animiert wird). Der HUD-Bitmap-Cache (renderHud())
+		// wird dafuer explizit invalidiert, sonst uebersieht er den reinen
+		// Font-Wechsel (der Werte-Hash bleibt gleich).
+		ensureMathFont().then(() => {
+			hudCache = { hash: '', w: 0, h: 0, on: false };
+			renderFrame();
+		});
 		const unsubC = configStore.subscribe(applyConfig);
 		const unsubP = playbackStore.subscribe(applyPlayback);
 		// compiledStore (asynchroner Compile): sobald ein neuer, fertiger

@@ -24,6 +24,15 @@
 	let showHelp = $state(false);
 	const SPEED_STEP = 1.3;
 
+	// === Intro-Screen (TODO.md "Intro-Screen") ===
+	// Kurzer, NICHT-blockierender Hinweis beim Start (pointer-events: none -
+	// verdeckt weder Klicks auf die Timeline noch Tastatursteuerung). Blendet
+	// sich von selbst nach INTRO_DURATION_MS aus, oder sofort, sobald die
+	// Wiedergabe startet (Space, Play-Button, Remote-Steuerung - alles läuft
+	// über playbackStore.isPlaying, daher genügt EIN Subscribe).
+	const INTRO_DURATION_MS = 6000;
+	let showIntro = $state(true);
+
 	// === Progress-Anzeige (ASYNC-COMPILE-PLAN, Schritt 6) ===
 	// Erscheint erst nach einer kurzen Schwelle (300 ms), damit schnelle
 	// Compiles (depth klein) keinen flüchtigen Balken zeigen. Treibt sich
@@ -148,10 +157,20 @@
 		// Tastensteuerung: wird ueber <svelte:window> im Template gebunden
 		// (Svelte 5 braucht den Compiler-Transform fuer $state-Reaktivitaet).
 
+		// Intro-Screen: Timer + Play-Trigger zum Ausblenden.
+		const introTimer = setTimeout(() => {
+			showIntro = false;
+		}, INTRO_DURATION_MS);
+		const unsubIntroPlay = playbackStore.subscribe((p) => {
+			if (p.isPlaying) showIntro = false;
+		});
+
 		return () => {
 			document.removeEventListener('mousemove', onMove);
 			document.removeEventListener('mousedown', onSliderDown);
 			document.removeEventListener('mouseup', onSliderUp);
+			clearTimeout(introTimer);
+			unsubIntroPlay();
 		};
 	});
 
@@ -253,6 +272,16 @@
 	<div id="playbackBarMount"></div>
 	<div id="speedControl"><SpeedSlider variant="compact" /></div>
 </div>
+
+{#if showIntro}
+	<div class="intro-overlay" aria-hidden="true">
+		<div class="intro-box">
+			<h2>√2 als Fläche</h2>
+			<p>Diese Visualisierung nähert sich √2 Schritt für Schritt an.</p>
+		</div>
+		<div class="intro-settings-hint">Einstellungen<span class="intro-arrow">↗</span></div>
+	</div>
+{/if}
 
 {#if showHelp}
 	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->

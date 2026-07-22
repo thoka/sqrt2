@@ -308,26 +308,9 @@ select {
 	color: #3b82f6;
 	font-weight: bold;
 }
-
-.slider-with-marker {
-	position: relative;
-}
-.auto-zoom-marker {
-	position: absolute;
-	top: 0;
-	bottom: 0;
-	width: 3px;
-	margin-left: -1.5px;
-	background: #f59e0b;
-	border-radius: 2px;
-	pointer-events: none;
-	display: none;
-}
-.auto-zoom-note {
-	color: #f59e0b;
-	font-size: 0.8em;
-	margin-top: -4px;
-	display: none;
+.target-display-readout {
+	color: #3b82f6;
+	font-weight: bold;
 }
 
 #restGridPanel {
@@ -343,6 +326,53 @@ select {
 	position: fixed;
 	inset: 0;
 	z-index: 0;
+}
+
+/* Intro-Screen (kurz beim Start, TODO.md "Intro-Screen") - rein informativ,
+   pointer-events: none: verdeckt keine Klicks/Tastatursteuerung. */
+.intro-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 900;
+	pointer-events: none;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.intro-box {
+	background: rgba(15, 23, 42, 0.85);
+	border: 1px solid #475569;
+	border-radius: 8px;
+	padding: 20px 28px;
+	color: #e2e8f0;
+	font-family: system-ui, sans-serif;
+	max-width: 40ch;
+	text-align: center;
+}
+.intro-box h2 {
+	margin: 0 0 8px;
+	font-size: 1.2em;
+	color: #3b82f6;
+}
+.intro-box p {
+	margin: 0;
+	font-size: 0.9em;
+	color: #94a3b8;
+}
+.intro-settings-hint {
+	position: fixed;
+	top: 14px;
+	right: 18px;
+	color: #94a3b8;
+	font-family: system-ui, sans-serif;
+	font-size: 0.85em;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+.intro-arrow {
+	color: #3b82f6;
+	font-size: 1.2em;
 }
 
 /* Help-Overlay (?-Taste) */

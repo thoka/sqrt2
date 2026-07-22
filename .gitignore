@@ -18,5 +18,11 @@ data/
 # Pro-Klon lokale Ports (von scripts/init-local-ports.sh)
 .ports.local.env
 
+# Secrets (API_KEYS/ADMIN_KEY/...) - siehe deploy/.env.example als Vorlage.
+# NIE committen. .ports.local.env (oben) ist explizit KEIN Secret, daher
+# eigenes Muster statt eines allgemeinen "*.env".
+.env
+deploy/.env
+
 # Debug-Inspect-Kanal Artefakte
 /debug/

@@ -295,6 +295,10 @@ Wiederverwendbarkeit entsteht trotzdem: `createRelay()` ist exponat-agnostisch
 mehr als separater Multi-Tenant-Dienst betrieben, sondern pro Exponat
 eingebettet.
 
+**Konkrete Betriebsanleitung** (Start-Kommandos für beide Wege, QR-Fluss,
+Tailscale/TLS, Secrets-Vorlage): `docs/DEPLOYMENT.md`. Dieser Abschnitt hier
+begründet nur die Architektur-Entscheidung "ein Server".
+
 ---
 
 ## 11. Vergleich mit existierenden Lösungen (Recherche)
@@ -338,8 +342,10 @@ aber exponat-agnostisch und mit der geforderten Zwei-Stufen-Auth
 6. Testen über Tailnet (`<host>.<tailnet>.ts.net` bzw. Vite-Port, mit
    `tailscale cert`→TLS); Traefik-Stack nur bei eigener Domain via
    `--profile edge`. `ADMIN_KEY` beim ersten Start aus der Console erfassen.
+   — **erledigt** (`scripts/setup-tailscale.sh` config/check/reachable/https;
+   Betriebsanleitung `docs/DEPLOYMENT.md` §5).
 7. (Optional, vorerst nicht benötigt) Redis-Adapter für Horizontal-Skalierung.
-7. **Status-Page** (`/` als HTML über http/https) + **Admin-UI** unter
+8. **Status-Page** (`/` als HTML über http/https) + **Admin-UI** unter
    `/admin` — **erledigt** (§8): Status-Page liefert Dienstname, Version,
    Uptime, Transport-Modus, Räume/Seats/Verbindungen; Admin-UI (dependency-
    freies HTML, nutzt ausschließlich die Admin-REST-API §5) mit Token-Liste,

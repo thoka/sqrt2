@@ -173,9 +173,6 @@
 	:global(.control-group input[type='range']) {
 		width: 100%;
 	}
-	:global(.slider-with-marker) {
-		width: 100%;
-	}
 	.remote-keys {
 		display: flex;
 		gap: 6px;

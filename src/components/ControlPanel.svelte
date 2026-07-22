@@ -15,9 +15,10 @@
 	// Änderung aus, nicht bei jedem Tastendruck - deshalb bewusst kein
 	// bind:value (das würde bei <input type=number> auf "input" reagieren),
 	// sondern explizite onchange-Handler. Die reinen Laufzeit-/Renderregler
-	// (modeAB/autoZoomMinPx/lineWidth/pause/speed) reagieren dagegen live
-	// (oninput), genau wie im alten Panel.
+	// (targetDisplayEngagement/targetDisplayLevel/lineWidth/pause/speed)
+	// reagieren dagegen live (oninput), genau wie im alten Panel.
 	import { configStore, playbackStore, compiledStore } from '../lib/stores.js';
+	import { levelToPx, targetDisplayMaxPxStore } from '../lib/targetDisplayLevel.js';
 	import { displayStore } from '../lib/displayStore.js';
 	import { buildStateParams } from '../lib/urlState.js';
 	import { initNetworkSync } from '../lib/syncedStore.js';
@@ -62,34 +63,21 @@
 		return onInputFloat(field, fallback);
 	}
 
-	// Logarithmischer Schieberegler fuer die Auto-Zoom-Mindestpixelgroesse
-	// (autoZoomMinPx): Bereich 0.001 .. 100 px. Position t in [0,1]
-	// <-> Wert v = MINPX_LO * (MINPX_HI/MINPX_LO)^t.
-	// Ganz nach links (v < 1.5 * MINPX_LO) wird effektiv auf 0 gesetzt,
-	// was den Auto-Zoom deaktiviert (AUTO_ZOOM_MIN_PX <= 0 im Canvas).
-	const MINPX_LO = 0.001;
-	const MINPX_HI = 100;
-	const MINPX_SPAN = Math.log(MINPX_HI / MINPX_LO);
-	const MINPX_EFF_ZERO = 1.5 * MINPX_LO;
-	// Position aus dem Store-Wert abgeleitet (kein $effect + bind:value,
-	// das eine Endlosschleife ausloest): t = log(v/LO)/SPAN.
-	const minPxPos = $derived(
-		Math.max(
-			0,
-			Math.min(1, Math.log(Math.max(MINPX_LO, $configStore.autoZoomMinPx) / MINPX_LO) / MINPX_SPAN),
-		),
-	);
-	function onMinPxInput(e) {
-		let t = parseFloat(e.target.value);
-		let v = MINPX_LO * Math.exp(t * MINPX_SPAN);
-		if (v < MINPX_EFF_ZERO) v = 0;
-		configStore.update((c) => ({ ...c, autoZoomMinPx: v }));
-	}
 	function onChangeChecked(field) {
 		return (e) => configStore.update((c) => ({ ...c, [field]: e.target.checked }));
 	}
 	function onChangeValue(field) {
 		return (e) => configStore.update((c) => ({ ...c, [field]: e.target.value }));
+	}
+
+	// Alternative Rand-Ziel-Darstellung-Steuerung (docs/Alternative
+	// Ziel-Darstellung-Steuerung.md): Radio-Klick setzt NUR
+	// targetDisplayState - der eigentliche (weiche) Uebergang von
+	// targetDisplayEngagement/abstraction auf das Preset dieses Zustands
+	// laeuft in targetDisplayStateTween.js, angestossen durch genau diese
+	// Store-Aenderung.
+	function onTargetDisplayStateChange(state) {
+		return () => configStore.update((c) => ({ ...c, targetDisplayState: state }));
 	}
 
 	// Zoom-Schwellwert: in der UI "Zoom-Schwellwert" (immer Basis 10), im
@@ -310,34 +298,102 @@
 			</label>
 		</div>
 
-		<label class="control-group" style="margin-top:6px;"
-			>Auto-Zoom: Mindestpixelgröße
-			<input type="range" min="0" max="1" step="0.001" value={minPxPos} oninput={onMinPxInput} />
-			<span class="zoom-readout"
-				>{$configStore.autoZoomMinPx.toLocaleString('de-DE', {
-					minimumFractionDigits: 3,
-					maximumFractionDigits: 3,
-				})} px</span
-			>
-		</label>
-
-		<label class="control-group" style="margin-top: 5px;"
-			>Zoom
-			<div class="slider-with-marker">
+		{#if $configStore.edgeTargetDisplayControlMode}
+			<fieldset class="control-group target-display-state-group" style="margin-top:6px;">
+				<legend>Ziel-Darstellung</legend>
+				<label class="radio-row">
+					<input
+						type="radio"
+						name="targetDisplayState"
+						checked={$configStore.targetDisplayState === 'flaechentreu'}
+						onchange={onTargetDisplayStateChange('flaechentreu')}
+					/>
+					Flächentreu
+				</label>
+				<label class="radio-row">
+					<input
+						type="radio"
+						name="targetDisplayState"
+						checked={$configStore.targetDisplayState === 'rand'}
+						onchange={onTargetDisplayStateChange('rand')}
+					/>
+					Rand sichtbar
+				</label>
+				<label class="radio-row">
+					<input
+						type="radio"
+						name="targetDisplayState"
+						checked={$configStore.targetDisplayState === 'gleichmaessig'}
+						onchange={onTargetDisplayStateChange('gleichmaessig')}
+					/>
+					Gleichmäßig
+				</label>
+			</fieldset>
+		{:else}
+			<label class="control-group" style="margin-top:6px;"
+				>Ziel-Darstellung: Aktivierung
 				<input
 					type="range"
 					min="0"
 					max="1"
 					step="0.01"
-					value={$configStore.modeAB}
-					oninput={onInputFloat('modeAB', 0)}
+					value={$configStore.targetDisplayEngagement}
+					oninput={onInputFloat('targetDisplayEngagement', 1)}
 				/>
-				<div class="auto-zoom-marker" id="autoZoomMarker" title="Auto-Zoom-Mindestwert"></div>
-			</div>
+				<span class="target-display-readout"
+					>{Math.round($configStore.targetDisplayEngagement * 100)} %</span
+				>
+			</label>
+		{/if}
+
+		<label class="control-group" style="margin-top: 5px;"
+			>Ziel-Darstellung: Stärke
+			<input
+				type="range"
+				min="0"
+				max="1"
+				step="0.001"
+				value={$configStore.targetDisplayLevel}
+				oninput={onInputFloat('targetDisplayLevel', 0)}
+			/>
+			<span class="target-display-readout"
+				>{levelToPx($configStore.targetDisplayLevel, $targetDisplayMaxPxStore).toLocaleString(
+					'de-DE',
+					{
+						minimumFractionDigits: 3,
+						maximumFractionDigits: 3,
+					},
+				)} px</span
+			>
 		</label>
-		<div class="auto-zoom-note" id="autoZoomNote">
-			Auto-Zoom aktiv - übersteuert den Regler nach oben
-		</div>
+
+		{#if !$configStore.edgeTargetDisplayControlMode}
+			<label class="control-group" style="margin-top: 5px;"
+				>Abstraktion
+				<input
+					type="range"
+					min="0"
+					max="1"
+					step="0.01"
+					value={$configStore.abstraction}
+					oninput={onInputFloat('abstraction', 0)}
+				/>
+				<span class="target-display-readout">{Math.round($configStore.abstraction * 100)} %</span>
+			</label>
+		{/if}
+
+		<label
+			class="control-group"
+			style="margin-top:10px; flex-direction: row; align-items: center; gap: 8px;"
+		>
+			<input
+				type="checkbox"
+				style="width: auto;"
+				checked={$configStore.showLabels}
+				onchange={onChangeChecked('showLabels')}
+			/>
+			Beschriftung an/aus
+		</label>
 
 		<div class="control-group" style="margin-top:10px;">
 			<div>
@@ -358,6 +414,24 @@
 				<option value="S">S: Strecken (Morphing)</option>
 				<option value="Z">Z: Zerschneiden (Montessori) - Rück-Verschmelzung noch buggy</option>
 			</select>
+		</label>
+
+		<label class="control-group" style="margin-top:6px;"
+			>Zustands-Übergang: Dauer (Sekunden)
+			<input
+				type="range"
+				min="0"
+				max="10"
+				step="0.1"
+				value={$configStore.targetDisplayStateTransitionDuration}
+				oninput={onInputFloat('targetDisplayStateTransitionDuration', 1.0)}
+			/>
+			<span class="target-display-readout"
+				>{$configStore.targetDisplayStateTransitionDuration.toLocaleString('de-DE', {
+					minimumFractionDigits: 1,
+					maximumFractionDigits: 1,
+				})} s</span
+			>
 		</label>
 
 		<label class="control-group" style="margin-top:6px;"
@@ -422,6 +496,16 @@
 			/>
 			<span class="zoom-readout">{Math.round($configStore.flyingAlpha * 100)} %</span>
 		</label>
+		<label class="control-group" style="margin-top:6px;"
+			>Flug-Animation aus ab Geschwindigkeit
+			<input
+				type="number"
+				min="0.1"
+				step="0.1"
+				value={$configStore.flightAnimSpeedThreshold}
+				onchange={onChangeFloat('flightAnimSpeedThreshold', 3.0)}
+			/>
+		</label>
 
 		<div class="muted-note" style="margin-top:10px;">Diagnose (Stotter-Untersuchung):</div>
 		<label
@@ -451,7 +535,20 @@
 	{/if}
 
 	{#if showTab('Admin') && activeTab === 'Admin'}
-		<label class="control-group" style="margin-top: 5px;"
+		<label
+			class="control-group"
+			style="margin-top: 5px; flex-direction: row; align-items: center; gap: 8px;"
+		>
+			<input
+				type="checkbox"
+				style="width: auto;"
+				checked={$configStore.edgeTargetDisplayControlMode}
+				onchange={onChangeChecked('edgeTargetDisplayControlMode')}
+			/>
+			Alternative Rand-Ziel-Darstellung-Steuerung (3 Zustände statt Regler)
+		</label>
+
+		<label class="control-group" style="margin-top: 10px;"
 			>Zoom-Schwellwert
 			<input
 				type="number"
@@ -607,5 +704,24 @@
 	.muted-note {
 		color: #64748b;
 		font-size: 0.78em;
+	}
+	.target-display-state-group {
+		border: none;
+		margin: 0;
+		padding: 0;
+	}
+	.target-display-state-group legend {
+		font-size: 0.9em;
+		padding: 0;
+		margin-bottom: 2px;
+	}
+	.radio-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 8px;
+	}
+	.radio-row input[type='radio'] {
+		width: auto;
 	}
 </style>

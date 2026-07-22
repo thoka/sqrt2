@@ -326,10 +326,10 @@ export function compileSystemData(config) {
 	for (let p of raw_bank_pieces) p.children = p.children.map((c) => byId.get(c.id));
 	for (let entry of render_pipeline) entry.bp = byId.get(entry.bp.id);
 
-	// Auto-Zoom-Checkpoints (rein numerisch): pro Schale S der Exponent.
-	let auto_zoom_checkpoints = [];
+	// Ziel-Darstellung-Checkpoints (rein numerisch): pro Schale S der Exponent.
+	let target_display_checkpoints = [];
 	for (let S = 0; S < TOTAL_STEPS; S++) {
-		auto_zoom_checkpoints.push({ t: shell_start_time[S], exp: axes[S].exp });
+		target_display_checkpoints.push({ t: shell_start_time[S], exp: axes[S].exp });
 	}
 
 	// PATCH V32/V39: Bank-Zoom-Checkpoints aus echten Entnahme-Zeitpunkten,
@@ -401,7 +401,7 @@ export function compileSystemData(config) {
 		AREA_SCALE,
 		GLOBAL_SHELL_START: shell_start_time,
 		tickTimePairs,
-		auto_zoom_checkpoints,
+		target_display_checkpoints,
 		eventTimesTicks,
 		compactionTransitionTicks: compactionTransitionTicksClean,
 		MAX_TIME: local_max_time,
@@ -433,7 +433,7 @@ export function finalizeCompiled(data) {
 		AREA_SCALE,
 		GLOBAL_SHELL_START,
 		tickTimePairs,
-		auto_zoom_checkpoints,
+		target_display_checkpoints,
 		eventTimesTicks,
 		compactionTransitionTicks,
 		zoomSpeedCoef,
@@ -526,9 +526,9 @@ export function finalizeCompiled(data) {
 	// isolierten Mini-Rampe zwischen "toten" Haltepunkten macht. Die
 	// Sichtbarkeits-Garantie bleibt dabei erhalten (siehe
 	// smoothing.test.js/auto-zoom-visibility.test.js).
-	let GLOBAL_AUTO_ZOOM_CHECKPOINTS = auto_zoom_checkpoints;
-	let GLOBAL_AUTO_ZOOM_SPLINE = buildMonotoneSpline(
-		GLOBAL_AUTO_ZOOM_CHECKPOINTS.map((c) => ({ t: c.t, v: c.exp })),
+	let GLOBAL_TARGET_DISPLAY_CHECKPOINTS = target_display_checkpoints;
+	let GLOBAL_TARGET_DISPLAY_SPLINE = buildMonotoneSpline(
+		GLOBAL_TARGET_DISPLAY_CHECKPOINTS.map((c) => ({ t: c.t, v: c.exp })),
 		{ onlyChanges: true },
 	);
 
@@ -714,8 +714,8 @@ export function finalizeCompiled(data) {
 		AREA_SCALE,
 		GLOBAL_SHELL_START,
 		GLOBAL_TTM: ttm,
-		GLOBAL_AUTO_ZOOM_CHECKPOINTS,
-		GLOBAL_AUTO_ZOOM_SPLINE,
+		GLOBAL_TARGET_DISPLAY_CHECKPOINTS,
+		GLOBAL_TARGET_DISPLAY_SPLINE,
 		GLOBAL_BANK_ZOOM_TIMES: eventTimes,
 		GLOBAL_BANK_ZOOM: bank_zoom_states,
 		GLOBAL_BANK_ZOOM_SPLINE,

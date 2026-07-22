@@ -65,7 +65,7 @@ function plainFields(c) {
 		GLOBAL_N_ARR: c.GLOBAL_N_ARR,
 		P_FINAL: c.P_FINAL,
 		GLOBAL_SHELL_START: c.GLOBAL_SHELL_START,
-		GLOBAL_AUTO_ZOOM_CHECKPOINTS: c.GLOBAL_AUTO_ZOOM_CHECKPOINTS,
+		GLOBAL_TARGET_DISPLAY_CHECKPOINTS: c.GLOBAL_TARGET_DISPLAY_CHECKPOINTS,
 		GLOBAL_BANK_ZOOM_TIMES: c.GLOBAL_BANK_ZOOM_TIMES,
 		GLOBAL_BANK_ZOOM: c.GLOBAL_BANK_ZOOM,
 		GLOBAL_COMPACTION_WAYPOINTS: c.GLOBAL_COMPACTION_WAYPOINTS,
@@ -97,9 +97,9 @@ for (const cfg of configMatrix()) {
 			);
 		}
 
-		// GLOBAL_AUTO_ZOOM_SPLINE an mehreren t-Werten.
-		const azFull = full.GLOBAL_AUTO_ZOOM_SPLINE;
-		const azSplit = split.GLOBAL_AUTO_ZOOM_SPLINE;
+		// GLOBAL_TARGET_DISPLAY_SPLINE an mehreren t-Werten.
+		const azFull = full.GLOBAL_TARGET_DISPLAY_SPLINE;
+		const azSplit = split.GLOBAL_TARGET_DISPLAY_SPLINE;
 		for (const t of ts) {
 			assert.strictEqual(azSplit(t), azFull(t));
 		}
@@ -130,7 +130,7 @@ test('Split-Äquivalenz (Extremfall depth=100)', { timeout: 120000 }, () => {
 	const tMax = full.MAX_TIME;
 	for (const t of [0, tMax * 0.5, tMax]) {
 		assert.strictEqual(split.GLOBAL_TTM.timeToTick(t), full.GLOBAL_TTM.timeToTick(t));
-		assert.strictEqual(split.GLOBAL_AUTO_ZOOM_SPLINE(t), full.GLOBAL_AUTO_ZOOM_SPLINE(t));
+		assert.strictEqual(split.GLOBAL_TARGET_DISPLAY_SPLINE(t), full.GLOBAL_TARGET_DISPLAY_SPLINE(t));
 	}
 });
 

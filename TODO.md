@@ -4,32 +4,16 @@ Offene Punkte, nach Relevanz sortiert. Erledigtes wird durchgestrichen
 (`~~`). Jede Stufe bekommt eigene Tests (Unit und/oder e2e) — siehe
 `AGENTS.md` ("Tests für alle Stufen"). Vor Commit: `pnpm format` + `pnpm check`.
 
-## Einstellungen aufräumen
-- [x] Geschwindigkeit: wird im Config-Tab nicht gebraucht. 
-- [x] Den Bereich, der die Einstellungen öffnet auf die ganze Höhe des Hauptfenster ausrichten. Breite: 153 px vom rechten Rand
-- [x] Pieces drehen: einzeilig und in den Animations-Tab verschieben
-- [x] Fliegende Transparenz: in den Animations-Tab verschieben
-- [x] "Zoom" unter "Auto-Zoom"
-- [x] "Kompaktierung" gibt es nicht mehr
 
-## Remote-Steuerung
- - [x] Zeitregler volle Breite
- - [x] Geschwindigkeitsregeler soll direkt über der Zeit  sichbar sein.
- - [x] Buttons für alle Tastatureingaben (außer "?" vorhehen)
- 
+
 ## Steuerung
-- [x] Solange ein slider bewegt wird, soll das verlassen des parents nicht den Dialog schhließen. Das passiert zuerzeit in den Einstellungen.
+- [x] neue Umschaltung über Zustände zum Default machen (`configStore.edgeTargetDisplayControlMode` jetzt `true` als Default - klassische Regler bleiben über die Admin-Checkbox erreichbar, siehe docs/Alternative Ziel-Darstellung-Steuerung.md)
+- [x] Beschleunigung wesentlich erhöhen. Geschwindigkeit kann gerne gefühlt instantan erreicht werden. Dann ist ersichtlicher, wenn der neue Modus erreicht wurde. (Default von "Zustands-Übergang: Dauer" von 1,0s auf 0,2s reduziert - Übergänge bleiben dank des geschwindigkeitsstetigen Feder-Treibers weiterhin ohne "Blitze", auch bei schnellem Umschalten)
 
-
-## Sync-Isolierung via Pin (BroadcastChannel) — optional
-- [ ] Pin als Teil des `BroadcastChannel`-Namens (`sqrt2-state-<pin>`): Tabs mit
-      gleichem Pin teilen einen Kanal, ungleiche/no-Pin sind isoliert.
-- [ ] Pin-Eingabe im ControlPanel/Settings + als URL-Parameter (`?pin=1234`)
-      zum Teilen vorkonfigurierter Links (analog zu urlState.js).
-- [ ] Pin-Wechsel zur Laufzeit: Channel neu aufmachen, wenn sich der Pin
-      ändert (bestehender Listener schließen + neuer öffnen).
-- [ ] (Nett, aber NICHT zwingend für Virtual-Canvas — dort identifiziert
-      jedes Fenster sich über eine eigene zufällige ID, siehe unten.)
+## Intro-Screen
+- [x] Anzeige eines Intro-Screens für kurze Zeit beim Start. Ausschalten bei Play.
+- [x] Hinweis auf Einstellungen oben rechts
+- [ ] Hinweise auf die Einstellungen viel größer. Ist momentan sehr dezent.
 
 ## Virtual Canvas / Multi-Viewport (Mehrbildschirm-Exponat)
 Konzept: ein gemeinsamer VIRTUELLER Canvas-Koordinatenraum, zusammengesetzt
@@ -66,58 +50,66 @@ Welt-Position eines Stücks berechnen).
       rendern denselben Welt-Punkt an der korrekten, sich ergänzenden Stelle;
       ein fliegendes Stück überquert die Grenze ohne Sprung.
 
-## Flug-Animation
+## Sync-Isolierung via Pin (BroadcastChannel) — optional
+- [ ] Pin als Teil des `BroadcastChannel`-Namens (`sqrt2-state-<pin>`): Tabs mit
+      gleichem Pin teilen einen Kanal, ungleiche/no-Pin sind isoliert.
+- [ ] Pin-Eingabe im ControlPanel/Settings + als URL-Parameter (`?pin=1234`)
+      zum Teilen vorkonfigurierter Links (analog zu urlState.js).
+- [ ] Pin-Wechsel zur Laufzeit: Channel neu aufmachen, wenn sich der Pin
+      ändert (bestehender Listener schließen + neuer öffnen).
+- [ ] (Nett, aber NICHT zwingend für Virtual-Canvas — dort identifiziert
+      jedes Fenster sich über eine eigene zufällige ID, siehe unten.)
 
-## Flug-Animation
-- [ ] Die Flug-Animation soll ab einer bestimmten Geschwindigkeit ausgeschaltet werden.
-- [ ] Diese Geschwindigkeit (Vorgabe 3) soll einstellbar sein in den Animations-Optionen.
-- [ ] Kein Recompile bei Ändeerungen.
 
-## Tastensteuerung
-
-- [x] Space: start / stop
-- [x] left: tick zurück
-- [x] right: tick vorwärts
-- [x] pg-up: schale vorwärts
-- [x] pg-down: schale zurück
-- [x] Return: Richtungswechsel
-- [x] +: schneller (Faktor `SPEED_STEP`, Default 1.3)
-- [x] -: langsamer (Faktor 1/SPEED_STEP)
-- [x] ?: Hilfe-Overlay
-
-## Intro-Screen
-- [ ] Anzeige eines Intro-Screens für kurze Zeit beim Start. Ausschalten bei Play.
-- [ ] Hinweis auf Einstellungen oben rechts
 
 ## Fernsteuerung / Connection (Nachpflege)
 
 - [ ] **`RemoteControl` als Route foldbar** machen (im Exponat ein-/ausklappbar,
       nicht nur separater Tab) — UX für „Gast-Steuerung direkt am Exponat".
-- [ ] **Rate-Limit-Test** für Token-Minting (massenhaft `POST /api/token`)
+- [x] **Rate-Limit-Test** für Token-Minting (massenhaft `POST /api/token`)
       existiert als Server-Test (`test-api.mjs`); als E2E-Doku in
-      `DEPLOYMENT.md` verlinken.
-- [ ] **Tailscale/TLS-Setup** für echtes Handy dokumentieren + scripten
+      `DEPLOYMENT.md` verlinken. (§7 verlinkt jetzt `tests/relay/test-api.mjs`
+      inkl. Rate-Limit-Hinweis - Pfad war zuvor veraltet/root-level.)
+- [x] **Tailscale/TLS-Setup** für echtes Handy dokumentieren + scripten
       (`infra/connection-service/setup-tailscale.sh`, `tailscale cert` →
       `TLS_CERT`/`TLS_KEY`). Aktuell nur §5 in DEPLOYMENT.md beschrieben.
-- [ ] **Exponat-Key-Management**: wie kommt `API_KEYS` sicher aufs Gerät?
+      (War bereits vollständig umgesetzt unter `scripts/setup-tailscale.sh`
+      (config/check/reachable/https) + DEPLOYMENT.md §5 - nur der
+      `infra/connection-service/`-Pfad im TODO-Text war veraltet/nie so
+      angelegt. CONNECTION_SERVICE_SPEC.md §12 Punkt 6 jetzt als erledigt
+      markiert + verlinkt.)
+- [x] **Exponat-Key-Management**: wie kommt `API_KEYS` sicher aufs Gerät?
       (`.env`-Vorlage, kein Commit) — `infra/connection-service/.env.example`.
-- [ ] **Relay-Status im Exponat** sichtbar machen (Gast-Zahl Live, Verbindungs-
-      State) — aktuell nur in `RemoteControl` (`#relayStatus`).
+      (Vorlage liegt unter `deploy/.env.example` (passend zur tatsächlichen
+      `deploy/docker-compose.yml`-Struktur, kein `infra/`-Verzeichnis im
+      Repo); Compose liest `API_KEYS`/`ADMIN_KEY` jetzt per
+      `--env-file deploy/.env` statt hartkodiert; `.gitignore` blockt
+      `.env`/`deploy/.env`.)
+- [x] **Relay-Status im Exponat** sichtbar machen (Gast-Zahl Live, Verbindungs-
+      State) — aktuell nur in `RemoteControl` (`#relayStatus`). (War bereits
+      erledigt: `ControlPanel.svelte` zeigt im Tab "Remote-Connect" - auch im
+      Exponat selbst gemountet, nicht nur in `RemoteControl` - sowohl
+      `Status: {connStatus}` als auch `Gäste verbunden: {guestCount}` live an,
+      sobald eine Host-Sitzung läuft. Die TODO-Prämisse "aktuell nur in
+      RemoteControl" war veraltet.)
 
 ## CODE-QUALITÄT / REFACTOR
 
-- [ ] **`selection_strategy_prototype.html`** — in `src/` / `docs/` ordnen,
-      da kein Haupt-Tool mehr.
+- [x] **`selection_strategy_prototype.html`** — in `src/` / `docs/` ordnen,
+      da kein Haupt-Tool mehr. (Bereits in einer früheren Aufräum-Runde
+      entfernt, siehe Commit "Legacy-Prototypen ... entfernt" - Datei
+      existiert nicht mehr im Repo.)
 
 ## DOKUMENTATION
 
-- [ ] **`docs/DEPLOYMENT.md`** als zentrale Betriebs-Anleitung — erstellt,
+- [x] **`docs/DEPLOYMENT.md`** als zentrale Betriebs-Anleitung — erstellt,
       aber noch mit README/TOOLING-SPEC cross-verlinken.
-- [ ] **`docs/TOOLING_SPEC.md`** Phase 8 (embedded Relay) + Phase 6-Status
+- [x] **`docs/TOOLING_SPEC.md`** Phase 8 (embedded Relay) + Phase 6-Status
       konsistent halten.
-- [ ] **`docs/CONNECTION_SERVICE_SPEC.md`** §10/§12 mit DEPLOYMENT.md verknüpfen.
-- [ ] **README §10 „Zukünftige Vision"** aktualisieren: Mehrbildschirm/QR als
-      erledigt markieren, Phase 6 als offen.
+- [x] **`docs/CONNECTION_SERVICE_SPEC.md`** §10/§12 mit DEPLOYMENT.md verknüpfen.
+- [x] **README §10 „Zukünftige Vision"** aktualisieren: Mehrbildschirm/QR als
+      erledigt markieren, Phase 6 als offen. (War bereits erledigt markiert -
+      nur Phase-6-Querverweis präzisiert.)
 
 ## NICHT ZWINGEND (später)
 

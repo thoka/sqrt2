@@ -13,18 +13,68 @@ const DEFAULTS = {
 	depth: 16,
 	transformMode: 'S',
 	bankZoomThresholdPowers: 0,
-	autoZoomMinPx: 3,
 	zoomSpeedCoef: 0.012,
 	compactionEnabled: false,
 	compactionTransitionTicks: 3,
 	lineWidth: 0.3,
 	pauseDuration: 1.5,
 	playSpeed: 2.0,
-	modeAB: 0.0,
+	// Ziel-Darstellung: Aktivierung (linear, 0=aus/1=an) + Staerke
+	// (log-skaliert ueber levelToPx(), siehe targetDisplayLevel.js) -
+	// ersetzt das fruehere Regler-Paar modeAB/autoZoomMinPx (siehe
+	// docs/Alternative Ziel-Darstellung-Steuerung.md). Die resultierende
+	// Basisverzerrung ("modeAB") ist damit KEIN eigenstaendiges Store-Feld
+	// mehr, sondern wird in TargetBankCanvas.svelte JEDEN Frame aus
+	// diesen beiden Werten berechnet.
+	targetDisplayEngagement: 1.0,
+	// targetDisplayLevel bezieht sich auf eine dynamische Ober-/Untergrenze
+	// (1px .. tatsaechlich maximal erreichbare Breite, siehe
+	// targetDisplayLevel.js/ maxTargetDisplayWidthPx() in
+	// TargetBankCanvas.svelte) - ein fester px-Default ergibt daher keinen
+	// Sinn mehr, stattdessen ein neutraler mittlerer Regler-Default.
+	targetDisplayLevel: 0.5,
+	// Abstraktion: manueller, von Ziel-Darstellung UNABHAENGIGER Regler,
+	// der die Basisverzerrung Richtung 1 erzwingt ("Modus B" aus dem
+	// urspruenglichen README - macht die Stellenwert-Struktur sichtbar),
+	// unabhaengig davon, ob das fuer die Lesbarkeit noetig waere.
+	// Kombiniert sich mit dem Ziel-Darstellung-Ergebnis per max() in
+	// TargetBankCanvas.svelte - linearer Regler bewusst ohne Formkurve
+	// (siehe docs/Alternative Ziel-Darstellung-Steuerung.md: erst am
+	// Regler pruefen, ob eine Kurve noetig ist).
+	abstraction: 0.0,
+
+	// Alternative Rand-Ziel-Darstellung-Steuerung (siehe docs/Alternative
+	// Ziel-Darstellung-Steuerung.md "Schalter-Tweening"): statt der drei
+	// einzelnen Regler (Aktivierung/Abstraktion; targetDisplayLevel bleibt
+	// unabhaengig davon immer als Regler sichtbar) nur 3 diskrete
+	// Zustaende zur Auswahl, weich animiert beim Wechsel (src/lib/
+	// targetDisplayStateTween.js). Jetzt DEFAULT AN (TODO.md "Steuerung":
+	// "neue Umschaltung über Zustände zum Default machen") - die
+	// klassischen 2(+1)-Regler bleiben ueber die Admin-Checkbox weiterhin
+	// erreichbar.
+	edgeTargetDisplayControlMode: true,
+	// 'flaechentreu' | 'rand' | 'gleichmaessig' - nur wirksam, wenn
+	// edgeTargetDisplayControlMode true ist.
+	targetDisplayState: 'rand',
+	// Dauer (Sekunden) fuer einen KOMPLETTEN Uebergang zwischen 2 Zustaenden
+	// (src/lib/targetDisplayStateTween.js) - Regler "Zustands-Übergang:
+	// Dauer" im Animation-Tab, Bereich 0..10s. Uebergaenge duerfen ruhig
+	// lange dauern (User-Klarstellung) - "ersichtlicher, wann der neue
+	// Zustand erreicht wurde" wird stattdessen durch den abrupten,
+	// mechanischen Stopp des Trapez-Geschwindigkeitsprofils (trapStep() in
+	// targetDisplayStateTween.js) erreicht, nicht durch eine kuerzere Dauer.
+	targetDisplayStateTransitionDuration: 1.0,
 	// Flug-Morph: Teile drehen (true) oder nur strecken (false)
 	flightRotation: true,
 	// Transparenz fliegender Stücke (0 = unsichtbar, 1 = deckend)
 	flyingAlpha: 0.59,
+	// Ab dieser Wiedergabe-Geschwindigkeit (playSpeed) wird die Flug-Animation
+	// (Bank -> Ziel) abgeschaltet - Stücke erscheinen dann direkt an ihrer
+	// Zielposition statt sichtbar zu fliegen (bei hoher Geschwindigkeit ist
+	// der Flug ohnehin nicht mehr wahrnehmbar, nur noch ein Ruckeln).
+	flightAnimSpeedThreshold: 3.0,
+	// Beschriftung der Ziel-Quadrate (Formel unten / ausgerechneter Wert links)
+	showLabels: false,
 	// Diagnose-Schalter (Stotter-Untersuchung): entkoppeln HUD-/Bank-
 	// Update vom Render-Loop, um die Flug-Stotter-Quelle zu isolieren.
 	hudUpdateEnabled: true, // Zahlendarstellung (l/l²/R) neu berechnen/typsetten

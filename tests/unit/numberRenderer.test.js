@@ -7,7 +7,11 @@
 // formatLiveNumbers + ctx.fillText), nicht mehr ins DOM geschrieben.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { splitBaseNumber, formatLiveNumbers } from '../../src/lib/numberRenderer.js';
+import {
+	splitBaseNumber,
+	formatLiveNumbers,
+	formatAxisDenominator,
+} from '../../src/lib/numberRenderer.js';
 
 test('splitBaseNumber: trennt Ganzzahl- und Nachkommateil am Punkt', () => {
 	assert.deepStrictEqual(splitBaseNumber('1.4142'), { int: '1', frac: '4142' });
@@ -46,4 +50,17 @@ test('formatLiveNumbers: ganzzahlig (ohne Nachkommateil) bleibt valide', () => {
 	assert.strictEqual(P_str, '2');
 	assert.strictEqual(P2_str, '4');
 	assert.strictEqual(rem_str, '0');
+});
+
+test('formatAxisDenominator: basis^exponent als exakter String (BigInt)', () => {
+	assert.strictEqual(formatAxisDenominator(2, 0), '1');
+	assert.strictEqual(formatAxisDenominator(2, 1), '2');
+	assert.strictEqual(formatAxisDenominator(2, 2), '4');
+	assert.strictEqual(formatAxisDenominator(2, 3), '8');
+	assert.strictEqual(formatAxisDenominator(10, 3), '1000');
+});
+
+test('formatAxisDenominator: bleibt exakt auch bei grossen Exponenten (kein Float)', () => {
+	// 2^60 uebersteigt Number.MAX_SAFE_INTEGER-Praezision bei naiver Float-Potenz.
+	assert.strictEqual(formatAxisDenominator(2, 60), `${2n ** 60n}`);
 });

@@ -39,7 +39,7 @@ aus dem Async-Plan, ergänzt ihn um eine weitere Zwischenstufe):
   `render_pipeline`, `n_arr`, `P_FINAL`, `shell_start_time`,
   `tickTimePairs`, `local_max_time`. Cachebar (siehe B).
 - `derivePresentation(simResult, presentationConfig)` - baut darauf
-  `GLOBAL_TTM`, `GLOBAL_AUTO_ZOOM_*`, `GLOBAL_BANK_ZOOM_*`,
+  `GLOBAL_TTM`, `GLOBAL_TARGET_DISPLAY_*`, `GLOBAL_BANK_ZOOM_*`,
   `GLOBAL_COMPACTION_*`. Läuft bei JEDER Presentation-Änderung neu, ist
   aber billig genug, um synchron auf dem Main-Thread zu bleiben (kein
   Worker nötig für diesen Pfad).

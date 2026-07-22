@@ -20,10 +20,22 @@ const CONFIG_FIELDS = [
 		format: (c) => String(c.bankZoomThresholdPowers),
 	},
 	{
-		key: 'autozoom',
-		field: 'autoZoomMinPx',
-		parse: (v) => parseFloat(v) || 0,
-		format: (c) => String(c.autoZoomMinPx),
+		key: 'tdengage',
+		field: 'targetDisplayEngagement',
+		parse: (v) => Math.max(0, Math.min(1, parseFloat(v) ?? 1)),
+		format: (c) => c.targetDisplayEngagement.toFixed(4),
+	},
+	{
+		key: 'tdlevel',
+		field: 'targetDisplayLevel',
+		parse: (v) => Math.max(0, Math.min(1, parseFloat(v) || 0)),
+		format: (c) => c.targetDisplayLevel.toFixed(4),
+	},
+	{
+		key: 'abstraction',
+		field: 'abstraction',
+		parse: (v) => Math.max(0, Math.min(1, parseFloat(v) || 0)),
+		format: (c) => c.abstraction.toFixed(4),
 	},
 	{
 		key: 'zoomspeed',
@@ -62,12 +74,6 @@ const CONFIG_FIELDS = [
 		format: (c) => String(c.compactionTransitionTicks),
 	},
 	{
-		key: 'modeab',
-		field: 'modeAB',
-		parse: (v) => Math.max(0, Math.min(1, parseFloat(v) || 0)),
-		format: (c) => c.modeAB.toFixed(4),
-	},
-	{
 		key: 'rotate',
 		field: 'flightRotation',
 		parse: (v) => v !== '0',
@@ -80,6 +86,12 @@ const CONFIG_FIELDS = [
 		format: (c) => c.flyingAlpha.toFixed(2),
 	},
 	{
+		key: 'flightmaxspeed',
+		field: 'flightAnimSpeedThreshold',
+		parse: (v) => parseFloat(v) || 3.0,
+		format: (c) => String(c.flightAnimSpeedThreshold),
+	},
+	{
 		key: 'hud',
 		field: 'hudUpdateEnabled',
 		parse: (v) => v !== '0',
@@ -90,6 +102,32 @@ const CONFIG_FIELDS = [
 		field: 'bankRenderEnabled',
 		parse: (v) => v !== '0',
 		format: (c) => (c.bankRenderEnabled ? '1' : '0'),
+	},
+	{
+		key: 'labels',
+		field: 'showLabels',
+		parse: (v) => v === '1',
+		format: (c) => (c.showLabels ? '1' : '0'),
+	},
+	// Alternative Rand-Ziel-Darstellung-Steuerung (docs/Alternative
+	// Ziel-Darstellung-Steuerung.md).
+	{
+		key: 'alttd',
+		field: 'edgeTargetDisplayControlMode',
+		parse: (v) => v === '1',
+		format: (c) => (c.edgeTargetDisplayControlMode ? '1' : '0'),
+	},
+	{
+		key: 'tdstate',
+		field: 'targetDisplayState',
+		parse: (v) => (['flaechentreu', 'rand', 'gleichmaessig'].includes(v) ? v : undefined),
+		format: (c) => c.targetDisplayState,
+	},
+	{
+		key: 'tdstatedur',
+		field: 'targetDisplayStateTransitionDuration',
+		parse: (v) => Math.max(0, Math.min(10, parseFloat(v) ?? 1)),
+		format: (c) => String(c.targetDisplayStateTransitionDuration),
 	},
 	// --- Playback-Felder (liegen in playbackStore, nicht configStore) ---
 	// Laufrichtung der Zeit: -1 = rueckwaerts, sonst vorwaerts.

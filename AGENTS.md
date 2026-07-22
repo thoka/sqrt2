@@ -7,7 +7,7 @@ vollständig lesen - hier nur das Nötigste (das *Warum/Wie* lebt in CLAUDE.md).
 
 - `sqrt2.html`: **dünne Shell** - mountet Svelte, hält `SETTINGS`-Array
   (URL-Sync), Zahlentafel (`updateHUD`) + Playback-Brücke. Kein Canvas hier.
-- Canvas + rAF-Loop + Auto-Zoom/Kompaktierung: `TargetBankCanvas.svelte`
+- Canvas + rAF-Loop + Ziel-Darstellung/Kompaktierung: `TargetBankCanvas.svelte`
   (Port von `renderFrame()`). Rest-Widgets austauschbar:
   `RestCounterBars.svelte` / `RestCounterGrid.svelte`. UI:
   `ControlPanel.svelte` / `PlaybackBar.svelte`. Zweiter Entry:
