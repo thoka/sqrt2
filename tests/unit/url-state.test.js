@@ -15,12 +15,12 @@ const DEFAULT_CONFIG = {
 	depth: 16,
 	transformMode: 'S',
 	bankZoomThresholdPowers: 0,
-	zoomEngagement: 1.0,
-	zoomLevel: 0.5,
+	targetDisplayEngagement: 1.0,
+	targetDisplayLevel: 0.5,
 	abstraction: 0.0,
-	edgeZoomControlMode: false,
-	zoomState: 'rand',
-	zoomStateTransitionDuration: 1.0,
+	edgeTargetDisplayControlMode: false,
+	targetDisplayState: 'rand',
+	targetDisplayStateTransitionDuration: 1.0,
 	zoomSpeedCoef: 0.012,
 	compactionEnabled: false,
 	compactionTransitionTicks: 3,
@@ -64,15 +64,19 @@ test('parseConfigFromUrl(): Checkbox-Feld "compaction" wird als Boolean gelesen'
 	});
 });
 
-test('parseConfigFromUrl(): zoomengage/zoomlevel werden auf [0,1] geklammert', () => {
-	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('zoomengage=5')), {
-		zoomEngagement: 1,
+test('parseConfigFromUrl(): tdengage/tdlevel werden auf [0,1] geklammert', () => {
+	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('tdengage=5')), {
+		targetDisplayEngagement: 1,
 	});
-	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('zoomengage=-5')), {
-		zoomEngagement: 0,
+	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('tdengage=-5')), {
+		targetDisplayEngagement: 0,
 	});
-	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('zoomlevel=5')), { zoomLevel: 1 });
-	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('zoomlevel=-5')), { zoomLevel: 0 });
+	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('tdlevel=5')), {
+		targetDisplayLevel: 1,
+	});
+	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('tdlevel=-5')), {
+		targetDisplayLevel: 0,
+	});
 });
 
 test('parseConfigFromUrl(): abstraction wird auf [0,1] geklammert', () => {
@@ -84,26 +88,26 @@ test('parseConfigFromUrl(): abstraction wird auf [0,1] geklammert', () => {
 	});
 });
 
-test('parseConfigFromUrl(): altzoom/zoomstate (Alternative Rand-Zoom-Steuerung)', () => {
-	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('altzoom=1')), {
-		edgeZoomControlMode: true,
+test('parseConfigFromUrl(): alttd/tdstate (Alternative Rand-Ziel-Darstellung-Steuerung)', () => {
+	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('alttd=1')), {
+		edgeTargetDisplayControlMode: true,
 	});
-	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('zoomstate=gleichmaessig')), {
-		zoomState: 'gleichmaessig',
+	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('tdstate=gleichmaessig')), {
+		targetDisplayState: 'gleichmaessig',
 	});
 	// Unbekannter Zustandswert wird ignoriert statt einen ungueltigen Store-Wert zu erzeugen.
-	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('zoomstate=quatsch')), {});
+	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('tdstate=quatsch')), {});
 });
 
-test('parseConfigFromUrl(): zoomstatedur wird auf [0,10] geklammert', () => {
-	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('zoomstatedur=5')), {
-		zoomStateTransitionDuration: 5,
+test('parseConfigFromUrl(): tdstatedur wird auf [0,10] geklammert', () => {
+	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('tdstatedur=5')), {
+		targetDisplayStateTransitionDuration: 5,
 	});
-	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('zoomstatedur=99')), {
-		zoomStateTransitionDuration: 10,
+	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('tdstatedur=99')), {
+		targetDisplayStateTransitionDuration: 10,
 	});
-	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('zoomstatedur=-5')), {
-		zoomStateTransitionDuration: 0,
+	assert.deepStrictEqual(parseConfigFromUrl(new URLSearchParams('tdstatedur=-5')), {
+		targetDisplayStateTransitionDuration: 0,
 	});
 });
 
@@ -189,8 +193,8 @@ test('buildStateParams() setzt jeden erwarteten URL-Schlüssel', () => {
 		'depth',
 		'mode',
 		'zoomthresh',
-		'zoomengage',
-		'zoomlevel',
+		'tdengage',
+		'tdlevel',
 		'abstraction',
 		'zoomspeed',
 		'linewidth',
@@ -202,8 +206,8 @@ test('buildStateParams() setzt jeden erwarteten URL-Schlüssel', () => {
 		'flyalpha',
 		'flightmaxspeed',
 		'labels',
-		'altzoom',
-		'zoomstate',
+		'alttd',
+		'tdstate',
 		'time',
 		'play',
 		'dir',

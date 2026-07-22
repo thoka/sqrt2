@@ -1,4 +1,4 @@
-// Persistente Tests für src/lib/autoZoomLevel.js - reines Modul (die
+// Persistente Tests für src/lib/targetDisplayLevel.js - reines Modul (die
 // Store-Nutzung selbst ist trivial/svelte-intern), daher hier via node:test
 // statt vitest/jsdom (siehe CLAUDE.md "Svelte-Komponenten-Tests").
 import { test } from 'node:test';
@@ -6,14 +6,14 @@ import assert from 'node:assert/strict';
 import {
 	levelToPx,
 	pxToLevel,
-	AUTO_ZOOM_LEVEL_MIN_PX,
-	autoZoomMaxPxStore,
-} from '../../src/lib/autoZoomLevel.js';
+	TARGET_DISPLAY_LEVEL_MIN_PX,
+	targetDisplayMaxPxStore,
+} from '../../src/lib/targetDisplayLevel.js';
 import { get } from 'svelte/store';
 
-test('levelToPx(0, maxPx) liefert immer exakt AUTO_ZOOM_LEVEL_MIN_PX (unabhängig von maxPx)', () => {
+test('levelToPx(0, maxPx) liefert immer exakt TARGET_DISPLAY_LEVEL_MIN_PX (unabhängig von maxPx)', () => {
 	for (let maxPx of [10, 100, 8333, 37500]) {
-		assert.ok(Math.abs(levelToPx(0, maxPx) - AUTO_ZOOM_LEVEL_MIN_PX) < 1e-9);
+		assert.ok(Math.abs(levelToPx(0, maxPx) - TARGET_DISPLAY_LEVEL_MIN_PX) < 1e-9);
 	}
 });
 
@@ -48,7 +48,7 @@ test('pxToLevel() klemmt auf [0,1]', () => {
 	assert.strictEqual(pxToLevel(1e9, maxPx), 1);
 });
 
-test('autoZoomMaxPxStore hat einen sinnvollen Default vor dem ersten Render', () => {
-	let v = get(autoZoomMaxPxStore);
+test('targetDisplayMaxPxStore hat einen sinnvollen Default vor dem ersten Render', () => {
+	let v = get(targetDisplayMaxPxStore);
 	assert.ok(typeof v === 'number' && v > 0 && isFinite(v));
 });

@@ -1,14 +1,16 @@
-// zoomStateTween.js - treibt den weichen Uebergang zwischen den drei
-// Voreinstellungen der Alternativen Rand-Zoom-Steuerung (Admin-Checkbox
-// `edgeZoomControlMode`, Radio-Buttons im Grundeinstellungen-Tab, siehe
-// docs/Alternative Zoom-Steuerung,md "Schalter-Tweening").
+// targetDisplayStateTween.js - treibt den weichen Uebergang zwischen den drei
+// Voreinstellungen der Alternativen Rand-Ziel-Darstellung-Steuerung
+// (Admin-Checkbox `edgeTargetDisplayControlMode`, Radio-Buttons im
+// Grundeinstellungen-Tab, siehe docs/Alternative
+// Ziel-Darstellung-Steuerung.md "Schalter-Tweening").
 //
-// Bewegt NUR zoomEngagement + abstraction (die beiden Groessen, die die
-// 3 Zustaende tatsaechlich unterscheiden). zoomLevel bleibt bewusst
-// AUSSERHALB dieses Embeddings - es ist in KEINEM der 3 Preset-Punkte
-// festgelegt, bleibt also beim Zustandswechsel unveraendert stehen (wie
-// ein Lautstaerkeregler, der beim Stummschalten seinen Wert behaelt) und
-// ist unabhaengig vom aktiven Zustand jederzeit als eigener Regler nutzbar.
+// Bewegt NUR targetDisplayEngagement + abstraction (die beiden Groessen,
+// die die 3 Zustaende tatsaechlich unterscheiden). targetDisplayLevel
+// bleibt bewusst AUSSERHALB dieses Embeddings - es ist in KEINEM der 3
+// Preset-Punkte festgelegt, bleibt also beim Zustandswechsel unveraendert
+// stehen (wie ein Lautstaerkeregler, der beim Stummschalten seinen Wert
+// behaelt) und ist unabhaengig vom aktiven Zustand jederzeit als eigener
+// Regler nutzbar.
 //
 // TREIBER (3. Anlauf): quasi-mechanisches Trapez-Geschwindigkeitsprofil
 // (Bang-Bang-Regelung eines Doppel-Integrators - Position, Geschwindigkeit
@@ -40,21 +42,22 @@ import { configStore } from './configStore.js';
 // betragen (Regler "Zustands-Übergang: Dauer", 0..10s), mit einem
 // klassischen Trapez-Profil: Beschleunigungs-/Verzoegerungsphase je 1/4
 // der Dauer, Rest cruist bei maxSpeed. Aufgeloest nach maxSpeed/maxAccel
-// (siehe docs/Alternative Zoom-Steuerung,md fuer die Herleitung) - bei
-// sehr kurzen Distanzen (z.B. Retargeting kurz vor dem alten Ziel) wird
-// trapStep() automatisch zu einem Dreiecksprofil (nie maxSpeed erreicht,
-// direkt von Beschleunigung in Verzoegerung), OHNE dass das hier eigens
-// behandelt werden muss - das folgt automatisch aus der Bremsweg-Regel.
+// (siehe docs/Alternative Ziel-Darstellung-Steuerung.md fuer die
+// Herleitung) - bei sehr kurzen Distanzen (z.B. Retargeting kurz vor dem
+// alten Ziel) wird trapStep() automatisch zu einem Dreiecksprofil (nie
+// maxSpeed erreicht, direkt von Beschleunigung in Verzoegerung), OHNE dass
+// das hier eigens behandelt werden muss - das folgt automatisch aus der
+// Bremsweg-Regel.
 const ACCEL_PHASE_FRACTION = 0.25;
 
 // Preset je Zustand - NUR die Felder angeben, die dieser Zustand
 // tatsaechlich festlegt. "gleichmaessig" laesst engagement bewusst offen
 // (bleibt unveraendert): sobald abstraction=1 ist, dominiert die lineare
 // Mischung in TargetBankCanvas.svelte ohnehin, engagement ist dann
-// irrelevant - siehe docs/Alternative Zoom-Steuerung,md fuer die
-// Begruendung (macht jeden der 3 paarweisen Uebergaenge zu einer
+// irrelevant - siehe docs/Alternative Ziel-Darstellung-Steuerung.md fuer
+// die Begruendung (macht jeden der 3 paarweisen Uebergaenge zu einer
 // Ein-Skalar-Bewegung).
-const ZOOM_STATE_TARGETS = {
+const TARGET_DISPLAY_STATE_TARGETS = {
 	flaechentreu: { engagement: 0, abstraction: 0 },
 	rand: { engagement: 1, abstraction: 0 },
 	gleichmaessig: { abstraction: 1 },
@@ -111,9 +114,9 @@ let started = false;
 
 // Registriert den Treiber genau einmal (configStore ist ein globaler
 // Singleton). Kein Effekt ohne requestAnimationFrame (Node-Unit-Tests unter
-// tests/unit/ laufen ohne DOM) - dort bleibt edgeZoomControlMode ohnehin
-// auf Default (aus).
-export function initZoomStateTween() {
+// tests/unit/ laufen ohne DOM) - dort bleibt edgeTargetDisplayControlMode
+// ohnehin auf Default (aus).
+export function initTargetDisplayStateTween() {
 	if (started) return;
 	if (typeof requestAnimationFrame === 'undefined') return;
 	started = true;
@@ -150,7 +153,7 @@ export function initZoomStateTween() {
 		abstractionVelocity = a.velocity;
 		configStore.update((c) => ({
 			...c,
-			zoomEngagement: engagementValue,
+			targetDisplayEngagement: engagementValue,
 			abstraction: abstractionValue,
 		}));
 
@@ -163,14 +166,15 @@ export function initZoomStateTween() {
 	}
 
 	function retarget(c, now) {
-		let duration = Math.max(0.05, c.zoomStateTransitionDuration ?? 1.0);
+		let duration = Math.max(0.05, c.targetDisplayStateTransitionDuration ?? 1.0);
 		// Herleitung (volle 0->1-Bewegung, Trapezprofil mit
 		// Beschleunigungs-/Verzoegerungsphase von je ACCEL_PHASE_FRACTION*
-		// duration): siehe docs/Alternative Zoom-Steuerung,md.
+		// duration): siehe docs/Alternative Ziel-Darstellung-Steuerung.md.
 		let accelTime = duration * ACCEL_PHASE_FRACTION;
 		maxSpeed = 1 / (duration - accelTime);
 		maxAccel = maxSpeed / accelTime;
-		let preset = ZOOM_STATE_TARGETS[c.zoomState] ?? ZOOM_STATE_TARGETS.rand;
+		let preset =
+			TARGET_DISPLAY_STATE_TARGETS[c.targetDisplayState] ?? TARGET_DISPLAY_STATE_TARGETS.rand;
 
 		if (rafId === null) {
 			// Keine Bewegung im Gange - Position/Geschwindigkeit auf einen
@@ -183,12 +187,12 @@ export function initZoomStateTween() {
 			// beschleunigt oder gebremst/umgedreht werden muss - genau wie ein
 			// reales mechanisches System, das seine Meinung mitten in der
 			// Bewegung aendert).
-			engagementValue = c.zoomEngagement;
+			engagementValue = c.targetDisplayEngagement;
 			engagementVelocity = 0;
 			abstractionValue = c.abstraction;
 			abstractionVelocity = 0;
 		}
-		targetEngagement = preset.engagement ?? c.zoomEngagement;
+		targetEngagement = preset.engagement ?? c.targetDisplayEngagement;
 		targetAbstraction = preset.abstraction ?? c.abstraction;
 
 		if (rafId === null) {
@@ -198,7 +202,7 @@ export function initZoomStateTween() {
 	}
 
 	configStore.subscribe((c) => {
-		if (!c.edgeZoomControlMode) {
+		if (!c.edgeTargetDisplayControlMode) {
 			lastKey = null; // beim naechsten Einschalten frisch synchronisieren
 			if (rafId !== null) {
 				cancelAnimationFrame(rafId);
@@ -206,7 +210,7 @@ export function initZoomStateTween() {
 			}
 			return;
 		}
-		let key = c.edgeZoomControlMode + '|' + c.zoomState;
+		let key = c.edgeTargetDisplayControlMode + '|' + c.targetDisplayState;
 		if (key === lastKey) return; // eigene tick()-Schreibvorgaenge loesen keinen neuen Uebergang aus
 		lastKey = key;
 		retarget(c, performance.now());

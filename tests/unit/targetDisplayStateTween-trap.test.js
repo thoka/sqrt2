@@ -1,11 +1,11 @@
-// Persistente Tests für trapStep() aus src/lib/zoomStateTween.js - reine
+// Persistente Tests für trapStep() aus src/lib/targetDisplayStateTween.js - reine
 // Funktion (kein DOM/rAF noetig), daher hier via node:test statt vitest
 // (siehe CLAUDE.md "Svelte-Komponenten-Tests"). Die rAF-abhaengige
-// Integrations-Seite (initZoomStateTween() + configStore) wird separat in
-// src/lib/zoomStateTween.test.js getestet.
+// Integrations-Seite (initTargetDisplayStateTween() + configStore) wird
+// separat in src/lib/targetDisplayStateTween.test.js getestet.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { trapStep } from '../../src/lib/zoomStateTween.js';
+import { trapStep } from '../../src/lib/targetDisplayStateTween.js';
 
 test('trapStep(): dt<=0 ist ein No-op', () => {
 	let r = trapStep(0.2, 0.5, 1, 1.0, 1.0, 0);

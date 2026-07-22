@@ -308,6 +308,10 @@ select {
 	color: #3b82f6;
 	font-weight: bold;
 }
+.target-display-readout {
+	color: #3b82f6;
+	font-weight: bold;
+}
 
 #restGridPanel {
 	position: fixed;

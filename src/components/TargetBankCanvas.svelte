@@ -22,8 +22,8 @@
 	import { applyCompactionFit } from '../lib/bank-core.js';
 	import { layoutCentered, findRect, commonAncestor } from '../lib/recursive-layout.js';
 	import { configStore, playbackStore, compiledStore } from '../lib/stores.js';
-	import { levelToPx, autoZoomMaxPxStore } from '../lib/autoZoomLevel.js';
-	import { initZoomStateTween } from '../lib/zoomStateTween.js';
+	import { levelToPx, targetDisplayMaxPxStore } from '../lib/targetDisplayLevel.js';
+	import { initTargetDisplayStateTween } from '../lib/targetDisplayStateTween.js';
 	import { computeLiveL } from '../lib/compiler.js';
 	import { formatLiveNumbers, formatAxisDenominator } from '../lib/numberRenderer.js';
 	import { drawScript } from '../lib/mathCanvasRenderer.js';
@@ -71,8 +71,8 @@
 	let GLOBAL_N_ARR = [];
 	let GLOBAL_SHELL_START = [];
 	let BANK_ZOOM_THRESHOLD_POWERS = 0;
-	let GLOBAL_AUTO_ZOOM_CHECKPOINTS = [];
-	let GLOBAL_AUTO_ZOOM_SPLINE = null;
+	let GLOBAL_TARGET_DISPLAY_CHECKPOINTS = [];
+	let GLOBAL_TARGET_DISPLAY_SPLINE = null;
 	// TEIL D (REST-PRECISION-PLAN): rekursives Box-in-Boxes-Modell ersetzt die
 	// Kompaktierungs-Wegpunkte (Teil C) als BANK-Rendering-/Zoom-Quelle -
 	// bank_root ist der Wurzel-Knoten von bank_pieces (id 0), aus dem
@@ -96,16 +96,17 @@
 	// frisch gesetzt, NICHT pro Frame neu geholt.
 	let compiledRef = null;
 
-	// Auto-Zoom: Aktivierung (linear) + Staerke (log-skaliert ueber
-	// levelToPx(), siehe autoZoomLevel.js) + Abstraktion (manueller,
-	// von Auto-Zoom unabhaengiger Basis-b->1-Override). Die resultierende
-	// Basisverzerrung (frueher "modeAB") wird daraus JEDEN Frame in
-	// renderFrame() berechnet (computeAutoZoomTAB()) - kein eigenstaendiges
-	// Store-Feld mehr, siehe docs/Alternative Zoom-Steuerung,md.
-	let zoomEngagement = 1.0;
-	let zoomLevel = 0.0;
+	// Ziel-Darstellung: Aktivierung (linear) + Staerke (log-skaliert ueber
+	// levelToPx(), siehe targetDisplayLevel.js) + Abstraktion (manueller,
+	// von Ziel-Darstellung unabhaengiger Basis-b->1-Override). Die
+	// resultierende Basisverzerrung (frueher "modeAB") wird daraus JEDEN
+	// Frame in renderFrame() berechnet (computeTargetDisplayTab()) - kein
+	// eigenstaendiges Store-Feld mehr, siehe docs/Alternative
+	// Ziel-Darstellung-Steuerung.md.
+	let targetDisplayEngagement = 1.0;
+	let targetDisplayLevel = 0.0;
 	let abstraction = 0.0;
-	// Zuletzt an autoZoomMaxPxStore gemeldeter Wert (siehe renderFrame()) -
+	// Zuletzt an targetDisplayMaxPxStore gemeldeter Wert (siehe renderFrame()) -
 	// vermeidet Store-Schreibvorgaenge (und damit ControlPanel-Re-Renders)
 	// bei jedem Frame, obwohl sich der Wert praktisch nie aendert.
 	let _lastMaxWidthPx = -1;
@@ -187,8 +188,8 @@
 			N_MAX = c.depth;
 			BASE = c.base;
 			BANK_ZOOM_THRESHOLD_POWERS = c.bankZoomThresholdPowers;
-			zoomEngagement = c.zoomEngagement;
-			zoomLevel = c.zoomLevel;
+			targetDisplayEngagement = c.targetDisplayEngagement;
+			targetDisplayLevel = c.targetDisplayLevel;
 			abstraction = c.abstraction;
 			LINE_WIDTH_PX = c.lineWidth;
 			ANIM_PAUSE_DURATION = c.pauseDuration;
@@ -222,8 +223,8 @@
 			GLOBAL_N_ARR = compiled.GLOBAL_N_ARR;
 			P_FINAL = compiled.P_FINAL;
 			GLOBAL_SHELL_START = compiled.GLOBAL_SHELL_START;
-			GLOBAL_AUTO_ZOOM_CHECKPOINTS = compiled.GLOBAL_AUTO_ZOOM_CHECKPOINTS;
-			GLOBAL_AUTO_ZOOM_SPLINE = compiled.GLOBAL_AUTO_ZOOM_SPLINE;
+			GLOBAL_TARGET_DISPLAY_CHECKPOINTS = compiled.GLOBAL_AUTO_ZOOM_CHECKPOINTS;
+			GLOBAL_TARGET_DISPLAY_SPLINE = compiled.GLOBAL_AUTO_ZOOM_SPLINE;
 			GLOBAL_TEIL_D_ZOOM_SPLINE = compiled.GLOBAL_TEIL_D_ZOOM_SPLINE;
 			bank_root = bank_pieces.length > 0 ? bank_pieces[0] : null;
 			MAX_TIME = compiled.MAX_TIME;
@@ -264,9 +265,9 @@
 		DYN_TARGET_W = sumA + nextDigitMargin;
 	}
 
-	function getSmoothedAutoZoomExp(time) {
-		if (GLOBAL_AUTO_ZOOM_CHECKPOINTS.length === 0) return 0;
-		return GLOBAL_AUTO_ZOOM_SPLINE(time);
+	function getSmoothedTargetDisplayExp(time) {
+		if (GLOBAL_TARGET_DISPLAY_CHECKPOINTS.length === 0) return 0;
+		return GLOBAL_TARGET_DISPLAY_SPLINE(time);
 	}
 
 	// Gerenderte Breite der jeweils relevanten Ziffernstelle bei gegebener
@@ -283,7 +284,7 @@
 		return Math.pow(b_eff, -targetExp) * V_SCALE_TARGET * scale;
 	}
 
-	function computeAutoZoomTAB(thresholdPx, scale, targetExp) {
+	function computeTargetDisplayTab(thresholdPx, scale, targetExp) {
 		if (thresholdPx <= 0 || TOTAL_STEPS <= 1) return 0;
 		const STEPS = 200;
 		let prevT = 0,
@@ -310,13 +311,14 @@
 
 	// Maximal erreichbare Breite (bei vollem Zoom, t_AB=1) fuer die aktuelle
 	// Konfiguration/Fensterhoehe - der tatsaechliche obere Anschlag des
-	// "Auto-Zoom: Staerke"-Reglers (siehe docs/Alternative Zoom-Steuerung,md,
-	// "toter Regelbereich"/"Gleichmaessigkeit bei kleiner Schalenanzahl").
-	// targetExp spielt bei t_AB=1 praktisch keine Rolle mehr (b_eff ist dort
-	// immer ~1, siehe widthAt()) - daher hier fest 0. Haengt NUR von
-	// Basis/Tiefe/Fenstergroesse ab, NICHT von der Animationszeit - bleibt
-	// waehrend einer laufenden Wiedergabe stabil.
-	function maxAutoZoomWidthPx(scale) {
+	// "Ziel-Darstellung: Staerke"-Reglers (siehe docs/Alternative
+	// Ziel-Darstellung-Steuerung.md, "toter Regelbereich"/
+	// "Gleichmaessigkeit bei kleiner Schalenanzahl"). targetExp spielt bei
+	// t_AB=1 praktisch keine Rolle mehr (b_eff ist dort immer ~1, siehe
+	// widthAt()) - daher hier fest 0. Haengt NUR von Basis/Tiefe/
+	// Fenstergroesse ab, NICHT von der Animationszeit - bleibt waehrend
+	// einer laufenden Wiedergabe stabil.
+	function maxTargetDisplayWidthPx(scale) {
 		return widthAt(1, scale, 0);
 	}
 
@@ -373,27 +375,27 @@
 		// (schon 0.01%) sofort kraeftig zoomen, sobald die aktuelle Stelle
 		// tief genug ist (die "harmlose" Uebergangszone verschiebt sich
 		// staendig mit der Tiefe - eine feste Reglerkurve koennte das nicht
-		// kompensieren). Das Ergebnis (autoZoomTAB) ist dagegen IMMER auf
+		// kompensieren). Das Ergebnis (targetDisplayTab) ist dagegen IMMER auf
 		// [0,1] begrenzt und daher robust linear skalierbar.
-		let autoZoomTargetExp = getSmoothedAutoZoomExp(u_time);
+		let targetDisplayTargetExp = getSmoothedTargetDisplayExp(u_time);
 		// Maximal erreichbare Breite haengt nur von Basis/Tiefe/Fenstergroesse
-		// ab, nicht von der Animationszeit (siehe maxAutoZoomWidthPx()) - hier
-		// trotzdem pro Frame frisch berechnet (billig, EIN widthAt()-Aufruf)
+		// ab, nicht von der Animationszeit (siehe maxTargetDisplayWidthPx()) -
+		// hier trotzdem pro Frame frisch berechnet (billig, EIN widthAt()-Aufruf)
 		// statt eigens auf Resize/Recompile zu horchen; nur bei tatsaechlicher
 		// Aenderung an den Store gemeldet, damit ControlPanel nicht bei jedem
 		// Frame neu rendert.
-		let maxWidthPx = maxAutoZoomWidthPx(scale);
+		let maxWidthPx = maxTargetDisplayWidthPx(scale);
 		if (Math.abs(maxWidthPx - _lastMaxWidthPx) > 1e-6 * Math.max(1, _lastMaxWidthPx)) {
 			_lastMaxWidthPx = maxWidthPx;
-			autoZoomMaxPxStore.set(maxWidthPx);
+			targetDisplayMaxPxStore.set(maxWidthPx);
 		}
-		let autoZoomTAB = computeAutoZoomTAB(
-			levelToPx(zoomLevel, maxWidthPx),
+		let targetDisplayTab = computeTargetDisplayTab(
+			levelToPx(targetDisplayLevel, maxWidthPx),
 			scale,
-			autoZoomTargetExp,
+			targetDisplayTargetExp,
 		);
-		let autoZoomComponent = zoomEngagement * autoZoomTAB;
-		let effective_t_AB = autoZoomComponent + abstraction * (1 - autoZoomComponent);
+		let targetDisplayComponent = targetDisplayEngagement * targetDisplayTab;
+		let effective_t_AB = targetDisplayComponent + abstraction * (1 - targetDisplayComponent);
 
 		updateDynamicLayout(effective_t_AB);
 
@@ -1059,11 +1061,12 @@
 
 	onMount(() => {
 		// Treibt den weichen Uebergang zwischen den drei Voreinstellungen der
-		// Alternativen Rand-Zoom-Steuerung (schreibt zoomEngagement/
-		// abstraction in configStore, siehe zoomStateTween.js) - hier
-		// registriert, weil diese Komponente ohnehin die einzige Instanz des
-		// configStore-Subscribe/rAF-Rendering-Verbunds fuer den Zoom ist.
-		initZoomStateTween();
+		// Alternativen Rand-Ziel-Darstellung-Steuerung (schreibt
+		// targetDisplayEngagement/abstraction in configStore, siehe
+		// targetDisplayStateTween.js) - hier registriert, weil diese Komponente
+		// ohnehin die einzige Instanz des configStore-Subscribe/rAF-Rendering-
+		// Verbunds fuer die Ziel-Darstellung ist.
+		initTargetDisplayStateTween();
 		ctx = canvasEl.getContext('2d');
 		setDebugCanvas(canvasEl);
 		bankZoomLabel = document.getElementById('bankZoomLabel');

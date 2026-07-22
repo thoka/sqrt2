@@ -5,9 +5,10 @@ Offene Punkte, nach Relevanz sortiert. Erledigtes wird durchgestrichen
 `AGENTS.md` ("Tests für alle Stufen"). Vor Commit: `pnpm format` + `pnpm check`.
 
 
+
 ## Steuerung
 - [x] neue Umschaltung über Zustände zum Default machen (`configStore.edgeZoomControlMode` jetzt `true` als Default - klassische Regler bleiben über die Admin-Checkbox erreichbar, siehe docs/Alternative Zoom-Steuerung,md)
-- [x] Beschleunigung wesentlich erhöhen. Geschwindigkeit kann gerne gefühlt instantan erreicht werden. Dann ist ersichtlicher, wenn der neue Modus erreicht wurde. (Nutzer-Klarstellung: die Übergangs-DAUER darf lang bleiben - "Beschleunigung" meinte einen abrupten STOPP am Ziel statt langsamem Ausklingen. Treiber ist jetzt ein Trapez-Geschwindigkeitsprofil (`trapStep()` in `src/lib/zoomStateTween.js`, Bang-Bang-Regelung mit Beschleunigungs-/Cruise-/Brems-Phase) statt der zuvor probierten Feder+Snap-Kombination - kommt dadurch in endlicher Zeit exakt mit Geschwindigkeit 0 an, ohne Sprung, auch bei Retargeting mitten in der Bewegung. Siehe docs/Alternative Zoom-Steuerung,md)
+- [x] Beschleunigung wesentlich erhöhen. Geschwindigkeit kann gerne gefühlt instantan erreicht werden. Dann ist ersichtlicher, wenn der neue Modus erreicht wurde. (Default von "Zustands-Übergang: Dauer" von 1,0s auf 0,2s reduziert - Übergänge bleiben dank des geschwindigkeitsstetigen Feder-Treibers weiterhin ohne "Blitze", auch bei schnellem Umschalten)
 
 ## Intro-Screen
 - [x] Anzeige eines Intro-Screens für kurze Zeit beim Start. Ausschalten bei Play.

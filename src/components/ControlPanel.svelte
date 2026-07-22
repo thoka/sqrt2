@@ -15,10 +15,10 @@
 	// Änderung aus, nicht bei jedem Tastendruck - deshalb bewusst kein
 	// bind:value (das würde bei <input type=number> auf "input" reagieren),
 	// sondern explizite onchange-Handler. Die reinen Laufzeit-/Renderregler
-	// (zoomEngagement/zoomLevel/lineWidth/pause/speed) reagieren dagegen live
-	// (oninput), genau wie im alten Panel.
+	// (targetDisplayEngagement/targetDisplayLevel/lineWidth/pause/speed)
+	// reagieren dagegen live (oninput), genau wie im alten Panel.
 	import { configStore, playbackStore, compiledStore } from '../lib/stores.js';
-	import { levelToPx, autoZoomMaxPxStore } from '../lib/autoZoomLevel.js';
+	import { levelToPx, targetDisplayMaxPxStore } from '../lib/targetDisplayLevel.js';
 	import { displayStore } from '../lib/displayStore.js';
 	import { buildStateParams } from '../lib/urlState.js';
 	import { initNetworkSync } from '../lib/syncedStore.js';
@@ -70,12 +70,14 @@
 		return (e) => configStore.update((c) => ({ ...c, [field]: e.target.value }));
 	}
 
-	// Alternative Rand-Zoom-Steuerung (docs/Alternative Zoom-Steuerung,md):
-	// Radio-Klick setzt NUR zoomState - der eigentliche (weiche) Uebergang
-	// von zoomEngagement/abstraction auf das Preset dieses Zustands laeuft
-	// in zoomStateTween.js, angestossen durch genau diese Store-Aenderung.
-	function onZoomStateChange(state) {
-		return () => configStore.update((c) => ({ ...c, zoomState: state }));
+	// Alternative Rand-Ziel-Darstellung-Steuerung (docs/Alternative
+	// Ziel-Darstellung-Steuerung.md): Radio-Klick setzt NUR
+	// targetDisplayState - der eigentliche (weiche) Uebergang von
+	// targetDisplayEngagement/abstraction auf das Preset dieses Zustands
+	// laeuft in targetDisplayStateTween.js, angestossen durch genau diese
+	// Store-Aenderung.
+	function onTargetDisplayStateChange(state) {
+		return () => configStore.update((c) => ({ ...c, targetDisplayState: state }));
 	}
 
 	// Zoom-Schwellwert: in der UI "Zoom-Schwellwert" (immer Basis 10), im
@@ -296,71 +298,76 @@
 			</label>
 		</div>
 
-		{#if $configStore.edgeZoomControlMode}
-			<fieldset class="control-group zoom-state-group" style="margin-top:6px;">
-				<legend>Zoom</legend>
+		{#if $configStore.edgeTargetDisplayControlMode}
+			<fieldset class="control-group target-display-state-group" style="margin-top:6px;">
+				<legend>Ziel-Darstellung</legend>
 				<label class="radio-row">
 					<input
 						type="radio"
-						name="zoomState"
-						checked={$configStore.zoomState === 'flaechentreu'}
-						onchange={onZoomStateChange('flaechentreu')}
+						name="targetDisplayState"
+						checked={$configStore.targetDisplayState === 'flaechentreu'}
+						onchange={onTargetDisplayStateChange('flaechentreu')}
 					/>
 					Flächentreu
 				</label>
 				<label class="radio-row">
 					<input
 						type="radio"
-						name="zoomState"
-						checked={$configStore.zoomState === 'rand'}
-						onchange={onZoomStateChange('rand')}
+						name="targetDisplayState"
+						checked={$configStore.targetDisplayState === 'rand'}
+						onchange={onTargetDisplayStateChange('rand')}
 					/>
 					Rand sichtbar
 				</label>
 				<label class="radio-row">
 					<input
 						type="radio"
-						name="zoomState"
-						checked={$configStore.zoomState === 'gleichmaessig'}
-						onchange={onZoomStateChange('gleichmaessig')}
+						name="targetDisplayState"
+						checked={$configStore.targetDisplayState === 'gleichmaessig'}
+						onchange={onTargetDisplayStateChange('gleichmaessig')}
 					/>
 					Gleichmäßig
 				</label>
 			</fieldset>
 		{:else}
 			<label class="control-group" style="margin-top:6px;"
-				>Auto-Zoom: Aktivierung
+				>Ziel-Darstellung: Aktivierung
 				<input
 					type="range"
 					min="0"
 					max="1"
 					step="0.01"
-					value={$configStore.zoomEngagement}
-					oninput={onInputFloat('zoomEngagement', 1)}
+					value={$configStore.targetDisplayEngagement}
+					oninput={onInputFloat('targetDisplayEngagement', 1)}
 				/>
-				<span class="zoom-readout">{Math.round($configStore.zoomEngagement * 100)} %</span>
+				<span class="target-display-readout"
+					>{Math.round($configStore.targetDisplayEngagement * 100)} %</span
+				>
 			</label>
 		{/if}
 
 		<label class="control-group" style="margin-top: 5px;"
-			>Auto-Zoom: Stärke
+			>Ziel-Darstellung: Stärke
 			<input
 				type="range"
 				min="0"
 				max="1"
 				step="0.001"
-				value={$configStore.zoomLevel}
-				oninput={onInputFloat('zoomLevel', 0)}
+				value={$configStore.targetDisplayLevel}
+				oninput={onInputFloat('targetDisplayLevel', 0)}
 			/>
-			<span class="zoom-readout"
-				>{levelToPx($configStore.zoomLevel, $autoZoomMaxPxStore).toLocaleString('de-DE', {
-					minimumFractionDigits: 3,
-					maximumFractionDigits: 3,
-				})} px</span
+			<span class="target-display-readout"
+				>{levelToPx($configStore.targetDisplayLevel, $targetDisplayMaxPxStore).toLocaleString(
+					'de-DE',
+					{
+						minimumFractionDigits: 3,
+						maximumFractionDigits: 3,
+					},
+				)} px</span
 			>
 		</label>
 
-		{#if !$configStore.edgeZoomControlMode}
+		{#if !$configStore.edgeTargetDisplayControlMode}
 			<label class="control-group" style="margin-top: 5px;"
 				>Abstraktion
 				<input
@@ -371,7 +378,7 @@
 					value={$configStore.abstraction}
 					oninput={onInputFloat('abstraction', 0)}
 				/>
-				<span class="zoom-readout">{Math.round($configStore.abstraction * 100)} %</span>
+				<span class="target-display-readout">{Math.round($configStore.abstraction * 100)} %</span>
 			</label>
 		{/if}
 
@@ -416,11 +423,11 @@
 				min="0"
 				max="10"
 				step="0.1"
-				value={$configStore.zoomStateTransitionDuration}
-				oninput={onInputFloat('zoomStateTransitionDuration', 1.0)}
+				value={$configStore.targetDisplayStateTransitionDuration}
+				oninput={onInputFloat('targetDisplayStateTransitionDuration', 1.0)}
 			/>
-			<span class="zoom-readout"
-				>{$configStore.zoomStateTransitionDuration.toLocaleString('de-DE', {
+			<span class="target-display-readout"
+				>{$configStore.targetDisplayStateTransitionDuration.toLocaleString('de-DE', {
 					minimumFractionDigits: 1,
 					maximumFractionDigits: 1,
 				})} s</span
@@ -535,10 +542,10 @@
 			<input
 				type="checkbox"
 				style="width: auto;"
-				checked={$configStore.edgeZoomControlMode}
-				onchange={onChangeChecked('edgeZoomControlMode')}
+				checked={$configStore.edgeTargetDisplayControlMode}
+				onchange={onChangeChecked('edgeTargetDisplayControlMode')}
 			/>
-			Alternative Rand-Zoom-Steuerung (3 Zustände statt Regler)
+			Alternative Rand-Ziel-Darstellung-Steuerung (3 Zustände statt Regler)
 		</label>
 
 		<label class="control-group" style="margin-top: 10px;"
@@ -698,12 +705,12 @@
 		color: #64748b;
 		font-size: 0.78em;
 	}
-	.zoom-state-group {
+	.target-display-state-group {
 		border: none;
 		margin: 0;
 		padding: 0;
 	}
-	.zoom-state-group legend {
+	.target-display-state-group legend {
 		font-size: 0.9em;
 		padding: 0;
 		margin-bottom: 2px;

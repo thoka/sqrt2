@@ -20,16 +20,16 @@ const CONFIG_FIELDS = [
 		format: (c) => String(c.bankZoomThresholdPowers),
 	},
 	{
-		key: 'zoomengage',
-		field: 'zoomEngagement',
+		key: 'tdengage',
+		field: 'targetDisplayEngagement',
 		parse: (v) => Math.max(0, Math.min(1, parseFloat(v) ?? 1)),
-		format: (c) => c.zoomEngagement.toFixed(4),
+		format: (c) => c.targetDisplayEngagement.toFixed(4),
 	},
 	{
-		key: 'zoomlevel',
-		field: 'zoomLevel',
+		key: 'tdlevel',
+		field: 'targetDisplayLevel',
 		parse: (v) => Math.max(0, Math.min(1, parseFloat(v) || 0)),
-		format: (c) => c.zoomLevel.toFixed(4),
+		format: (c) => c.targetDisplayLevel.toFixed(4),
 	},
 	{
 		key: 'abstraction',
@@ -109,24 +109,25 @@ const CONFIG_FIELDS = [
 		parse: (v) => v === '1',
 		format: (c) => (c.showLabels ? '1' : '0'),
 	},
-	// Alternative Rand-Zoom-Steuerung (docs/Alternative Zoom-Steuerung,md).
+	// Alternative Rand-Ziel-Darstellung-Steuerung (docs/Alternative
+	// Ziel-Darstellung-Steuerung.md).
 	{
-		key: 'altzoom',
-		field: 'edgeZoomControlMode',
+		key: 'alttd',
+		field: 'edgeTargetDisplayControlMode',
 		parse: (v) => v === '1',
-		format: (c) => (c.edgeZoomControlMode ? '1' : '0'),
+		format: (c) => (c.edgeTargetDisplayControlMode ? '1' : '0'),
 	},
 	{
-		key: 'zoomstate',
-		field: 'zoomState',
+		key: 'tdstate',
+		field: 'targetDisplayState',
 		parse: (v) => (['flaechentreu', 'rand', 'gleichmaessig'].includes(v) ? v : undefined),
-		format: (c) => c.zoomState,
+		format: (c) => c.targetDisplayState,
 	},
 	{
-		key: 'zoomstatedur',
-		field: 'zoomStateTransitionDuration',
+		key: 'tdstatedur',
+		field: 'targetDisplayStateTransitionDuration',
 		parse: (v) => Math.max(0, Math.min(10, parseFloat(v) ?? 1)),
-		format: (c) => String(c.zoomStateTransitionDuration),
+		format: (c) => String(c.targetDisplayStateTransitionDuration),
 	},
 	// --- Playback-Felder (liegen in playbackStore, nicht configStore) ---
 	// Laufrichtung der Zeit: -1 = rueckwaerts, sonst vorwaerts.

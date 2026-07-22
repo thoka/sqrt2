@@ -19,49 +19,51 @@ const DEFAULTS = {
 	lineWidth: 0.3,
 	pauseDuration: 1.5,
 	playSpeed: 2.0,
-	// Auto-Zoom: Aktivierung (linear, 0=aus/1=an) + Staerke (log-skaliert
-	// ueber levelToPx(), siehe autoZoomLevel.js) - ersetzt das fruehere
-	// Regler-Paar modeAB/autoZoomMinPx (siehe docs/Alternative
-	// Zoom-Steuerung,md). Die resultierende Basisverzerrung ("modeAB")
-	// ist damit KEIN eigenstaendiges Store-Feld mehr, sondern wird in
-	// TargetBankCanvas.svelte JEDEN Frame aus diesen beiden Werten
-	// berechnet.
-	zoomEngagement: 1.0,
-	// zoomLevel bezieht sich auf eine dynamische Ober-/Untergrenze (1px ..
-	// tatsaechlich maximal erreichbare Breite, siehe autoZoomLevel.js/
-	// maxAutoZoomWidthPx() in TargetBankCanvas.svelte) - ein fester
-	// px-Default ergibt daher keinen Sinn mehr, stattdessen ein neutraler
-	// mittlerer Regler-Default.
-	zoomLevel: 0.5,
-	// Abstraktion: manueller, von Auto-Zoom UNABHAENGIGER Regler, der die
-	// Basisverzerrung Richtung 1 erzwingt ("Modus B" aus dem urspruenglichen
-	// README - macht die Stellenwert-Struktur sichtbar), unabhaengig davon,
-	// ob das fuer die Lesbarkeit noetig waere. Kombiniert sich mit dem
-	// Auto-Zoom-Ergebnis per max() in TargetBankCanvas.svelte - linearer
-	// Regler bewusst ohne Formkurve (siehe docs/Alternative
-	// Zoom-Steuerung,md: erst am Regler pruefen, ob eine Kurve noetig ist).
+	// Ziel-Darstellung: Aktivierung (linear, 0=aus/1=an) + Staerke
+	// (log-skaliert ueber levelToPx(), siehe targetDisplayLevel.js) -
+	// ersetzt das fruehere Regler-Paar modeAB/autoZoomMinPx (siehe
+	// docs/Alternative Ziel-Darstellung-Steuerung.md). Die resultierende
+	// Basisverzerrung ("modeAB") ist damit KEIN eigenstaendiges Store-Feld
+	// mehr, sondern wird in TargetBankCanvas.svelte JEDEN Frame aus
+	// diesen beiden Werten berechnet.
+	targetDisplayEngagement: 1.0,
+	// targetDisplayLevel bezieht sich auf eine dynamische Ober-/Untergrenze
+	// (1px .. tatsaechlich maximal erreichbare Breite, siehe
+	// targetDisplayLevel.js/ maxTargetDisplayWidthPx() in
+	// TargetBankCanvas.svelte) - ein fester px-Default ergibt daher keinen
+	// Sinn mehr, stattdessen ein neutraler mittlerer Regler-Default.
+	targetDisplayLevel: 0.5,
+	// Abstraktion: manueller, von Ziel-Darstellung UNABHAENGIGER Regler,
+	// der die Basisverzerrung Richtung 1 erzwingt ("Modus B" aus dem
+	// urspruenglichen README - macht die Stellenwert-Struktur sichtbar),
+	// unabhaengig davon, ob das fuer die Lesbarkeit noetig waere.
+	// Kombiniert sich mit dem Ziel-Darstellung-Ergebnis per max() in
+	// TargetBankCanvas.svelte - linearer Regler bewusst ohne Formkurve
+	// (siehe docs/Alternative Ziel-Darstellung-Steuerung.md: erst am
+	// Regler pruefen, ob eine Kurve noetig ist).
 	abstraction: 0.0,
 
-	// Alternative Rand-Zoom-Steuerung (siehe docs/Alternative
-	// Zoom-Steuerung,md "Schalter-Tweening"): statt der drei einzelnen
-	// Regler (Aktivierung/Abstraktion; zoomLevel bleibt unabhaengig davon
-	// immer als Regler sichtbar) nur 3 diskrete Zustaende zur Auswahl,
-	// weich animiert beim Wechsel (src/lib/zoomStateTween.js). Jetzt
-	// DEFAULT AN (TODO.md "Steuerung": "neue Umschaltung über Zustände zum
-	// Default machen") - die klassischen 2(+1)-Regler bleiben ueber die
-	// Admin-Checkbox weiterhin erreichbar.
-	edgeZoomControlMode: true,
+	// Alternative Rand-Ziel-Darstellung-Steuerung (siehe docs/Alternative
+	// Ziel-Darstellung-Steuerung.md "Schalter-Tweening"): statt der drei
+	// einzelnen Regler (Aktivierung/Abstraktion; targetDisplayLevel bleibt
+	// unabhaengig davon immer als Regler sichtbar) nur 3 diskrete
+	// Zustaende zur Auswahl, weich animiert beim Wechsel (src/lib/
+	// targetDisplayStateTween.js). Jetzt DEFAULT AN (TODO.md "Steuerung":
+	// "neue Umschaltung über Zustände zum Default machen") - die
+	// klassischen 2(+1)-Regler bleiben ueber die Admin-Checkbox weiterhin
+	// erreichbar.
+	edgeTargetDisplayControlMode: true,
 	// 'flaechentreu' | 'rand' | 'gleichmaessig' - nur wirksam, wenn
-	// edgeZoomControlMode true ist.
-	zoomState: 'rand',
+	// edgeTargetDisplayControlMode true ist.
+	targetDisplayState: 'rand',
 	// Dauer (Sekunden) fuer einen KOMPLETTEN Uebergang zwischen 2 Zustaenden
-	// (src/lib/zoomStateTween.js) - Regler "Zustands-Übergang: Dauer" im
-	// Animation-Tab, Bereich 0..10s. Uebergaenge duerfen ruhig lange dauern
-	// (User-Klarstellung) - "ersichtlicher, wann der neue Zustand erreicht
-	// wurde" wird stattdessen durch den abrupten, mechanischen Stopp des
-	// Trapez-Geschwindigkeitsprofils (trapStep() in zoomStateTween.js)
-	// erreicht, nicht durch eine kuerzere Dauer.
-	zoomStateTransitionDuration: 1.0,
+	// (src/lib/targetDisplayStateTween.js) - Regler "Zustands-Übergang:
+	// Dauer" im Animation-Tab, Bereich 0..10s. Uebergaenge duerfen ruhig
+	// lange dauern (User-Klarstellung) - "ersichtlicher, wann der neue
+	// Zustand erreicht wurde" wird stattdessen durch den abrupten,
+	// mechanischen Stopp des Trapez-Geschwindigkeitsprofils (trapStep() in
+	// targetDisplayStateTween.js) erreicht, nicht durch eine kuerzere Dauer.
+	targetDisplayStateTransitionDuration: 1.0,
 	// Flug-Morph: Teile drehen (true) oder nur strecken (false)
 	flightRotation: true,
 	// Transparenz fliegender Stücke (0 = unsichtbar, 1 = deckend)
