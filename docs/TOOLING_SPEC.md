@@ -81,7 +81,7 @@ Jede Phase ist einzeln committ- und testbar - wichtig, damit eine künftige Sitz
 
 **Stand 2026-07-20 (Beschriftung, Nachmittag):** die Achsen-Beschriftung nutzt jetzt ECHTES, gecachtes MathJax statt eines Hand-Nachbaus (`docs/Beschriftung.md`, `docs/DONE.md` "Beschriftung: echtes, gecachtes MathJax") - `@mathjax/src` als neue, aber nur dynamisch importierte Laufzeit-Abhängigkeit (`src/lib/mathJaxRenderer.js`), zwei Cache-Ebenen (In-Memory + IndexedDB, `mathJaxLabelCache.js`/`mathJaxImageCache.js`), kein Fallback-Renderer. Zahlentafel (HUD) bleibt beim eigenen Renderer (`mathCanvasRenderer.js`, jetzt nur noch `layoutScript`/`drawScript`). Alle offenen Punkte aus `docs/Beschriftung.md` sind abgehakt.
 
-**Nächster Schritt:** Branch `todos-abarbeiten` liegt 9 Commits vor `master`, noch nicht gemerged/gepusht (siehe Handover-Hinweis am Ende der Session). Offen: Phase 6 (Politur), Virtual-Canvas/Multi-Viewport-Konzept (TODO.md, noch nicht begonnen), `RemoteControl` als foldbare Route (TODO.md "Fernsteuerung/Connection").
+**Nächster Schritt:** Offen: Phase 6 (Politur), Virtual-Canvas/Multi-Viewport-Konzept (TODO.md, noch nicht begonnen), `RemoteControl` als foldbare Route (TODO.md "Fernsteuerung/Connection"). Rename "Auto-Zoom → Ziel-Darstellung" abgeschlossen (Commits `2c25bd7`, `7173ee7`, `91ad785`), live auf `gh-pages`.
 
 ## 8. Deployment: GitHub Pages (committeter Build, kein CI)
 

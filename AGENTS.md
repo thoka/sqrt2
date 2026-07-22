@@ -118,7 +118,7 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
 10. **Recompile nur bei compile-relevanten Feldern:** `compileOrchestrator.js`
     hat auf JEDE `configStore`-Änderung einen frischen Compile-Job
     gestartet (`runJob`). Reine Laufzeit-Felder (`playSpeed`,
-    `autoZoomMinPx`, `lineWidth`, `pauseDuration`, `modeAB`) dürfen
+    `targetDisplayLevel`, `lineWidth`, `pauseDuration`, `modeAB`) dürfen
     KEINEN teuren Recompile auslösen. Fix: `compileOrchestrator`
     vergleicht einen `compileRelevantKey` (base/depth/transformMode/
     bankZoomThresholdPowers/zoomSpeedCoef/compactionEnabled/
@@ -126,6 +126,13 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
     eines dieser Felder. Beim Hinzufügen eines neuen config-Felds, das
     den Compile beeinflusst: es in `compileRelevantKey` eintragen,
     sonst wird es ignoriert (stiller Fehler).
+11. **Rename Auto-Zoom → Ziel-Darstellung (Stand 2026-07-22):** Alle
+    Store-Felder, URL-Parameter, CSS-Klassen, Dateinamen und UI-Labels
+    wurden umbenannt. GOTCHA: Beim Renamen müssen auch die **Property-Reads
+    aus dem compiled-Store** aktualisiert werden (z.B.
+    `compiled.GLOBAL_AUTO_ZOOM_CHECKPOINTS` →
+    `compiled.GLOBAL_TARGET_DISPLAY_CHECKPOINTS`) - sonst `undefined` → Crash.
+    Spec: `docs/RENAME-ZOOM-TO-TARGET-DISPLAY-SPEC.md`.
 
 ## Stolpersteine (nur diese Sandbox)
 
