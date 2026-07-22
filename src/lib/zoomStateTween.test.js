@@ -153,3 +153,24 @@ test('schnelles Umschalten (Retargeting mitten in der Bewegung) bleibt wertsteti
 
 	await waitUntil(() => Math.abs(get(configStore).abstraction) < 0.01, 3000);
 }, 10000);
+
+// Regression: "Beschleunigung erhoehen" meinte einen ABRUPTEN Stopp am
+// Ziel, nicht ein langsames asymptotisches Ausklingen (User-Klarstellung).
+// Das Trapez-Geschwindigkeitsprofil (trapStep()) bremst dafuer mit
+// begrenzter Beschleunigung ab und kommt dadurch in ENDLICHER Zeit EXAKT
+// mit Geschwindigkeit 0 an - kein Snap noetig (ein frueherer Anlauf mit
+// hartem Snap kurz vor dem Ziel erzeugte selbst wieder einen Wert-/
+// Geschwindigkeitssprung, siehe Kommentar am Dateikopf).
+test('kommt exakt am Zielwert an (abrupter Stopp statt endlosem Ausklingen)', async () => {
+	configStore.set({
+		...BASE,
+		edgeZoomControlMode: true,
+		zoomState: 'flaechentreu',
+		zoomEngagement: 0.42,
+		abstraction: 0.17,
+	});
+	configStore.update((c) => ({ ...c, zoomState: 'gleichmaessig' }));
+
+	await waitUntil(() => get(configStore).abstraction === 1);
+	expect(get(configStore).abstraction).toBe(1);
+}, 10000);

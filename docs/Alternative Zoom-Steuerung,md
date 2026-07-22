@@ -585,3 +585,99 @@ zu verlassen. Verifiziert im Browser: Standardansicht zeigt sofort die 3
 Radios (keine alten Regler mehr sichtbar), ein Uebergang
 (Flaechentreu→Gleichmaessig) settled jetzt in ca. 300ms statt 1-2s, keine
 Konsolenfehler. Tests gruen (dieselben vorbestehenden Fails).
+
+**Korrektur (User, direkt danach):** Missverstaendnis bei der 0,2s-Aenderung
+oben - "Beschleunigung wesentlich erhoehen" war NICHT als "die gesamte
+Uebergangsdauer verkuerzen" gemeint. Zitat: *"Die Übergänge können ruhig
+lange dauern. Die Bewegung im Parameterraum soll aber abrupter stoppen,
+wenn der Zielwert erreicht ist. Das meinte ich mit Beschleunigung. Die
+Geschwindigkeit kann gleich bleiben."* Der Default wurde daraufhin auf
+`1.0` zurueckgesetzt - "Beschleunigung" bezieht sich auf den STOPP am Ziel,
+nicht auf ein pauschal schnelleres Tempo. Siehe naechster Abschnitt fuer
+die daraus resultierenden zwei weiteren Anlaeufe (Spring+Snap, dann
+Trapezprofil).
+
+## Fix-Versuch 2 (verworfen): Feder + harter Snap kurz vor dem Ziel
+
+Um einen abrupten Stopp zu erzeugen, ohne die kritisch gedaempfte Feder
+(siehe oben) komplett zu ersetzen, wurde ein Snap ergaenzt: sobald
+Position/Ziel-Abstand unter einen Schwellwert (`SNAP_EPS`) fiel, wurde
+Position hart auf den Zielwert und Geschwindigkeit hart auf 0 gesetzt -
+gedacht als Abkuerzung des langen asymptotischen Ausklingens einer Feder
+(die formal nie EXAKT ankommt).
+
+**Symptom (User):** *"Das ging nach Hinten los. Jetzt springt die
+Animation deutlich."* Der Snap selbst war wieder ein Sprung in Position
+UND Geschwindigkeit - exakt dieselbe Fehlerklasse, die der
+geschwindigkeitsstetige Treiber ueberhaupt erst beheben sollte (siehe
+CLAUDE.md "Automatisierte Parameteränderungen: stetige Ableitung"), nur an
+einer anderen Stelle (Snap-Punkt statt Retargeting-Punkt) wieder
+eingefuehrt.
+
+**Lehre:** Ein Verfahren, das "abrupter Stopp" durch einen bedingten
+Sprung nahe des Ziels erzwingt, verletzt die C¹-Stetigkeit strukturell -
+unabhaengig davon, wie klein der Schwellwert ist. "Abrupt" muss aus der
+Bewegungsgleichung SELBST folgen (begrenzte Verzoegerung, die in endlicher
+Zeit exakt auf Geschwindigkeit 0 fuehrt), nicht aus einem nachtraeglichen
+Einrasten.
+
+## Fix (final): Trapez-Geschwindigkeitsprofil statt Feder (`trapStep()`)
+
+**Anforderung (User, praezisiert):** *"Bitte so realisieren, wie
+gewünscht: quasie mechanische Bewegung im Parameterraum, mit
+Geschwindigkeit und Beschleunigung."* - ein echtes Doppel-Integrator-Modell
+(Position, Geschwindigkeit UND Beschleunigung als Zustand), keine
+Feder-Approximation mit nachtraeglichem Snap.
+
+**Loesung:** `trapStep(position, velocity, target, maxSpeed, maxAccel, dt)`
+in `src/lib/zoomStateTween.js` ersetzt `springStep()` + `SNAP_EPS`
+vollstaendig. Klassische Bang-Bang-Regelung eines Doppel-Integrators:
+beschleunigt Richtung Ziel bis `maxSpeed` (danach cruisen), bremst mit
+`maxAccel` ab, sobald der verbleibende Weg die Bremsweg-Formel
+`v²/(2·maxAccel)` unterschreitet oder die Bewegung nicht mehr Richtung
+Ziel zeigt. Dadurch:
+
+- Kommt die Bewegung in ENDLICHER Zeit EXAKT mit Geschwindigkeit 0 am Ziel
+  an (kein asymptotisches Ausklingen, kein Snap noetig) - kein Wert- oder
+  Geschwindigkeitssprung an irgendeiner Stelle.
+- Bleibt bei Retargeting MITTEN in der Bewegung durchgehend stetig: die
+  Brems-/Beschleunigungs-ENTSCHEIDUNG wird neu getroffen, Position und
+  Geschwindigkeit selbst laufen unveraendert weiter - das System bremst
+  ab, kehrt ggf. um und beschleunigt Richtung neues Ziel, wie ein reales
+  mechanisches System.
+- Kurze Distanzen (z.B. Retargeting kurz vor dem alten Ziel) bilden
+  automatisch ein Dreiecksprofil (nie `maxSpeed` erreicht, direkt von
+  Beschleunigung in Verzoegerung) - folgt allein aus der Bremsweg-Regel,
+  keine Sonderbehandlung noetig.
+
+**Kalibrierung:** fuer eine volle 0→1-Bewegung (der groesstmoegliche Sprung
+im Embedding) soll die Gesamtzeit ungefaehr `zoomStateTransitionDuration`
+Sekunden betragen, mit Beschleunigungs-/Verzoegerungsphase von je 1/4 der
+Dauer (`ACCEL_PHASE_FRACTION = 0.25`), Rest cruist bei `maxSpeed`.
+Aufgeloest: `maxSpeed = 1 / (0.75 · duration)`, `maxAccel = maxSpeed /
+(0.25 · duration)`.
+
+**Verifiziert:**
+- `tests/unit/zoomStateTween-trap.test.js` (reine `trapStep()`-Logik,
+  `node:test`, ersetzt die fruehere `zoomStateTween-spring.test.js`):
+  monotone Annaeherung ohne Ueberschwingen, EXAKTE Ankunft mit
+  Geschwindigkeit 0 in endlicher Zeit, maxSpeed-Deckel, Geschwindigkeits-
+  Stetigkeit bei Retargeting (Aenderung pro Schritt hoechstens
+  `maxAccel·dt`), exakte Ankunft am NEUEN Ziel nach Richtungswechsel,
+  automatisches Dreiecksprofil bei kurzer Distanz.
+- `src/lib/zoomStateTween.test.js`: alle 8 Integrationstests weiterhin
+  gruen (inkl. "kommt exakt am Zielwert an", jetzt durch die Trapez-
+  Mechanik statt durch einen Snap erfuellt).
+- Manuell im Browser (Playwright, `?debug=1` + `window.__debugSnapshot()`
+  fuer `configStore`-Werte in Echtzeit statt Pixel-Messung): ein
+  Uebergang (Dauer=1,5s) zeigt eine glatte Beschleunigungs-/Cruise-/
+  Brems-Kurve und haelt exakt bei 1.0 an, ohne weiter zu "kriechen".
+  Retargeting mitten in der Bewegung (Flaechentreu→Gleichmaessig, nach
+  400ms auf Rand umgeschaltet) zeigt eine durchgehend stetige Kurve ohne
+  Sprung (max. Aenderung pro ~30ms-Sample: 0,028 fuer engagement, 0,030
+  fuer abstraction - konsistent mit `maxAccel·dt`, kein Ausreisser) - die
+  Bewegung bremst sichtbar ab, kehrt um und laeuft glatt zum neuen Ziel,
+  keine Konsolenfehler.
+- `pnpm test`: 194/202 gruen (dieselben 7 vorbestehenden, unabhaengigen
+  Fails wie am Session-Start), `pnpm check`: 0 Fehler (nur vorbestehende
+  Warnings).

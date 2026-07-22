@@ -10,42 +10,42 @@
 // ein Lautstaerkeregler, der beim Stummschalten seinen Wert behaelt) und
 // ist unabhaengig vom aktiven Zustand jederzeit als eigener Regler nutzbar.
 //
-// TREIBER (2. Anlauf): kritisch gedaempfter Geschwindigkeits-Integrator
-// (Position UND Geschwindigkeit als echter Zustand - "Game Programming
-// Gems 4.8"/Unitys Mathf.SmoothDamp). Der ERSTE Anlauf war bewusst ein
-// einfacherer Ease-Ramp (Fortschritt s, bei Retargeting auf s=0
-// zurueckgesetzt) - User-Entscheidung "einfachere Loesung zuerst". Das
-// erzeugte aber sichtbare "Blitze" beim schnellen Umschalten: s=0
-// bedeutet Geschwindigkeit exakt 0, ein Retargeting waehrend eine
-// Bewegung noch eine REALE Geschwindigkeit hatte, erzeugte also einen
-// Geschwindigkeits-Knick - und weil `engagement`/`abstraction`
-// EXPONENTIELL in die Darstellung eingehen (`BASE^(1-t_AB)`, siehe
-// TargetBankCanvas.svelte), machte sich dieser Knick als sichtbarer
-// Sprung bemerkbar, nicht nur als leichte Unrundheit.
-//
-// Dieser Integrator traegt Geschwindigkeit ECHT ueber jedes Retargeting
-// hinweg fort (nur die ZIEL-Werte aendern sich bei retarget(), Position
-// und Geschwindigkeit laufen unveraendert weiter) - dadurch ist JEDES
-// Retargeting, zu JEDEM Zeitpunkt, garantiert geschwindigkeitsstetig
-// (keine Blitze mehr, beliebig schnelles Hin-und-Herschalten moeglich).
-//
-// smoothTime/maxSpeed werden aus configStore.zoomStateTransitionDuration
-// abgeleitet (Regler "Zustands-Übergang: Dauer" im Animation-Tab, 0..10s):
-// smoothTime steuert das Anfahren/Abbremsen an den Enden, maxSpeed
-// deckelt die Geschwindigkeit dazwischen so, dass eine VOLLE 0->1-Bewegung
-// (der groesstmoegliche Sprung in diesem Embedding) bei konstanter
-// Maximalgeschwindigkeit ungefaehr `duration` Sekunden braucht - der
-// Regler bleibt dadurch als "ungefaehre Uebergangsdauer" interpretierbar,
-// auch wenn die Feder den Zielwert nur asymptotisch (nie exakt exakt)
-// erreicht.
+// TREIBER (3. Anlauf): quasi-mechanisches Trapez-Geschwindigkeitsprofil
+// (Bang-Bang-Regelung eines Doppel-Integrators - Position, Geschwindigkeit
+// UND Beschleunigung als echter Zustand). Die vorherigen zwei Anlaeufe
+// hatten je einen eigenen Bug:
+//   1. Ease-Ramp (Fortschritt s, bei Retargeting auf s=0 zurueckgesetzt) -
+//      Geschwindigkeit sprang bei jedem Retargeting auf 0 -> sichtbare
+//      "Blitze" beim schnellen Umschalten.
+//   2. Kritisch gedaempfte Feder MIT hartem Snap kurz vor dem Ziel (um das
+//      lange asymptotische Ausklingen abzukuerzen) - der Snap selbst war
+//      aber wieder ein Sprung in Position UND Geschwindigkeit ("das ging
+//      nach hinten los", User-Feedback) - Symptom nur verlagert, nicht
+//      behoben.
+// Beide Bugs sind strukturell derselbe Fehler: ein Verfahren, das
+// Position/Geschwindigkeit an IRGENDEINEM Punkt (Retargeting oder Snap)
+// UNSTETIG aendert. Ein Trapezprofil vermeidet das grundsaetzlich:
+// Beschleunigung (anfahren) -> Grenzgeschwindigkeit (cruisen) ->
+// Verzoegerung (abbremsen), Position UND Geschwindigkeit bleiben dabei
+// IMMER stetig, und es kommt in ENDLICHER Zeit EXAKT mit Geschwindigkeit 0
+// am Ziel an (kein asymptotisches Ausklingen, kein Snap noetig). Bei
+// Retargeting mitten in der Bewegung wird nur die BREMS-/BESCHLEUNIGUNGS-
+// ENTSCHEIDUNG neu getroffen (siehe trapStep()) - Position/Geschwindigkeit
+// laufen dabei unveraendert weiter, das System bremst/dreht so um, wie ein
+// reales mechanisches System es taete.
 import { configStore } from './configStore.js';
 
-// Kalibrierungsfaktor smoothTime -> tatsaechliche Einschwingzeit (~1%
-// Restfehler, ausgehend aus der Ruhe): per Simulation ermittelt (siehe
-// docs/Alternative Zoom-Steuerung,md), NICHT 1:1 (eine kritisch gedaempfte
-// Feder braucht laenger als ihre eigene smoothTime, um praktisch am Ziel
-// anzukommen).
-const SETTLE_TIME_FACTOR = 3.65;
+// Kalibrierung: fuer eine VOLLE 0->1-Bewegung (der groesstmoegliche Sprung
+// in diesem Embedding) soll die Gesamtzeit ungefaehr `duration` Sekunden
+// betragen (Regler "Zustands-Übergang: Dauer", 0..10s), mit einem
+// klassischen Trapez-Profil: Beschleunigungs-/Verzoegerungsphase je 1/4
+// der Dauer, Rest cruist bei maxSpeed. Aufgeloest nach maxSpeed/maxAccel
+// (siehe docs/Alternative Zoom-Steuerung,md fuer die Herleitung) - bei
+// sehr kurzen Distanzen (z.B. Retargeting kurz vor dem alten Ziel) wird
+// trapStep() automatisch zu einem Dreiecksprofil (nie maxSpeed erreicht,
+// direkt von Beschleunigung in Verzoegerung), OHNE dass das hier eigens
+// behandelt werden muss - das folgt automatisch aus der Bremsweg-Regel.
+const ACCEL_PHASE_FRACTION = 0.25;
 
 // Preset je Zustand - NUR die Felder angeben, die dieser Zustand
 // tatsaechlich festlegt. "gleichmaessig" laesst engagement bewusst offen
@@ -60,36 +60,51 @@ const ZOOM_STATE_TARGETS = {
 	gleichmaessig: { abstraction: 1 },
 };
 
-// Ein Integrations-Schritt (Position + Geschwindigkeit) - reine Funktion,
-// unabhaengig testbar. Kanonischer SmoothDamp-Algorithmus (Game
-// Programming Gems 4.8): kritisch gedaempft (kein Ueberschwingen bei
-// EINEM Ziel), mit Geschwindigkeitsdeckel (maxSpeed) und expliziter
-// Ueberschwing-Sicherung (verhindert Artefakte, wenn maxSpeed/grosse dt
-// das Ziel sonst "ueberspringen" wuerden).
-export function springStep(value, velocity, target, smoothTime, maxSpeed, dt) {
-	if (dt <= 0) return { value, velocity };
-	smoothTime = Math.max(0.0001, smoothTime);
-	const omega = 2 / smoothTime;
-	const x = omega * dt;
-	const exp = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x);
-	let change = value - target;
-	const originalTarget = target;
+// Ein Bang-Bang-Trapez-Schritt (Position + Geschwindigkeit, Beschleunigung
+// implizit ueber die Entscheidung "beschleunigen/cruisen/bremsen") - reine
+// Funktion, unabhaengig testbar. Regel: bremsen, sobald entweder (a) die
+// Bewegung nicht mehr Richtung Ziel zeigt, oder (b) der verbleibende Weg
+// nicht mehr ausreicht, um mit maxAccel aus der aktuellen Geschwindigkeit
+// exakt zum Stillstand zu kommen (klassische Bremsweg-Formel
+// v²/(2·maxAccel)) - sonst beschleunigen Richtung Ziel (bis maxSpeed
+// erreicht ist, danach cruisen). Kommt dadurch immer EXAKT mit
+// Geschwindigkeit 0 am Ziel an, in endlicher Zeit, ohne Ueberschwingen.
+export function trapStep(position, velocity, target, maxSpeed, maxAccel, dt) {
+	if (dt <= 0) return { position, velocity };
+	let remaining = target - position;
+	if (remaining === 0 && velocity === 0) return { position, velocity };
 
-	const maxChange = maxSpeed * smoothTime;
-	change = Math.max(-maxChange, Math.min(maxChange, change));
-	const clampedTarget = value - change;
+	let towardTarget = Math.sign(remaining) || Math.sign(velocity) || 1;
+	let brakingDistance = (velocity * velocity) / (2 * maxAccel);
+	let movingTowardTarget =
+		velocity === 0 || Math.sign(velocity) === Math.sign(remaining || velocity);
+	let needBraking =
+		velocity !== 0 && (!movingTowardTarget || Math.abs(remaining) <= brakingDistance);
 
-	const temp = (velocity + omega * change) * dt;
-	let newVelocity = (velocity - omega * temp) * exp;
-	let newValue = clampedTarget + (change + temp) * exp;
-
-	// Ueberschwingen verhindern: wenn das Ziel auf dem Weg "ueberholt"
-	// wuerde, stattdessen exakt dort stoppen (Standard-SmoothDamp-Sicherung).
-	if (originalTarget - value > 0 === newValue > originalTarget) {
-		newValue = originalTarget;
-		newVelocity = (newValue - originalTarget) / dt;
+	let accel;
+	if (needBraking) {
+		accel = -Math.sign(velocity) * maxAccel;
+	} else if (Math.abs(velocity) < maxSpeed) {
+		accel = towardTarget * maxAccel;
+	} else {
+		accel = 0; // Grenzgeschwindigkeit erreicht - cruisen.
 	}
-	return { value: newValue, velocity: newVelocity };
+
+	let newVelocity = velocity + accel * dt;
+	if (Math.abs(newVelocity) > maxSpeed) newVelocity = Math.sign(newVelocity) * maxSpeed;
+	let newPosition = position + velocity * dt + 0.5 * accel * dt * dt;
+
+	// Ueberschwingen verhindern: sobald das Ziel ueberschritten/erreicht
+	// wurde (Vorzeichenwechsel des Restwegs) oder wir numerisch nah genug
+	// UND langsam genug sind, exakt dort einrasten (Geschwindigkeit 0).
+	let newRemaining = target - newPosition;
+	let crossedTarget = remaining !== 0 && Math.sign(newRemaining) !== Math.sign(remaining);
+	let numericallyArrived = Math.abs(newRemaining) < 1e-4 && Math.abs(newVelocity) < 1e-3;
+	if (crossedTarget || numericallyArrived) {
+		newPosition = target;
+		newVelocity = 0;
+	}
+	return { position: newPosition, velocity: newVelocity };
 }
 
 let started = false;
@@ -113,34 +128,25 @@ export function initZoomStateTween() {
 	let abstractionVelocity = 0;
 	let targetEngagement = 1.0;
 	let targetAbstraction = 0.0;
-	let smoothTime = 1.0;
 	let maxSpeed = 1.0;
-
-	const SETTLE_EPS = 1e-3;
+	let maxAccel = 1.0;
 
 	function tick(now) {
 		let dt = Math.min(0.1, Math.max(0, (now - lastFrameTime) / 1000));
 		lastFrameTime = now;
 
-		let e = springStep(
-			engagementValue,
-			engagementVelocity,
-			targetEngagement,
-			smoothTime,
-			maxSpeed,
-			dt,
-		);
-		let a = springStep(
+		let e = trapStep(engagementValue, engagementVelocity, targetEngagement, maxSpeed, maxAccel, dt);
+		let a = trapStep(
 			abstractionValue,
 			abstractionVelocity,
 			targetAbstraction,
-			smoothTime,
 			maxSpeed,
+			maxAccel,
 			dt,
 		);
-		engagementValue = e.value;
+		engagementValue = e.position;
 		engagementVelocity = e.velocity;
-		abstractionValue = a.value;
+		abstractionValue = a.position;
 		abstractionVelocity = a.velocity;
 		configStore.update((c) => ({
 			...c,
@@ -148,11 +154,7 @@ export function initZoomStateTween() {
 			abstraction: abstractionValue,
 		}));
 
-		let settled =
-			Math.abs(engagementValue - targetEngagement) < SETTLE_EPS &&
-			Math.abs(engagementVelocity) < SETTLE_EPS &&
-			Math.abs(abstractionValue - targetAbstraction) < SETTLE_EPS &&
-			Math.abs(abstractionVelocity) < SETTLE_EPS;
+		let settled = engagementValue === targetEngagement && abstractionValue === targetAbstraction;
 		if (settled) {
 			rafId = null;
 			return;
@@ -162,16 +164,12 @@ export function initZoomStateTween() {
 
 	function retarget(c, now) {
 		let duration = Math.max(0.05, c.zoomStateTransitionDuration ?? 1.0);
-		// smoothTime ist NICHT direkt "duration" - eine kritisch gedaempfte
-		// Feder braucht empirisch (per Simulation ermittelt) ca. das 3.65-
-		// fache von smoothTime, um auf ~1% Restfehler zu kommen. Ohne diese
-		// Umrechnung waere der Regler "Zustands-Übergang: Dauer" grob falsch
-		// kalibriert (ein voller 0->1-Uebergang dauerte ca. 3.65x laenger als
-		// eingestellt). maxSpeed bewusst grosszuegig (nicht an duration
-		// gekoppelt) - dient nur als Sicherheitsnetz gegen extreme
-		// Geschwindigkeiten bei sehr kurzen Dauern, bindet im Normalfall nicht.
-		smoothTime = duration / SETTLE_TIME_FACTOR;
-		maxSpeed = 20;
+		// Herleitung (volle 0->1-Bewegung, Trapezprofil mit
+		// Beschleunigungs-/Verzoegerungsphase von je ACCEL_PHASE_FRACTION*
+		// duration): siehe docs/Alternative Zoom-Steuerung,md.
+		let accelTime = duration * ACCEL_PHASE_FRACTION;
+		maxSpeed = 1 / (duration - accelTime);
+		maxAccel = maxSpeed / accelTime;
 		let preset = ZOOM_STATE_TARGETS[c.zoomState] ?? ZOOM_STATE_TARGETS.rand;
 
 		if (rafId === null) {
@@ -181,7 +179,10 @@ export function initZoomStateTween() {
 			// einer veralteten Position aus starten. WAEHREND einer laufenden
 			// Bewegung (rafId !== null) passiert das explizit NICHT - Position
 			// UND Geschwindigkeit laufen unveraendert weiter, nur die Ziele
-			// aendern sich (das ist der eigentliche Fix gegen die "Blitze").
+			// aendern sich (trapStep() entscheidet dann neu, ob weiter
+			// beschleunigt oder gebremst/umgedreht werden muss - genau wie ein
+			// reales mechanisches System, das seine Meinung mitten in der
+			// Bewegung aendert).
 			engagementValue = c.zoomEngagement;
 			engagementVelocity = 0;
 			abstractionValue = c.abstraction;

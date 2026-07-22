@@ -56,12 +56,12 @@ const DEFAULTS = {
 	zoomState: 'rand',
 	// Dauer (Sekunden) fuer einen KOMPLETTEN Uebergang zwischen 2 Zustaenden
 	// (src/lib/zoomStateTween.js) - Regler "Zustands-Übergang: Dauer" im
-	// Animation-Tab, Bereich 0..10s. Bewusst kurz (TODO.md "Steuerung":
-	// "Beschleunigung wesentlich erhoehen, Geschwindigkeit kann gerne
-	// gefuehlt instantan erreicht werden") - macht deutlicher erkennbar,
-	// wann der neue Zustand erreicht wurde, bleibt aber dank des
-	// geschwindigkeitsstetigen Treibers weiterhin ohne "Blitze".
-	zoomStateTransitionDuration: 0.2,
+	// Animation-Tab, Bereich 0..10s. Uebergaenge duerfen ruhig lange dauern
+	// (User-Klarstellung) - "ersichtlicher, wann der neue Zustand erreicht
+	// wurde" wird stattdessen durch den abrupten, mechanischen Stopp des
+	// Trapez-Geschwindigkeitsprofils (trapStep() in zoomStateTween.js)
+	// erreicht, nicht durch eine kuerzere Dauer.
+	zoomStateTransitionDuration: 1.0,
 	// Flug-Morph: Teile drehen (true) oder nur strecken (false)
 	flightRotation: true,
 	// Transparenz fliegender Stücke (0 = unsichtbar, 1 = deckend)
