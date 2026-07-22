@@ -58,7 +58,7 @@ Die in §2 der ursprünglichen Version geplanten Punkte sind **hier bereits erf�
    Canvas-Rendering + Rest-Widget + BroadcastChannel-Sync ab (3 Tests grün).
 
 ### Was das freischaltet (bereits aktiv)
-- Visuelle Korrektheit (Canvas-Skalierung, Loop-Sync, Auto-Zoom, Grid-Platzierung)
+- Visuelle Korrektheit (Canvas-Skalierung, Loop-Sync, Ziel-Darstellung, Grid-Platzierung)
   per Playwright testbar.
 - Vite 8 / Rolldown kann neu bewertet werden (Risiko "kein visueller Check"
   entfällt) - aber Migration ist erledigt, Sprung nicht mehr nötig.

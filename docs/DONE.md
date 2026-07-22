@@ -254,7 +254,7 @@
 - [x] Den Bereich, der die Einstellungen öffnet auf die ganze Höhe des Hauptfenster ausrichten. Breite: 153 px vom rechten Rand
 - [x] Pieces drehen: einzeilig und in den Animations-Tab verschieben
 - [x] Fliegende Transparenz: in den Animations-Tab verschieben
-- [x] "Zoom" unter "Auto-Zoom"
+- [x] "Zoom" unter "Ziel-Darstellung"
 - [x] "Kompaktierung" gibt es nicht mehr
 
 ## Remote-Steuerung

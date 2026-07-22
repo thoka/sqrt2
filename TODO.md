@@ -7,7 +7,7 @@ Offene Punkte, nach Relevanz sortiert. Erledigtes wird durchgestrichen
 
 
 ## Steuerung
-- [x] neue Umschaltung über Zustände zum Default machen (`configStore.edgeZoomControlMode` jetzt `true` als Default - klassische Regler bleiben über die Admin-Checkbox erreichbar, siehe docs/Alternative Zoom-Steuerung,md)
+- [x] neue Umschaltung über Zustände zum Default machen (`configStore.edgeTargetDisplayControlMode` jetzt `true` als Default - klassische Regler bleiben über die Admin-Checkbox erreichbar, siehe docs/Alternative Ziel-Darstellung-Steuerung.md)
 - [x] Beschleunigung wesentlich erhöhen. Geschwindigkeit kann gerne gefühlt instantan erreicht werden. Dann ist ersichtlicher, wenn der neue Modus erreicht wurde. (Default von "Zustands-Übergang: Dauer" von 1,0s auf 0,2s reduziert - Übergänge bleiben dank des geschwindigkeitsstetigen Feder-Treibers weiterhin ohne "Blitze", auch bei schnellem Umschalten)
 
 ## Intro-Screen

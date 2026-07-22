@@ -65,10 +65,10 @@ Lass uns die Einstellungen / die Remote-Steuerung aufräumen
      Timeline** in `#bottomBar`; **grauer** Knopf (nicht auffällig), mit
      kleiner **numerischer Anzeige (2 Nachkommastellen, `xx,xx×`,
      weiß/grau wie die Zeit-Angabe)** direkt dahinter.
-   - **Auto-Zoom Mindestpixelgröße:** war eine px-`number`-Eingabe, ist jetzt
+   - **Ziel-Darstellung Mindestpixelgröße:** war eine px-`number`-Eingabe, ist jetzt
      ein **logarithmischer Schieberegler 0.001 … 100 px** (Mapping
      `v = 0.001·(100/0.001)^t`). Ganz nach links (v < 1.5·0.001) wird
-     effektiv auf **0** gesetzt → deaktiviert den Auto-Zoom
+     effektiv auf **0** gesetzt → deaktiviert die Ziel-Darstellung
      (`AUTO_ZOOM_MIN_PX <= 0`). Readout mit 3 Nachkommastellen
      (`0,001 px` / `0,000 px`).
 
@@ -399,9 +399,9 @@ Verifikation:
    - [x] Basis (b) -> "Basis"
    - [x] Tiefe ($n_{max}$) -> "Tiefe"
    - [x] Modus B (modeAB) -> "Zoom"
-   - [x] Auto-Zoom: Mindestbreite feinste Stelle (Pixel, 0 = aus) -> "Auto-Zoom: Mindestbreite (px)"
+   - [x] Ziel-Darstellung: Mindestbreite feinste Stelle (Pixel, 0 = aus) -> "Ziel-Darstellung: Mindestbreite (px)"
          - gleiches Widget in Remote-Steuerung UND Config nutzen, inkl.
-           Anzeige, wenn Auto-Zoom den Zoom-Regler übersteuert
+           Anzeige, wenn Ziel-Darstellung den Zoom-Regler übersteuert
    - [x] Kompaktierung (compactionEnabled) -> "Kompaktierung"
          - wenn eingeschaltet: Zoom-Schwellwert (Admin) ausgegraut
    - [x] Kompaktierung: Übergangsdauer (Ticks) -> "Übergangsdauer (Ticks)"

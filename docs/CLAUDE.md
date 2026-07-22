@@ -10,7 +10,7 @@ Ableitung geändert (mindestens C¹: kein Sprung in Wert ODER Steigung).
 **Warum:** Ein reiner Wert-Sprung (C⁰) sieht ruckartig aus; ein Kink in der
 Steigung (Wert stetig, aber Ableitung springt) wirkt subtiler, ist aber im
 bewegten Bild trotzdem als Ruckeln wahrnehmbar - beides in diesem Projekt
-mehrfach konkret aufgetreten (Auto-Zoom-Exponent, Bank-Zoom, Play/Pause-
+mehrfach konkret aufgetreten (Ziel-Darstellungs-Exponent, Bank-Zoom, Play/Pause-
 Resume-Sprung durch veraltetes `lastTime`).
 
 **Wie anwenden:** Bevor für eine neue automatisierte Bewegung eine Ad-hoc-
@@ -59,7 +59,7 @@ mit drei bewusst unterschiedlichen Bausteinen je nach Anforderung:
    Fix: `buildMonotoneSpline()` trifft jeden Stützpunkt exakt und ohne
    Verzögerung - das allein reicht bereits als Garantie, sofern die
    Stützpunkt-Werte selbst monoton sind (kein zusätzlicher "harter"
-   Parallel-Wert mehr nötig, siehe `sqrt2.html` Auto-Zoom-Historie). **NICHT
+   Parallel-Wert mehr nötig, siehe `sqrt2.html` Ziel-Darstellung-Historie). **NICHT
    für Werte verwenden, die nur asymptotisch folgen müssen** - dafür
    `buildDampedFilter()`, siehe Punkt 4.
 2. **Gebrochene Ordnungstreue zwischen mehreren Werten:** Wenn MEHRERE Werte

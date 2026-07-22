@@ -1,13 +1,25 @@
-# Alternative (Rand-) Zoom-Steuerung
+# Alternative (Rand-) Ziel-Darstellungs-Steuerung
 
-Lass uns eine andere Rand-Zoom-Steuerung ausprobieren (d.h. ein- und ausschaltbar über eine Checkbox im Admin-Tab).
+> **Hinweis (2026-07-22):** Die in diesem Dokument beschriebenen Store-Felder
+> und Dateinamen wurden im Rename "Auto-Zoom → Ziel-Darstellung" umbenannt
+> (Commit `2c25bd7`). Alte Namen → neue Namen:
+> `zoomEngagement` → `targetDisplayEngagement`,
+> `zoomLevel` → `targetDisplayLevel`,
+> `edgeZoomControlMode` → `edgeTargetDisplayControlMode`,
+> `zoomState` → `targetDisplayState`,
+> `zoomStateTransitionDuration` → `targetDisplayStateTransitionDuration`,
+> `autoZoomLevel.js` → `targetDisplayLevel.js`,
+> `zoomStateTween.js` → `targetDisplayStateTween.js`,
+> `autoZoomMaxPxStore` → `targetDisplayMaxPxStore`.
 
-Momentan hat der Nutzer zwei Schieberegler zur Steuerung des Zooms.
+Lass uns eine andere Rand-Ziel-Darstellungs-Steuerung ausprobieren (d.h. ein- und ausschaltbar über eine Checkbox im Admin-Tab).
 
-Alternativ könnte die Steuerung nur zwischen drei Zuständen verstellen (vie Radio-Button oder Später physischem Drei-Stufen schalter):
-- Flächentreu (entspricht Zoom aus / Autozoom ganz links)
+Momentan hat der Nutzer zwei Schieberegler zur Steuerung der Ziel-Darstellung.
+
+Alternativ könnte die Steuerung nur zwischen drei Zuständen verstellen (wie Radio-Button oder später physischem Drei-Stufen-Schalter):
+- Flächentreu (entspricht Ziel-Darstellung aus / ganz links)
 - Rand sichtbar (jetziger Schieberegler bleibt, aber im Animation-Tab)
-- Gleichmäßig (entspricht Autozoom ganz rechts)
+- Gleichmäßig (entspricht Ziel-Darstellung ganz rechts)
 
 Die Übergänge dazwischen sollen allerdings weich animiert sein.
 Wir bräuchten einen allgemeinen Parameter-Tweener für die Animationen.
@@ -68,8 +80,8 @@ Ziel dieses Versuchs ist  über Konzentration auf die wesentliche Funktionalitä
     Zeitpunkt, per Konstruktion C1 (siehe Modul-Kopfkommentar fuer die
     volle Begruendung inkl. Abgrenzung zu `buildDampedFilter()`).
 
-  - **Treiber-Modul `src/lib/zoomStateTween.js`:** beobachtet
-    `edgeZoomControlMode`/`zoomState`, animiert bei Aenderung
+  - **Treiber-Modul `src/lib/targetDisplayStateTween.js`:** beobachtet
+    `edgeTargetDisplayControlMode`/`targetDisplayState`, animiert bei Aenderung
     `modeAB`/`autoZoomMinPx` per `createSpringTween()` (Uebergangsdauer
     `SMOOTH_TIME = 0.35s`) auf das Preset des neuen Zustands, per rAF-
     Schleife nur waehrend eine Animation tatsaechlich laeuft (stoppt
@@ -83,7 +95,7 @@ Ziel dieses Versuchs ist  über Konzentration auf die wesentliche Funktionalitä
 
   - **URL-Zustand:** drei neue Parameter analog zu den bestehenden
     `modeab`/`autozoom` (siehe `src/lib/urlState.js`): `altzoom`
-    (`edgeZoomControlMode`), `zoomstate` (`zoomState`), `randzoom`
+    (`edgeTargetDisplayControlMode`), `tdstate` (`targetDisplayState`), `randzoom`
     (`randZoomLevel`) - ein geteilter Link reproduziert damit auch den
     gewaehlten Zoom-Zustand.
 
@@ -94,7 +106,7 @@ Ziel dieses Versuchs ist  über Konzentration auf die wesentliche Funktionalitä
     einen eigenen zu erfinden.
 
   - **Tests:** `tests/unit/paramTween.test.js` (reine Feder-Mathematik,
-    `node:test`), `src/lib/zoomStateTween.test.js` (Treiber-Verhalten inkl.
+    `node:test`), `src/lib/targetDisplayStateTween.test.js` (Treiber-Verhalten inkl.
     Retargeting/Stop-bei-Ausschalten, `vitest`/jsdom - braucht
     `requestAnimationFrame`, das `node:test` nicht bereitstellt),
     `tests/unit/url-state.test.js` (neue Parameter,
@@ -231,29 +243,29 @@ aufsetzen - nicht umgekehrt (nicht "optional hinterher"). Umgesetzt in
 zwei Schritten:
 
 1. **Beerdigt** (Commit "Feder-basierte Zoom-Zustands-Steuerung
-   beerdigt"): `src/lib/paramTween.js`, `src/lib/zoomStateTween.js`
-   (+Tests), die Store-Felder `edgeZoomControlMode`/`zoomState`/
+   beerdigt"): `src/lib/paramTween.js`, `src/lib/targetDisplayStateTween.js`
+   (+Tests), die Store-Felder `edgeTargetDisplayControlMode`/`targetDisplayState`/
    `randZoomLevel`, die zugehoerige Radio-/Feinregler-UI, die
    URL-Parameter `altzoom`/`zoomstate`/`randzoom`. Alles bleibt in der
    Git-Historie (`bb14495`..`f69faa9`) auffindbar, nur nicht mehr Teil
    des aktuellen Codes.
-2. **Neu aufgebaut** (Commit "Grundlegender Umbau: zoomEngagement/
-   zoomLevel statt modeAB+autoZoomMinPx"):
+2. **Neu aufgebaut** (Commit "Grundlegender Umbau: targetDisplayEngagement/
+   targetDisplayLevel statt modeAB+autoZoomMinPx"):
    - `configStore.modeAB`/`configStore.autoZoomMinPx` ersetzt durch
-     `configStore.zoomEngagement` (linear 0..1, "ist Auto-Zoom aktiv")
-     + `configStore.zoomLevel` (log-skaliert 0..1, "wie aggressiv, wenn
-     aktiv"). Neues Modul `src/lib/autoZoomLevel.js`
+     `configStore.targetDisplayEngagement` (linear 0..1, "ist Ziel-Darstellung aktiv")
+     + `configStore.targetDisplayLevel` (log-skaliert 0..1, "wie aggressiv, wenn
+     aktiv"). Neues Modul `src/lib/targetDisplayLevel.js`
      (`levelToPx()`/`pxToLevel()`) als einzige Quelle dieser Abbildung.
    - **Beide bewusst als stufenlose Regler**, KEINE Checkbox fuer
      `engagement` (User-Entscheidung, siehe oben) - Grundeinstellungen
-     zeigt "Auto-Zoom: Aktivierung" + "Auto-Zoom: Stärke".
+     zeigt "Ziel-Darstellung: Aktivierung" + "Ziel-Darstellung: Stärke".
    - `TargetBankCanvas.svelte`: die resultierende Basisverzerrung
      (frueher `modeAB`) ist KEIN eigenstaendiges Store-Feld mehr,
-     sondern wird JEDEN Frame aus `zoomEngagement` und
-     `computeAutoZoomTAB(levelToPx(zoomLevel), scale, targetExp)`
+     sondern wird JEDEN Frame aus `targetDisplayEngagement` und
+     `computeTargetDisplayTAB(levelToPx(targetDisplayLevel), scale, targetExp)`
      berechnet (Details/Korrektur siehe Bug-Eintrag unten) - kein
      `max()` mit einem separat gesetzten manuellen Wert mehr, damit auch
-     keine "Auto-Zoom uebersteuert den Regler"-Anzeige mehr noetig
+     keine "Ziel-Darstellung uebersteuert den Regler"-Anzeige mehr noetig
      (strukturell unmoeglich geworden, nicht nur ausgeblendet -
      `autoZoomMarker`/`autoZoomNote` entfernt).
    - `urlState.js`: `modeab`/`autozoom` ersetzt durch
@@ -274,13 +286,13 @@ NICHT vorentschieden, siehe dort.
 
 ## Bug (gefunden beim ersten Ausprobieren des Umbaus): `engagement` viel zu sensibel (behoben)
 
-**Symptom (User):** der "Auto-Zoom: Aktivierung"-Regler wirkt viel zu
+**Symptom (User):** der "Ziel-Darstellung: Aktivierung"-Regler wirkt viel zu
 schnell - schon 1% Aktivierung macht einen gewaltigen Unterschied.
 
 **Root Cause (nachgerechnet mit den echten Formeln aus
 `computeAutoZoomTAB`):** die urspruengliche Umsetzung multiplizierte
 `engagement` auf den ROHEN Pixel-Schwellwert (`effectivePx = engagement
-* levelToPx(zoomLevel)`). Die natuerliche (unverzerrte) Breite der
+* levelToPx(targetDisplayLevel)`). Die natuerliche (unverzerrte) Breite der
 gerade relevanten Ziffernstelle (`widthAt(0)` in `computeAutoZoomTAB`)
 schrumpft waehrend der Wiedergabe aber ueber viele Groessenordnungen:
 
@@ -309,7 +321,7 @@ let effective_t_AB = zoomEngagement * autoZoomTAB;
 ```
 
 Damit ist `engagement` ein robuster linearer Blend zwischen "kein Zoom"
-und "voll berechneter Auto-Zoom fuer das aktuelle `level`" -
+und "voll berechneter Ziel-Darstellung fuer das aktuelle `level`" -
 unabhaengig davon, wie tief die Wiedergabe gerade ist.
 
 **Verifikation:** manuell im Browser (Playwright/Screenshots, tief in
@@ -327,15 +339,15 @@ angewandte Formkurve) der richtige Ort fuer eine Idee wie den
 urspruenglich vorgeschlagenen `(1-e^-x)`-Ansatz - nicht auf dem rohen
 Schwellwert wie im ersten Versuch.
 
-## Bug (User-Feedback nach dem engagement-Fix): toter Regelbereich bei "Auto-Zoom: Stärke" + unzureichende Gleichmässigkeit
+## Bug (User-Feedback nach dem engagement-Fix): toter Regelbereich bei "Ziel-Darstellung: Stärke" + unzureichende Gleichmässigkeit
 
 **Feedback:** Der engagement-Fix fühlt sich gut an. Zwei Folgepunkte:
 
-1. **`zoomLevel` muss nicht mehr unter 1px regelbar sein** - das
-   "ist ueberhaupt aktiv"-Bedürfnis deckt jetzt `zoomEngagement` ab,
-   `zoomLevel` deckt nur noch "wie aggressiv, wenn aktiv" ab.
+1. **`targetDisplayLevel` muss nicht mehr unter 1px regelbar sein** - das
+   "ist ueberhaupt aktiv"-Bedürfnis deckt jetzt `targetDisplayEngagement` ab,
+   `targetDisplayLevel` deckt nur noch "wie aggressiv, wenn aktiv" ab.
 2. **Toter Regelbereich (schon vor dieser Session vorhanden):** ein Teil
-   des "Auto-Zoom: Stärke"-Reglers bewirkt gar nichts. Besser: der Regler
+   des "Ziel-Darstellung: Stärke"-Reglers bewirkt gar nichts. Besser: der Regler
    soll zwischen Minimum (Position 0 → 1px) und Maximum (Position 1 →
    maximal erreichbare Breite) laufen, weiterhin monoton und mindestens
    C1-stetig über die gesamte Wiedergabe.
@@ -368,7 +380,7 @@ GROSSER Schalenanzahl witzlos WEIT DARUEBER (nichts oberhalb des
 tatsaechlichen Maximums aendert noch etwas). **Beide gemeldeten Probleme
 haben dieselbe Ursache** und werden durch denselben Fix behoben.
 
-**Fix (geplant):** `levelToPx()`/`pxToLevel()` in `autoZoomLevel.js`
+**Fix (geplant):** `levelToPx()`/`pxToLevel()` in `targetDisplayLevel.js`
 bekommen ein dynamisches `maxPx` (statt eines festen `AUTO_ZOOM_LEVEL_HI_PX`)
 - berechnet als `widthAt(1, scale, 0)` (targetExp irrelevant, siehe oben)
 in `TargetBankCanvas.svelte`, unveraendert waehrend der Wiedergabe (haengt
@@ -376,20 +388,20 @@ nur von Konfiguration/Fenstergroesse ab, nicht von der Zeit - erfuellt
 damit automatisch "C1-stetig ueber die ganze Animation", weil es sich
 waehrend einer Wiedergabe schlicht nicht aendert). Neue feste Untergrenze
 `AUTO_ZOOM_LEVEL_MIN_PX = 1`. Der berechnete Maximalwert wird ueber einen
-neuen Store (`autoZoomMaxPxStore` in `autoZoomLevel.js`) an
+neuen Store (`targetDisplayMaxPxStore` in `targetDisplayLevel.js`) an
 `ControlPanel.svelte` durchgereicht (nur bei tatsaechlicher Aenderung
 geschrieben, kein Store-Churn pro Frame).
 
-**Status: umgesetzt.** `src/lib/autoZoomLevel.js`:
+**Status: umgesetzt.** `src/lib/targetDisplayLevel.js`:
 `levelToPx()`/`pxToLevel()` nehmen jetzt `maxPx` entgegen (Default
 `FALLBACK_MAX_PX=100` fuer den Fall vor dem ersten Render), feste
 Untergrenze `AUTO_ZOOM_LEVEL_MIN_PX=1`, neuer Store
-`autoZoomMaxPxStore`. `TargetBankCanvas.svelte`: `widthAt()` aus
+`targetDisplayMaxPxStore`. `TargetBankCanvas.svelte`: `widthAt()` aus
 `computeAutoZoomTAB()` herausgeloest, neue Funktion
 `maxAutoZoomWidthPx(scale) = widthAt(1, scale, 0)`, pro Frame berechnet
 (billig) und nur bei tatsaechlicher Aenderung an den Store gemeldet.
 `ControlPanel.svelte` liest den Store fuer das px-Readout.
-`configStore`-Default fuer `zoomLevel` ist jetzt ein neutraler
+`configStore`-Default fuer `targetDisplayLevel` ist jetzt ein neutraler
 Reglerwert (0.5) statt eines aus einem festen px-Wert abgeleiteten
 Defaults.
 
@@ -409,36 +421,36 @@ Defaults.
 ## Dritter Regler: "Abstraktion" (manueller Basis-b→1-Override)
 
 **Idee (User):** mit `engagement`/`level` sauber aufgeraeumt, fehlt noch
-ein DRITTER, von Auto-Zoom unabhaengiger Regler fuer "Abstraktion
+ein DRITTER, von Ziel-Darstellung unabhaengiger Regler fuer "Abstraktion
 einschalten" (Basis Richtung 1 fuer ALLE Ziffernstellen) - das ist
 inhaltlich der urspruengliche "Modus B" aus dem README ("Regler fuer
 'hypothetische Basis b→1' - verzerrt NUR das Ziel, macht Stellenwert-
 Struktur sichtbar"), nur jetzt als eigener, sauber getrennter Regler statt
-als Store-Feld, das mit Auto-Zoom vermischt war.
+als Store-Feld, das mit Ziel-Darstellung vermischt war.
 
 **Entscheidung:** `abstraction` ist EBENFALLS ein stufenloser linearer
 Regler (keine Formkurve, analog zu `engagement` - erst empirisch pruefen,
 ob eine Kurve noetig ist, bevor eine gebaut wird).
 
 **Korrektur (User, nach erstem Ausprobieren): `max()` war die falsche
-Kombination.** Ein `max()`-Floor wird wirkungslos, sobald der Auto-Zoom-
+Kombination.** Ein `max()`-Floor wird wirkungslos, sobald der Ziel-Darstellung-
 Anteil bereits ueber dem Reglerwert liegt - genau das passiert spaet in
-der Wiedergabe (Auto-Zoom zoomt dort ohnehin schon stark), sodass der
+der Wiedergabe (Ziel-Darstellung zoomt dort ohnehin schon stark), sodass der
 Regler dann nur noch auf der letzten Strecke von [0,1] ueberhaupt etwas
 bewirkte. Das ist exakt dasselbe "eine Steuerung uebersteuert die andere
 ueber einen Teil ihres Bereichs"-Problem, das schon die alte
-`modeAB`/`autoZoomMinPx`-Kombination hatte ("Auto-Zoom aktiv -
+`modeAB`/`autoZoomMinPx`-Kombination hatte ("Ziel-Darstellung aktiv -
 uebersteuert den Regler nach oben").
 
-**Fix:** lineare Mischung zwischen dem Auto-Zoom-Ergebnis (bei
+**Fix:** lineare Mischung zwischen dem Ziel-Darstellung-Ergebnis (bei
 `abstraction=0`) und 1 (bei `abstraction=1`) statt `max()` - dadurch
 bewirkt der Regler IMMER eine proportionale Aenderung, unabhaengig vom
-aktuellen Auto-Zoom-Stand:
+aktuellen Ziel-Darstellung-Stand:
 
 ```js
-let autoZoomTAB = computeAutoZoomTAB(levelToPx(zoomLevel, maxWidthPx), scale, autoZoomTargetExp);
-let autoZoomComponent = zoomEngagement * autoZoomTAB;
-let effective_t_AB = autoZoomComponent + abstraction * (1 - autoZoomComponent);
+let targetDisplayTAB = computeTargetDisplayTAB(levelToPx(targetDisplayLevel, maxWidthPx), scale, targetDisplayTargetExp);
+let targetDisplayComponent = targetDisplayEngagement * targetDisplayTAB;
+let effective_t_AB = targetDisplayComponent + abstraction * (1 - targetDisplayComponent);
 ```
 
 Randwerte bleiben erhalten: `abstraction=0` liefert exakt das
@@ -457,7 +469,7 @@ zuerst sauber umgebaut wurde (User-Vorgabe: "erst der grundlegende Umbau
 und nicht optional hinterher"). Umsetzung der Bausteine aus `CLAUDE.md`
 Abschnitt "Schalter-Tweening":
 
-  - **Embedding:** NUR `zoomEngagement` + `abstraction` (2D) - `zoomLevel`
+   - **Embedding:** NUR `targetDisplayEngagement` + `abstraction` (2D) - `targetDisplayLevel`
     bleibt bewusst AUSSERHALB, in KEINEM der 3 Presets festgelegt, bleibt
     also beim Zustandswechsel unveraendert stehen (wie ein Lautstaerke-
     regler, der beim Stummschalten seinen Wert behaelt) und ist
@@ -485,17 +497,17 @@ Abschnitt "Schalter-Tweening":
     Trade-off), der WERT selbst bleibt aber C0-stetig, weil "von" immer
     der aktuelle Live-Wert aus `configStore` ist.
 
-**Neues Modul `src/lib/zoomStateTween.js`** (frischer, einfacher Code -
+**Neues Modul `src/lib/targetDisplayStateTween.js`** (frischer, einfacher Code -
 NICHT die beerdigte Feder-Implementierung wiederbelebt). Registriert ueber
 `initZoomStateTween()` in `TargetBankCanvas.svelte` `onMount()`.
 
 **ControlPanel.svelte:** Admin-Checkbox "Alternative Rand-Zoom-Steuerung"
-(`edgeZoomControlMode`). Grundeinstellungen: bei aktivem Alt-Modus
+(`edgeTargetDisplayControlMode`). Grundeinstellungen: bei aktivem Alt-Modus
 ersetzen 3 Radio-Buttons (Flächentreu/Rand sichtbar/Gleichmäßig) die
-Regler "Aktivierung" und "Abstraktion" - "Auto-Zoom: Stärke" bleibt
+Regler "Aktivierung" und "Abstraktion" - "Ziel-Darstellung: Stärke" bleibt
 UNABHAENGIG vom Zustand immer sichtbar (ist ja nicht Teil des Embeddings).
 
-**Verifiziert:** 5 Tests in `src/lib/zoomStateTween.test.js` (vitest/jsdom,
+**Verifiziert:** 5 Tests in `src/lib/targetDisplayStateTween.test.js` (vitest/jsdom,
 braucht `requestAnimationFrame`), 2 neue Tests in `ControlPanel.test.js`
 (Admin-Checkbox, Radio-UI ersetzt Regler), neue URL-Parameter-Tests.
 Manuell im Browser (Playwright/Screenshots): alle 3 Zustaende anwaehlbar,
@@ -524,7 +536,7 @@ nur als leichte Unrundheit - genau das war urspruenglich vereinbart
 geschaltet werden kann"), aber bewusst als "aufwaendigere Variante spaeter"
 zurueckgestellt worden.
 
-**Fix:** `src/lib/zoomStateTween.js` nutzt jetzt einen kritisch gedaempften
+**Fix:** `src/lib/targetDisplayStateTween.js` nutzt jetzt einen kritisch gedaempften
 Geschwindigkeits-Integrator (Position UND Geschwindigkeit als echter
 Zustand - "Game Programming Gems 4.8"/Unitys `Mathf.SmoothDamp`, exportiert
 als `springStep()`). Position/Geschwindigkeit laufen bei einem Retargeting
@@ -549,11 +561,11 @@ dient nur als Sicherheitsnetz gegen extreme Geschwindigkeiten bei sehr
 kurzen Dauern, bindet im Normalfall nicht.
 
 **Verifiziert:**
-- `tests/unit/zoomStateTween-spring.test.js` (reine `springStep()`-Logik,
+- `tests/unit/targetDisplayStateTween-spring.test.js` (reine `springStep()`-Logik,
   `node:test`): monotone Annaeherung ohne Ueberschwingen, Geschwindigkeit
   bleibt bei Retargeting erhalten (Regressionstest gegen die "Blitze"),
   maxSpeed-Deckel wird eingehalten, Ankunft aus der Ruhe.
-- `src/lib/zoomStateTween.test.js`: neuer Regressionstest "schnelles
+- `src/lib/targetDisplayStateTween.test.js`: neuer Regressionstest "schnelles
   Umschalten... bleibt wertstetig" + Duration-Kalibrierungstest.
 - Manuell im Browser (Playwright, Pixel-Messung der Ziel-Quadrat-Breite):
   ein einzelner Uebergang (Dauer=1s) laeuft glatt ueber ca. 1.5-2s
@@ -566,20 +578,20 @@ kurzen Dauern, bindet im Normalfall nicht.
 
 Zwei passende, bereits vorgemerkte Punkte aus `TODO.md` direkt umgesetzt:
 
-- **`edgeZoomControlMode` jetzt `true` als Default** - die 3-Zustaende-
+- **`edgeTargetDisplayControlMode` jetzt `true` als Default** - die 3-Zustaende-
   Radio-UI ist das, was Besucher:innen sofort sehen. Der klassische
   Regler-Modus (Aktivierung/Staerke/Abstraktion) bleibt ueber die
   Admin-Checkbox weiterhin voll erreichbar, nur nicht mehr die
   Voreinstellung.
-- **`zoomStateTransitionDuration`-Default von 1,0s auf 0,2s reduziert**
+- **`targetDisplayStateTransitionDuration`-Default von 1,0s auf 0,2s reduziert**
   ("Beschleunigung wesentlich erhoehen... gefuehlt instantan") - macht
   sofort ersichtlich, dass ein neuer Zustand angewaehlt wurde, bleibt
   aber dank des geschwindigkeitsstetigen Treibers (siehe oben) weiterhin
   ohne Blitze, auch bei schnellem Umschalten.
 
 Betroffene Tests (die implizit den alten Default
-`edgeZoomControlMode=false` voraussetzten) in `ControlPanel.test.js`
-angepasst - setzen jetzt explizit `edgeZoomControlMode: false`, bevor sie
+`edgeTargetDisplayControlMode=false` voraussetzten) in `ControlPanel.test.js`
+angepasst - setzen jetzt explizit `edgeTargetDisplayControlMode: false`, bevor sie
 den klassischen Regler-Modus pruefen, statt sich auf den globalen Default
 zu verlassen. Verifiziert im Browser: Standardansicht zeigt sofort die 3
 Radios (keine alten Regler mehr sichtbar), ein Uebergang
@@ -630,7 +642,7 @@ Geschwindigkeit und Beschleunigung."* - ein echtes Doppel-Integrator-Modell
 Feder-Approximation mit nachtraeglichem Snap.
 
 **Loesung:** `trapStep(position, velocity, target, maxSpeed, maxAccel, dt)`
-in `src/lib/zoomStateTween.js` ersetzt `springStep()` + `SNAP_EPS`
+in `src/lib/targetDisplayStateTween.js` ersetzt `springStep()` + `SNAP_EPS`
 vollstaendig. Klassische Bang-Bang-Regelung eines Doppel-Integrators:
 beschleunigt Richtung Ziel bis `maxSpeed` (danach cruisen), bremst mit
 `maxAccel` ab, sobald der verbleibende Weg die Bremsweg-Formel
@@ -651,21 +663,21 @@ Ziel zeigt. Dadurch:
   keine Sonderbehandlung noetig.
 
 **Kalibrierung:** fuer eine volle 0→1-Bewegung (der groesstmoegliche Sprung
-im Embedding) soll die Gesamtzeit ungefaehr `zoomStateTransitionDuration`
+im Embedding) soll die Gesamtzeit ungefaehr `targetDisplayStateTransitionDuration`
 Sekunden betragen, mit Beschleunigungs-/Verzoegerungsphase von je 1/4 der
 Dauer (`ACCEL_PHASE_FRACTION = 0.25`), Rest cruist bei `maxSpeed`.
 Aufgeloest: `maxSpeed = 1 / (0.75 · duration)`, `maxAccel = maxSpeed /
 (0.25 · duration)`.
 
 **Verifiziert:**
-- `tests/unit/zoomStateTween-trap.test.js` (reine `trapStep()`-Logik,
-  `node:test`, ersetzt die fruehere `zoomStateTween-spring.test.js`):
+- `tests/unit/targetDisplayStateTween-trap.test.js` (reine `trapStep()`-Logik,
+  `node:test`, ersetzt die fruehere `targetDisplayStateTween-spring.test.js`):
   monotone Annaeherung ohne Ueberschwingen, EXAKTE Ankunft mit
   Geschwindigkeit 0 in endlicher Zeit, maxSpeed-Deckel, Geschwindigkeits-
   Stetigkeit bei Retargeting (Aenderung pro Schritt hoechstens
   `maxAccel·dt`), exakte Ankunft am NEUEN Ziel nach Richtungswechsel,
   automatisches Dreiecksprofil bei kurzer Distanz.
-- `src/lib/zoomStateTween.test.js`: alle 8 Integrationstests weiterhin
+- `src/lib/targetDisplayStateTween.test.js`: alle 8 Integrationstests weiterhin
   gruen (inkl. "kommt exakt am Zielwert an", jetzt durch die Trapez-
   Mechanik statt durch einen Snap erfuellt).
 - Manuell im Browser (Playwright, `?debug=1` + `window.__debugSnapshot()`
