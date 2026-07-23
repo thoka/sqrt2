@@ -83,7 +83,7 @@ Jede Phase ist einzeln committ- und testbar - wichtig, damit eine künftige Sitz
 
 **Nächster Schritt:** Offen: Phase 6 (Politur), Virtual-Canvas/Multi-Viewport-Konzept (TODO.md, noch nicht begonnen), `RemoteControl` als foldbare Route (TODO.md "Fernsteuerung/Connection"). Rename "Auto-Zoom → Ziel-Darstellung" abgeschlossen (Commits `2c25bd7`, `7173ee7`, `91ad785`), live auf `gh-pages`.
 
-**Stand 2026-07-23 (Bugfix Basiswechsel):** `updateDynamicLayout()`-Cache in `TargetBankCanvas.svelte` invalidierte sich nur bei geändertem `t_AB` - ein Basiswechsel im Zustand "Flächentreu" (`t_AB` bleibt konstant 0) ließ die Ziel-Schalen in den Breiten der alten Basis stehen. Fix: `_lastLayoutT_AB` wird jetzt zusätzlich bei jeder `compileRelevantKey`-Änderung zurückgesetzt (siehe AGENTS.md GOTCHA #12). Per Playwright-Screenshot gegen einen frischen Dev-Server verifiziert (Basis 10→2 in Flächentreu: Ziel-Quadrat schrumpft jetzt sichtbar). Noch nicht committet.
+**Stand 2026-07-23 (Bugfix Basiswechsel):** `updateDynamicLayout()`-Cache in `TargetBankCanvas.svelte` invalidierte sich nur bei geändertem `t_AB` - ein Basiswechsel im Zustand "Flächentreu" (`t_AB` bleibt konstant 0) ließ die Ziel-Schalen in den Breiten der alten Basis stehen. Fix: `_lastLayoutT_AB` wird jetzt zusätzlich bei jeder `compileRelevantKey`-Änderung zurückgesetzt (siehe AGENTS.md GOTCHA #12). Per Playwright-Screenshot gegen einen frischen Dev-Server verifiziert (Basis 10→2 in Flächentreu: Ziel-Quadrat schrumpft jetzt sichtbar). Commits `eb5a060` (Fix), `4cad2e5` (Handover).
 
 ## 8. Deployment: GitHub Pages (committeter Build, kein CI)
 
