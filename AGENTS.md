@@ -133,6 +133,16 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
     `compiled.GLOBAL_AUTO_ZOOM_CHECKPOINTS` →
     `compiled.GLOBAL_TARGET_DISPLAY_CHECKPOINTS`) - sonst `undefined` → Crash.
     Spec: `docs/RENAME-ZOOM-TO-TARGET-DISPLAY-SPEC.md`.
+12. **`updateDynamicLayout()` memoisiert NUR auf `t_AB`** (Performance-Cache
+    in `TargetBankCanvas.svelte`), hängt aber implizit auch von
+    `BASE`/`N_MAX`/`axes` ab. Bleibt `t_AB` unverändert (z.B. Basiswechsel im
+    Zustand "Flächentreu", wo `t_AB` immer 0 ist), wird der Cache NIE
+    invalidiert - die Ziel-Schalen bleiben in den Breiten der alten
+    Basis/Tiefe stehen (Bug: "Basis geändert, Schalen zeigen noch alte
+    Breiten" / "trotz Flächentreu schrumpfen Breiten nicht mit `basis^-k`").
+    Fix: `_lastLayoutT_AB = null` bei jeder Änderung des `compileRelevantKey`
+    (dort, wo `applyConfig()` ohnehin schon die Playback-Zeit zurücksetzt).
+    Bei neuen `t_AB`-abhängigen Caches dieselbe Falle beachten.
 
 ## Stolpersteine (nur diese Sandbox)
 
