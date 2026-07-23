@@ -234,6 +234,13 @@
 				_suppressPlaybackRender = true;
 				playbackStore.update((p) => ({ ...p, time: 0 }));
 				_suppressPlaybackRender = false;
+				// updateDynamicLayout() memoisiert NUR auf t_AB (Performance) - das
+				// haengt aber implizit auch von BASE/N_MAX/axes ab (siehe dort). Bei
+				// gleichbleibendem t_AB (z.B. Basiswechsel im Zustand "Flaechentreu",
+				// wo t_AB immer 0 bleibt) wuerde der Cache sonst NIE invalidiert und
+				// die Ziel-Schalen bliebe in den Breiten der alten Basis stehen (Bug-
+				// Report: "Basis geaendert, Schalen zeigen noch alte Breiten").
+				_lastLayoutT_AB = null;
 			}
 			_lastCompileKey = key;
 			updateOutputs();
