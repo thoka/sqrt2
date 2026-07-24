@@ -11,6 +11,10 @@
 # svelte@5.56.5 gilt als "zu frisch" fuer die Default-Cutoff und triggert
 # ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION). Wer die Policy behalten will, kann
 # stattdessen gezielt `minimumReleaseAgeExclude: [svelte@5.56.5]` setzen.
+# es5-ext kam als transitive Dependency von svelte-i18n (intl-messageformat-
+# Kette) hinzu - Postinstall ist reines JS (Cache-Erzeugung fuer ES5/ES6-
+# Ponyfills, keine native Kompilierung), daher wie esbuild erlaubt.
 allowBuilds:
+  es5-ext: true
   esbuild: true
 minimumReleaseAge: 0

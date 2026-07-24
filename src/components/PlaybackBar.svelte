@@ -19,6 +19,7 @@
 	// Regler rechts vor dem Bank-Zähler im Hauptfenster. Hier bleiben nur
 	// Play/Pause + Zeit-Positionsregler (immer sichtbar).
 	import { playbackStore, compiledStore } from '../lib/stores.js';
+	import { _ } from '../lib/i18n.js';
 
 	function togglePlaying() {
 		playbackStore.update((p) => ({ ...p, isPlaying: !p.isPlaying }));
@@ -32,7 +33,7 @@
 	);
 </script>
 
-<button id="playBtn" title="Play/Pause" onclick={togglePlaying}
+<button id="playBtn" title={$_('playback.playPause')} onclick={togglePlaying}
 	>{$playbackStore.isPlaying ? '⏸' : '▶'}</button
 >
 <input

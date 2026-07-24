@@ -46,27 +46,27 @@ test('Performance-Warnung bei Tiefe > 5 wurde entfernt', () => {
 	unmount(app);
 });
 
-test('Tabs sind vorhanden (Grundeinstellungen aktiv)', () => {
+test('Tabs sind vorhanden (Grundeinstellungen aktiv, Default-Locale Englisch)', () => {
 	const app = mount(ControlPanel, { target: document.body });
-	expect(document.body.textContent).toContain('Grundeinstellungen');
+	expect(document.body.textContent).toContain('Basic Settings');
 	expect(document.body.textContent).toContain('Animation');
 	expect(document.body.textContent).toContain('Admin');
-	expect(document.body.textContent).toContain('Remote-Connect');
+	expect(document.body.textContent).toContain('Remote Connect');
 	// Standardtab zeigt die Grundeinstellungen (Basis/Tiefe).
-	expect(document.body.textContent).toContain('Basis');
-	expect(document.body.textContent).toContain('Tiefe');
+	expect(document.body.textContent).toContain('Base');
+	expect(document.body.textContent).toContain('Depth');
 	unmount(app);
 });
 
 test('Remote-Ansicht zeigt nur Grundeinstellungen', () => {
 	const app = mount(ControlPanel, {
 		target: document.body,
-		props: { visibleTabs: ['Grundeinstellungen'] },
+		props: { visibleTabs: ['basics'] },
 	});
-	expect(document.body.textContent).toContain('Grundeinstellungen');
+	expect(document.body.textContent).toContain('Basic Settings');
 	expect(document.body.textContent).not.toContain('Animation');
 	expect(document.body.textContent).not.toContain('Admin');
-	expect(document.body.textContent).not.toContain('Remote-Connect');
+	expect(document.body.textContent).not.toContain('Remote Connect');
 	unmount(app);
 });
 
@@ -184,7 +184,7 @@ test('Tick-Eingabe: springt über playbackStore.time zum passenden Zeitpunkt (GL
 	flushSync();
 	// Das Tick-Feld hat keine feste ID mehr - über den zugehörigen Label-Text finden.
 	const tickLabel = [...document.querySelectorAll('.control-group')].find((g) =>
-		g.textContent.startsWith('Tick (Debug)'),
+		g.textContent.startsWith('Tick (debug)'),
 	);
 	const tick = tickLabel.querySelector('input');
 

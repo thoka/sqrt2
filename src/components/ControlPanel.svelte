@@ -22,6 +22,7 @@
 	import { displayStore } from '../lib/displayStore.js';
 	import { buildStateParams } from '../lib/urlState.js';
 	import { initNetworkSync } from '../lib/syncedStore.js';
+	import { locale, _, SUPPORTED_LOCALES } from '../lib/i18n.js';
 	import {
 		buildWsUrl,
 		buildGuestLink,
@@ -32,17 +33,19 @@
 		createWsRoom,
 	} from '../lib/connection.js';
 
+	// Tab-IDs sind stabile, sprachunabhängige Kennungen (NICHT die
+	// angezeigten Labels, die kommen aus $_('controlPanel.tabs.<id>')) -
 	// Welche Tabs sichtbar sind. Default: alle. Die Fernsteuerung übergibt
-	// nur ['Grundeinstellungen'] (Besucher-QR zeigt nur die Grundeinstellungen).
-	const ALL_TABS = ['Grundeinstellungen', 'Animation', 'Admin', 'Remote-Connect'];
+	// nur ['basics'] (Besucher-QR zeigt nur die Grundeinstellungen).
+	const ALL_TABS = ['basics', 'animation', 'admin', 'remote'];
 	let { visibleTabs = ALL_TABS } = $props();
 
-	let activeTab = $state('Grundeinstellungen');
+	let activeTab = $state('basics');
 	// Wenn der erlaubte Tab-Satz wechselt (z.B. Remote ohne Admin), sicher-
 	// stellen, dass ein sichtbarer Tab aktiv ist.
 	$effect(() => {
 		if (!visibleTabs.includes(activeTab)) {
-			activeTab = visibleTabs[0] ?? 'Grundeinstellungen';
+			activeTab = visibleTabs[0] ?? 'basics';
 		}
 	});
 	const showTab = (t) => visibleTabs.includes(t);
@@ -267,17 +270,17 @@
 				role="tab"
 				class="tab-btn"
 				class:active={activeTab === tab}
-				onclick={() => (activeTab = tab)}>{tab}</button
+				onclick={() => (activeTab = tab)}>{$_(`controlPanel.tabs.${tab}`)}</button
 			>
 		{/if}
 	{/each}
 </div>
 
 <div class="tab-body">
-	{#if showTab('Grundeinstellungen') && activeTab === 'Grundeinstellungen'}
+	{#if showTab('basics') && activeTab === 'basics'}
 		<div class="control-row">
 			<label class="control-group"
-				>Basis
+				>{$_('controlPanel.basics.base')}
 				<input
 					type="number"
 					min="2"
@@ -287,7 +290,7 @@
 				/>
 			</label>
 			<label class="control-group"
-				>Tiefe
+				>{$_('controlPanel.basics.depth')}
 				<input
 					type="number"
 					min="1"
@@ -300,7 +303,7 @@
 
 		{#if $configStore.edgeTargetDisplayControlMode}
 			<fieldset class="control-group target-display-state-group" style="margin-top:6px;">
-				<legend>Ziel-Darstellung</legend>
+				<legend>{$_('controlPanel.basics.targetDisplay')}</legend>
 				<label class="radio-row">
 					<input
 						type="radio"
@@ -308,7 +311,7 @@
 						checked={$configStore.targetDisplayState === 'flaechentreu'}
 						onchange={onTargetDisplayStateChange('flaechentreu')}
 					/>
-					Flächentreu
+					{$_('controlPanel.basics.targetDisplayFlaechentreu')}
 				</label>
 				<label class="radio-row">
 					<input
@@ -317,7 +320,7 @@
 						checked={$configStore.targetDisplayState === 'rand'}
 						onchange={onTargetDisplayStateChange('rand')}
 					/>
-					Rand sichtbar
+					{$_('controlPanel.basics.targetDisplayRand')}
 				</label>
 				<label class="radio-row">
 					<input
@@ -326,12 +329,12 @@
 						checked={$configStore.targetDisplayState === 'gleichmaessig'}
 						onchange={onTargetDisplayStateChange('gleichmaessig')}
 					/>
-					Gleichmäßig
+					{$_('controlPanel.basics.targetDisplayGleichmaessig')}
 				</label>
 			</fieldset>
 		{:else}
 			<label class="control-group" style="margin-top:6px;"
-				>Ziel-Darstellung: Aktivierung
+				>{$_('controlPanel.basics.targetDisplayEngagement')}
 				<input
 					type="range"
 					min="0"
@@ -347,7 +350,7 @@
 		{/if}
 
 		<label class="control-group" style="margin-top: 5px;"
-			>Ziel-Darstellung: Stärke
+			>{$_('controlPanel.basics.targetDisplayLevel')}
 			<input
 				type="range"
 				min="0"
@@ -358,7 +361,7 @@
 			/>
 			<span class="target-display-readout"
 				>{levelToPx($configStore.targetDisplayLevel, $targetDisplayMaxPxStore).toLocaleString(
-					'de-DE',
+					$locale,
 					{
 						minimumFractionDigits: 3,
 						maximumFractionDigits: 3,
@@ -369,7 +372,7 @@
 
 		{#if !$configStore.edgeTargetDisplayControlMode}
 			<label class="control-group" style="margin-top: 5px;"
-				>Abstraktion
+				>{$_('controlPanel.basics.abstraction')}
 				<input
 					type="range"
 					min="0"
@@ -392,32 +395,37 @@
 				checked={$configStore.showLabels}
 				onchange={onChangeChecked('showLabels')}
 			/>
-			Beschriftung an/aus
+			{$_('controlPanel.basics.showLabels')}
 		</label>
 
 		<div class="control-group" style="margin-top:10px;">
 			<div>
-				Bank-Zoom (automatisch, reale Basis) — <span class="zoom-readout" id="bankZoomLabel"
-					>1,0×</span
+				{$_('controlPanel.basics.bankZoomLabel')}
+				<span class="zoom-readout" id="bankZoomLabel"
+					>{(1).toLocaleString($locale, {
+						minimumFractionDigits: 1,
+						maximumFractionDigits: 1,
+					})}×</span
 				>
 			</div>
 			<div style="margin-top:-4px;">
-				Restfläche der Bank — <span class="zoom-readout" id="bankAreaLabel">100%</span>
+				{$_('controlPanel.basics.bankAreaLabel')}
+				<span class="zoom-readout" id="bankAreaLabel">100%</span>
 			</div>
 		</div>
 	{/if}
 
-	{#if showTab('Animation') && activeTab === 'Animation'}
+	{#if showTab('animation') && activeTab === 'animation'}
 		<label class="control-group" style="margin-top: 5px;"
-			>Flug-Modus
+			>{$_('controlPanel.animation.flightMode')}
 			<select value={$configStore.transformMode} onchange={onChangeValue('transformMode')}>
-				<option value="S">S: Strecken (Morphing)</option>
-				<option value="Z">Z: Zerschneiden (Montessori) - Rück-Verschmelzung noch buggy</option>
+				<option value="S">{$_('controlPanel.animation.flightModeStretch')}</option>
+				<option value="Z">{$_('controlPanel.animation.flightModeCut')}</option>
 			</select>
 		</label>
 
 		<label class="control-group" style="margin-top:6px;"
-			>Zustands-Übergang: Dauer (Sekunden)
+			>{$_('controlPanel.animation.stateTransitionDuration')}
 			<input
 				type="range"
 				min="0"
@@ -427,7 +435,7 @@
 				oninput={onInputFloat('targetDisplayStateTransitionDuration', 1.0)}
 			/>
 			<span class="target-display-readout"
-				>{$configStore.targetDisplayStateTransitionDuration.toLocaleString('de-DE', {
+				>{$configStore.targetDisplayStateTransitionDuration.toLocaleString($locale, {
 					minimumFractionDigits: 1,
 					maximumFractionDigits: 1,
 				})} s</span
@@ -435,7 +443,7 @@
 		</label>
 
 		<label class="control-group" style="margin-top:6px;"
-			>Zoom-Trägheit (kleiner = schneller)
+			>{$_('controlPanel.animation.zoomInertia')}
 			<input
 				type="number"
 				min="0.002"
@@ -447,9 +455,9 @@
 		</label>
 
 		<label class="control-group" style="margin-top:6px;"
-			>Linienbreite
+			>{$_('controlPanel.animation.lineWidth')}
 			<span class="zoom-readout"
-				>{$configStore.lineWidth.toLocaleString('de-DE', {
+				>{$configStore.lineWidth.toLocaleString($locale, {
 					minimumFractionDigits: 1,
 					maximumFractionDigits: 1,
 				})}px</span
@@ -465,7 +473,7 @@
 		</label>
 
 		<label class="control-group" style="margin-top:6px;"
-			>Wartezeit (Anfang/Ende) (Sekunden)
+			>{$_('controlPanel.animation.waitTime')}
 			<input
 				type="number"
 				min="0"
@@ -482,10 +490,10 @@
 				checked={$configStore.flightRotation}
 				onchange={onChangeChecked('flightRotation')}
 			/>
-			Pieces drehen
+			{$_('controlPanel.animation.flightRotation')}
 		</label>
 		<label class="control-group" style="margin-top:6px;"
-			>Fliegende Teile: Transparenz
+			>{$_('controlPanel.animation.flyingAlpha')}
 			<input
 				type="range"
 				min="0"
@@ -497,7 +505,7 @@
 			<span class="zoom-readout">{Math.round($configStore.flyingAlpha * 100)} %</span>
 		</label>
 		<label class="control-group" style="margin-top:6px;"
-			>Flug-Animation aus ab Geschwindigkeit
+			>{$_('controlPanel.animation.flightSpeedThreshold')}
 			<input
 				type="number"
 				min="0.1"
@@ -507,7 +515,9 @@
 			/>
 		</label>
 
-		<div class="muted-note" style="margin-top:10px;">Diagnose (Stotter-Untersuchung):</div>
+		<div class="muted-note" style="margin-top:10px;">
+			{$_('controlPanel.animation.diagnostics')}
+		</div>
 		<label
 			class="control-group"
 			style="margin-top:4px; flex-direction: row; align-items: center; gap: 8px;"
@@ -518,7 +528,7 @@
 				checked={$configStore.hudUpdateEnabled}
 				onchange={onChangeChecked('hudUpdateEnabled')}
 			/>
-			Zahlendarstellung Update (l/l²/R)
+			{$_('controlPanel.animation.hudUpdate')}
 		</label>
 		<label
 			class="control-group"
@@ -530,11 +540,11 @@
 				checked={$configStore.bankRenderEnabled}
 				onchange={onChangeChecked('bankRenderEnabled')}
 			/>
-			Update der Bank (Canvas + Flug)
+			{$_('controlPanel.animation.bankUpdate')}
 		</label>
 	{/if}
 
-	{#if showTab('Admin') && activeTab === 'Admin'}
+	{#if showTab('admin') && activeTab === 'admin'}
 		<label
 			class="control-group"
 			style="margin-top: 5px; flex-direction: row; align-items: center; gap: 8px;"
@@ -545,11 +555,20 @@
 				checked={$configStore.edgeTargetDisplayControlMode}
 				onchange={onChangeChecked('edgeTargetDisplayControlMode')}
 			/>
-			Alternative Rand-Ziel-Darstellung-Steuerung (3 Zustände statt Regler)
+			{$_('controlPanel.admin.edgeTargetDisplayMode')}
 		</label>
 
-		<label class="control-group" style="margin-top: 10px;"
-			>Zoom-Schwellwert
+		<label class="control-group" style="margin-top:10px;"
+			>{$_('controlPanel.admin.language')}
+			<select value={$locale} onchange={(e) => locale.set(e.target.value)}>
+				{#each SUPPORTED_LOCALES as loc}
+					<option value={loc}>{loc.toUpperCase()}</option>
+				{/each}
+			</select>
+		</label>
+
+		<label class="control-group" style="margin-top:10px;"
+			>{$_('controlPanel.admin.zoomThreshold')}
 			<input
 				type="number"
 				min="0"
@@ -562,12 +581,13 @@
 		</label>
 		{#if $configStore.compactionEnabled}
 			<div class="muted-note" style="margin-top:-4px;">
-				Bei aktiver Kompaktierung nicht verwendet.
+				{$_('controlPanel.admin.zoomThresholdDisabledNote')}
 			</div>
 		{/if}
 
 		<label class="control-group" style="margin-top:10px;"
-			>Tick (Debug) — {$compiledStore?.GLOBAL_TTM
+			>{$_('controlPanel.admin.tickDebug')}
+			{$compiledStore?.GLOBAL_TTM
 				? $compiledStore.GLOBAL_TTM.timeToTick($playbackStore.time).toFixed(2)
 				: 0} / {$compiledStore?.GLOBAL_TTM ? $compiledStore.GLOBAL_TTM.maxTick : 0}
 			<input
@@ -587,52 +607,62 @@
 		</label>
 
 		<label class="control-group" style="margin-top:6px;"
-			>Rest-Anzeige
+			>{$_('controlPanel.admin.restDisplay')}
 			<select
 				value={$displayStore.restWidget}
 				onchange={(e) => displayStore.update((d) => ({ ...d, restWidget: e.target.value }))}
 			>
-				<option value="bars">Balken (vertikal)</option>
-				<option value="grid">Grid (4×4, horizontal)</option>
+				<option value="bars">{$_('controlPanel.admin.restDisplayBars')}</option>
+				<option value="grid">{$_('controlPanel.admin.restDisplayGrid')}</option>
 			</select>
 		</label>
 
 		<div class="control-group" style="margin-top:10px;">
-			<div>Aktuellen Zustand teilen (kopiert in die Zwischenablage)</div>
+			<div>{$_('controlPanel.admin.shareState')}</div>
 			<div class="control-row">
 				<button type="button" class="settings-btn" class:copied={urlCopied} onclick={copyUrl}
-					>{urlCopied ? 'Kopiert ✓' : 'Als URL kopieren'}</button
+					>{urlCopied
+						? $_('controlPanel.admin.copied')
+						: $_('controlPanel.admin.copyAsUrl')}</button
 				>
 				<button type="button" class="settings-btn" class:copied={paramsCopied} onclick={copyParams}
-					>{paramsCopied ? 'Kopiert ✓' : 'Nur Parameter kopieren'}</button
+					>{paramsCopied
+						? $_('controlPanel.admin.copied')
+						: $_('controlPanel.admin.copyParamsOnly')}</button
 				>
 			</div>
 		</div>
 	{/if}
 
-	{#if showTab('Remote-Connect') && activeTab === 'Remote-Connect'}
+	{#if showTab('remote') && activeTab === 'remote'}
 		<div class="control-group">
-			<div style="font-weight: bold; color: #3b82f6;">Fernsteuerung (Handy via QR)</div>
+			<div style="font-weight: bold; color: #3b82f6;">{$_('controlPanel.remote.heading')}</div>
 			{#if !session}
 				<label class="control-group" style="margin-top:5px;"
-					>Relay-URL (des Connection-Service)
+					>{$_('controlPanel.remote.relayUrl')}
 					<input type="text" bind:value={relayUrl} placeholder="http://host:8080" />
 				</label>
 				<label class="control-group" style="margin-top:5px;"
-					>API-Key (Exponat)
+					>{$_('controlPanel.remote.apiKey')}
 					<input type="text" bind:value={apiKey} placeholder="Relay-API_KEY" />
 				</label>
 				<div class="control-row" style="margin-top:5px;">
 					<label class="control-group"
-						>Plätze (Seats)
+						>{$_('controlPanel.remote.seats')}
 						<input type="number" min="1" max="999" bind:value={seats} />
 					</label>
 					<label class="control-group"
-						>PIN (optional)
-						<input type="text" bind:value={pinInput} placeholder="leer = keine PIN" />
+						>{$_('controlPanel.remote.pin')}
+						<input
+							type="text"
+							bind:value={pinInput}
+							placeholder={$_('controlPanel.remote.pinPlaceholder')}
+						/>
 					</label>
 				</div>
-				<button type="button" class="settings-btn" onclick={startSession}>Sitzung starten</button>
+				<button type="button" class="settings-btn" onclick={startSession}
+					>{$_('controlPanel.remote.startSession')}</button
+				>
 				{#if sessionError}
 					<div class="error-msg">{sessionError}</div>
 				{/if}
@@ -641,32 +671,41 @@
 					<canvas bind:this={qrCanvas} width="200" height="200"></canvas>
 					<div class="control-group" style="gap:6px;">
 						<div>
-							Status:
-							<span class="zoom-readout">{connStatus}</span>
+							{$_('controlPanel.remote.status')}
+							<span class="zoom-readout"
+								>{$_(`connStatus.${connStatus}`, { default: connStatus })}</span
+							>
 						</div>
 						<div>
-							Gäste verbunden: <span class="zoom-readout">{guestCount}</span>
+							{$_('controlPanel.remote.guestsConnected')}
+							<span class="zoom-readout">{guestCount}</span>
 						</div>
 						{#if session.pin}
 							<div>
-								PIN: <span class="zoom-readout" style="font-size:1.3rem; letter-spacing:2px;"
+								{$_('controlPanel.remote.pinLabel')}
+								<span class="zoom-readout" style="font-size:1.3rem; letter-spacing:2px;"
 									>{session.pin}</span
 								>
 							</div>
 						{:else}
-							<div class="muted-note">Keine PIN - Gäste joinen ohne Code.</div>
+							<div class="muted-note">{$_('controlPanel.remote.noPin')}</div>
 						{/if}
 						<button type="button" class="settings-btn" onclick={copyGuestLink}
-							>{linkCopied ? 'Kopiert ✓' : 'Link kopieren'}</button
+							>{linkCopied
+								? $_('controlPanel.admin.copied')
+								: $_('controlPanel.remote.copyLink')}</button
 						>
 						<button type="button" class="settings-btn" onclick={rotateSessionPin}
-							>PIN rotieren</button
+							>{$_('controlPanel.remote.rotatePin')}</button
 						>
-						<button type="button" class="settings-btn" onclick={endSession}>Beenden</button>
+						<button type="button" class="settings-btn" onclick={endSession}
+							>{$_('controlPanel.remote.endSession')}</button
+						>
 					</div>
 				</div>
 				<div class="muted-note" style="margin-top:6px; word-break:break-all;">
-					Gast-Link: {session.guestLink}
+					{$_('controlPanel.remote.guestLink')}
+					{session.guestLink}
 				</div>
 			{/if}
 		</div>

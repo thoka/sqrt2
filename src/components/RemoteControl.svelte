@@ -18,6 +18,7 @@
 	import { playbackStore, configStore, compiledStore } from '../lib/stores.js';
 	import { initSync, initNetworkSync } from '../lib/syncedStore.js';
 	import { createWsRoom } from '../lib/connection.js';
+	import { _ } from '../lib/i18n.js';
 
 	initSync();
 
@@ -64,6 +65,10 @@
 		configStore.update((c) => ({ ...c, playSpeed: c.playSpeed / SPEED_STEP }));
 	}
 
+	$effect(() => {
+		document.title = $_('remoteControl.pageTitle');
+	});
+
 	// Gast-Verbindung zum Relay, falls der QR-Gast-Link mit ws/token/pin
 	// aufgerufen wurde. Ansonsten bleibt es reiner BroadcastChannel-Sync.
 	const params = new URLSearchParams(location.search);
@@ -87,32 +92,43 @@
 </script>
 
 <main class="remote">
-	<h1>Fernsteuerung</h1>
+	<h1>{$_('remoteControl.heading')}</h1>
 	<p class="hint">
-		Steuert das Haupttool (&sqrt;2-Flächenmodell) auf einem anderen Bildschirm. Änderungen hier
-		werden live übernommen.
+		{$_('remoteControl.hint')}
 	</p>
 	<p class="hint">
-		Relay-Status: <span id="relayStatus">idle</span>
+		{$_('remoteControl.relayStatus')} <span id="relayStatus">idle</span>
 	</p>
 	<div id="controlPanelMount">
-		<ControlPanel visibleTabs={['Grundeinstellungen']} />
+		<ControlPanel visibleTabs={['basics']} />
 	</div>
 	<div class="remote-playback">
 		<SpeedSlider variant="control" />
 		<div id="playbackBarMount"><PlaybackBar /></div>
 	</div>
 	<div class="remote-keys">
-		<button class="key-btn" onclick={() => jumpShell(-1)} title="Schale zurück">⏮</button>
-		<button class="key-btn" onclick={() => stepTick(-1)} title="Tick zurück">←</button>
-		<button class="key-btn play-btn" onclick={togglePlay} title="Play / Pause"
+		<button class="key-btn" onclick={() => jumpShell(-1)} title={$_('remoteControl.keys.shellBack')}
+			>⏮</button
+		>
+		<button class="key-btn" onclick={() => stepTick(-1)} title={$_('remoteControl.keys.tickBack')}
+			>←</button
+		>
+		<button class="key-btn play-btn" onclick={togglePlay} title={$_('remoteControl.keys.playPause')}
 			>{$playbackStore.isPlaying ? '⏸' : '▶'}</button
 		>
-		<button class="key-btn" onclick={() => stepTick(1)} title="Tick vorwärts">→</button>
-		<button class="key-btn" onclick={() => jumpShell(1)} title="Schale vorwärts">⏭</button>
-		<button class="key-btn" onclick={toggleDirection} title="Richtungswechsel">↩</button>
-		<button class="key-btn" onclick={slower} title="Langsamer (÷1.3)">−</button>
-		<button class="key-btn" onclick={faster} title="Schneller (×1.3)">+</button>
+		<button class="key-btn" onclick={() => stepTick(1)} title={$_('remoteControl.keys.tickForward')}
+			>→</button
+		>
+		<button
+			class="key-btn"
+			onclick={() => jumpShell(1)}
+			title={$_('remoteControl.keys.shellForward')}>⏭</button
+		>
+		<button class="key-btn" onclick={toggleDirection} title={$_('remoteControl.keys.direction')}
+			>↩</button
+		>
+		<button class="key-btn" onclick={slower} title={$_('remoteControl.keys.slower')}>−</button>
+		<button class="key-btn" onclick={faster} title={$_('remoteControl.keys.faster')}>+</button>
 	</div>
 </main>
 

@@ -13,6 +13,11 @@
 	import { parseConfigFromUrl, parsePlaybackFromUrl } from './lib/urlState.js';
 	import { initSync } from './lib/syncedStore.js';
 	import { initDebugAgent } from './lib/debugAgent.js';
+	import { _ } from './lib/i18n.js';
+
+	$effect(() => {
+		document.title = $_('app.title');
+	});
 
 	import ControlPanel from './components/ControlPanel.svelte';
 	import PlaybackBar from './components/PlaybackBar.svelte';

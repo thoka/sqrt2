@@ -24,6 +24,7 @@
 	import { configStore, playbackStore, compiledStore } from '../lib/stores.js';
 	import { levelToPx, targetDisplayMaxPxStore } from '../lib/targetDisplayLevel.js';
 	import { initTargetDisplayStateTween } from '../lib/targetDisplayStateTween.js';
+	import { locale } from '../lib/i18n.js';
 	import { computeLiveL } from '../lib/compiler.js';
 	import { formatLiveNumbers, formatAxisDenominator } from '../lib/numberRenderer.js';
 	import { drawScript } from '../lib/mathCanvasRenderer.js';
@@ -432,7 +433,7 @@
 		if (bankZoomLabel) bankZoomLabel.innerText = formatZoomFactor(teilDCamera.z);
 		if (bankAreaLabel)
 			bankAreaLabel.innerText =
-				(bank_frame.mass * 100).toLocaleString('de-DE', {
+				(bank_frame.mass * 100).toLocaleString(get(locale) || 'en', {
 					maximumFractionDigits: bank_frame.mass < 0.01 ? 4 : 1,
 				}) + '%';
 
@@ -877,12 +878,13 @@
 	}
 
 	function formatZoomFactor(f) {
+		const loc = get(locale) || 'en';
 		if (f < 10)
-			return (
-				f.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '×'
-			);
-		if (f < 1000) return Math.round(f).toLocaleString('de-DE') + '×';
-		return f.toExponential(1).replace('.', ',').replace('e+', ' × 10^') + '×';
+			return f.toLocaleString(loc, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '×';
+		if (f < 1000) return Math.round(f).toLocaleString(loc) + '×';
+		let sci = f.toExponential(1);
+		if (loc.startsWith('de')) sci = sci.replace('.', ',');
+		return sci.replace('e+', ' × 10^') + '×';
 	}
 
 	// === Zahlentafel-Rendering (l/l²/R auf Canvas, gecacht) ===

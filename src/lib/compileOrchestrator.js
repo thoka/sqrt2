@@ -15,6 +15,7 @@
 import { writable, get } from 'svelte/store';
 import { configStore } from './configStore.js';
 import { compileSystem, finalizeCompiled } from './compiler.js';
+import { _ } from './i18n.js';
 
 let currentJobId = 0;
 let activeWorker = null;
@@ -106,7 +107,7 @@ function runJob(config) {
 			compileStatusStore.set({
 				state: 'idle',
 				startedAt: 0,
-				error: msg.error || 'unbekannter Fehler',
+				error: msg.error || get(_)('compile.unknownError'),
 			});
 		}
 	};
@@ -116,7 +117,7 @@ function runJob(config) {
 		compileStatusStore.set({
 			state: 'idle',
 			startedAt: 0,
-			error: err && err.message ? err.message : 'Worker-Fehler',
+			error: err && err.message ? err.message : get(_)('compile.workerError'),
 		});
 	};
 	worker.postMessage({ jobId, config });

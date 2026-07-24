@@ -7,6 +7,7 @@
 	//   - variant="compact": schmaler, dezenter Regler fürs Hauptfenster,
 	//     optisch wie der Zeitregler, rechts vor dem Bank-Zähler.
 	import { configStore } from '../lib/stores.js';
+	import { locale, _ } from '../lib/i18n.js';
 
 	let { variant = 'control' } = $props();
 
@@ -30,7 +31,7 @@
 
 {#if variant === 'control'}
 	<label class="control-group" style="margin-top:6px;"
-		>Geschwindigkeit
+		>{$_('speed.label')}
 		<div class="speed-control-row">
 			<input
 				type="range"
@@ -41,7 +42,7 @@
 				oninput={onSpeedInput}
 			/>
 			<span class="speed-readout"
-				>{$configStore.playSpeed.toLocaleString('de-DE', {
+				>{$configStore.playSpeed.toLocaleString($locale, {
 					minimumFractionDigits: 1,
 					maximumFractionDigits: 1,
 				})}×</span
@@ -53,7 +54,7 @@
 		<input
 			type="range"
 			class="compact-slider"
-			title="Geschwindigkeit"
+			title={$_('speed.label')}
 			min="0"
 			max="1"
 			step="0.001"
@@ -61,7 +62,7 @@
 			oninput={onSpeedInput}
 		/>
 		<span class="compact-speed-readout"
-			>{$configStore.playSpeed.toLocaleString('de-DE', {
+			>{$configStore.playSpeed.toLocaleString($locale, {
 				minimumFractionDigits: 2,
 				maximumFractionDigits: 2,
 			})}×</span

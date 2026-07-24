@@ -281,12 +281,12 @@ test('Routing: / und /remote.html ok, unbekannte Pfade 404', async ({ request, p
 	const main = await request.get('/');
 	expect(main.status()).toBe(200);
 	await page.goto('/');
-	expect(await page.title()).toContain('Flächenmodell');
+	expect(await page.title()).toContain('Area Model');
 
 	const remote = await request.get('/remote.html');
 	expect(remote.status()).toBe(200);
 	await page.goto('/remote.html');
-	expect(await page.title()).toContain('Fernsteuerung');
+	expect(await page.title()).toContain('Remote Control');
 
 	// Unbekannter Pfad (clean URL ohne .html) darf NICHT auf index.html
 	// umgeleitet werden - das wäre der alte SPA-Fallback-Bug.
@@ -339,7 +339,7 @@ test('Geschwindigkeit: dezenter Regler im Hauptfenster rechts neben der Timeline
 	await page.waitForTimeout(400);
 	const ctrlText = await page.locator('#controlPanelMount').textContent();
 	// Das ControlPanel (Grundeinstellungen) zeigt die Geschwindigkeit als "x×"
-	// (de-DE-Locale: Komma statt Punkt).
+	// (Dezimaltrennzeichen ist locale-abhängig: "." im Default (en), "," bei de).
 	expect(ctrlText).toMatch(/\d{2}[.,]\d×/);
 });
 
@@ -354,9 +354,9 @@ test('Geschwindigkeit: Fernsteuerung ändert Speed im Hauptfenster (Sync)', asyn
 	await pageA.waitForTimeout(1500);
 
 	// Speed in der Fernsteuerung auf Maximum schieben (Regler im
-	// "Geschwindigkeit"-Label, nicht der Zoom-Regler).
+	// "Speed"-Label, nicht der Zoom-Regler).
 	const remoteSpeed = pageB
-		.locator('#controlPanelMount .control-group', { hasText: 'Geschwindigkeit' })
+		.locator('#controlPanelMount .control-group', { hasText: 'Speed' })
 		.locator('input[type="range"]');
 	await remoteSpeed.fill('1');
 	await pageA.waitForTimeout(800);
