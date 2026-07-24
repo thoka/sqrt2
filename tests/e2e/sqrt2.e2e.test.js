@@ -337,10 +337,13 @@ test('Geschwindigkeit: dezenter Regler im Hauptfenster rechts neben der Timeline
 	// Mitte = Faktor 1, rechtes Ende ~20×).
 	await speed.fill('1');
 	await page.waitForTimeout(400);
-	const ctrlText = await page.locator('#controlPanelMount').textContent();
-	// Das ControlPanel (Grundeinstellungen) zeigt die Geschwindigkeit als "x×"
-	// (Dezimaltrennzeichen ist locale-abhängig: "." im Default (en), "," bei de).
-	expect(ctrlText).toMatch(/\d{2}[.,]\d×/);
+	// Der dezente Regler selbst zeigt sein Readout (#speedControl) - die
+	// frühere Spiegelung im ControlPanel (Grundeinstellungen) gibt es seit
+	// dem "SpeedSlider raus"-Umbau (upstream) nicht mehr.
+	const ctrlText = await page.locator('#speedControl').textContent();
+	// Dezimaltrennzeichen ist locale-abhängig: "." im Default (en), "," bei de.
+	// Kompakte Variante formatiert mit 2 Nachkommastellen (SpeedSlider.svelte).
+	expect(ctrlText).toMatch(/\d{2}[.,]\d\d×/);
 });
 
 // Geschwindigkeit in der Fernsteuerung (/remote.html) ändert die
@@ -354,16 +357,18 @@ test('Geschwindigkeit: Fernsteuerung ändert Speed im Hauptfenster (Sync)', asyn
 	await pageA.waitForTimeout(1500);
 
 	// Speed in der Fernsteuerung auf Maximum schieben (Regler im
-	// "Speed"-Label, nicht der Zoom-Regler).
+	// "Speed"-Label in .remote-playback, nicht der Zoom-Regler im
+	// ControlPanel).
 	const remoteSpeed = pageB
-		.locator('#controlPanelMount .control-group', { hasText: 'Speed' })
+		.locator('.remote-playback .control-group', { hasText: 'Speed' })
 		.locator('input[type="range"]');
 	await remoteSpeed.fill('1');
 	await pageA.waitForTimeout(800);
 
-	// Hauptfenster-ControlPanel zeigt die geänderte Geschwindigkeit.
-	const ctrlText = await pageA.locator('#controlPanelMount').textContent();
-	expect(ctrlText).toMatch(/\d{2}[.,]\d×/);
+	// Der dezente Regler im Hauptfenster (#speedControl) zeigt die
+	// geänderte Geschwindigkeit.
+	const ctrlText = await pageA.locator('#speedControl').textContent();
+	expect(ctrlText).toMatch(/\d{2}[.,]\d\d×/);
 
 	await pageA.close();
 	await pageB.close();

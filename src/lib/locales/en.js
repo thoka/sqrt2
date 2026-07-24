@@ -45,7 +45,8 @@ export default {
 			bankUpdate: 'Bank update (canvas + flight)',
 		},
 		admin: {
-			edgeTargetDisplayMode: 'Alternative edge target-display control (3 states instead of sliders)',
+			edgeTargetDisplayMode:
+				'Alternative edge target-display control (3 states instead of sliders)',
 			zoomThreshold: 'Zoom threshold',
 			zoomThresholdDisabledNote: 'Not used while compaction is active.',
 			tickDebug: 'Tick (debug) —',

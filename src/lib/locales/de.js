@@ -45,7 +45,8 @@ export default {
 			bankUpdate: 'Update der Bank (Canvas + Flug)',
 		},
 		admin: {
-			edgeTargetDisplayMode: 'Alternative Rand-Ziel-Darstellung-Steuerung (3 Zustände statt Regler)',
+			edgeTargetDisplayMode:
+				'Alternative Rand-Ziel-Darstellung-Steuerung (3 Zustände statt Regler)',
 			zoomThreshold: 'Zoom-Schwellwert',
 			zoomThresholdDisabledNote: 'Bei aktiver Kompaktierung nicht verwendet.',
 			tickDebug: 'Tick (Debug) —',
