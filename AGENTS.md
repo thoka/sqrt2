@@ -138,7 +138,12 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
     `compiled.GLOBAL_AUTO_ZOOM_CHECKPOINTS` →
     `compiled.GLOBAL_TARGET_DISPLAY_CHECKPOINTS`) - sonst `undefined` → Crash.
     Spec: `docs/RENAME-ZOOM-TO-TARGET-DISPLAY-SPEC.md`.
-12. **`updateDynamicLayout()` memoisiert NUR auf `t_AB`** (Performance-Cache
+12. **jsdom in diesem Vitest-Setup liefert KEIN globales `localStorage`**
+    (`typeof localStorage === 'undefined'` in Tests, siehe `i18n.js`-Guards).
+    Tests, die `localStorage` brauchen, müssen es selbst mocken (z.B.
+    `vi.stubGlobal('localStorage', <Map-basierter Fake>)` in `beforeEach`,
+    siehe `i18n.test.js`) statt den echten Browser-Store vorauszusetzen.
+13. **`updateDynamicLayout()` memoisiert NUR auf `t_AB`** (Performance-Cache
     in `TargetBankCanvas.svelte`), hängt aber implizit auch von
     `BASE`/`N_MAX`/`axes` ab. Bleibt `t_AB` unverändert (z.B. Basiswechsel im
     Zustand "Flächentreu", wo `t_AB` immer 0 ist), wird der Cache NIE

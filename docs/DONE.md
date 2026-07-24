@@ -1,6 +1,25 @@
 ## Tests 
 - [x] Weiße Quadrate am Anfang müssen exakt gleich groß sein und vertikal gleich ausgerichtet sein.
 
+## i18n: Browsersprache als Fallback + "Auto"-Option im Umschalter (2026-07-24)
+- `pickLocale()` (`src/lib/i18n.js`) bekommt einen dritten Parameter
+  `browserLang`; Priorität jetzt `?lang=`-URL-Parameter > localStorage >
+  Browsersprache (`navigator.language`, auf Basissprache reduziert, z.B.
+  `de-AT` -> `de`) > Default `en`.
+- Design-Korrektur unterwegs: die alte Version persistierte JEDE aufgelöste
+  Sprache (auch browser-abgeleitete) blind in localStorage - das machte
+  "folge der Browsersprache" zu einem Zustand, aus dem man nie wieder
+  herauskam, da der Umschalter nur `en`/`de` anbot. Fix: neuer
+  `localePreference`-Store (bewusste Wahl ODER `AUTO`, getrennt vom aktuell
+  angezeigten `locale`) + `setLocalePreference()` als einzige Stelle, die
+  localStorage schreibt/löscht. `locale.subscribe()` persistiert nicht mehr
+  automatisch. `ControlPanel.svelte`-Umschalter hat jetzt eine
+  "Automatisch (Browser)"-Option (`admin.languageAuto` in `en.js`/`de.js`).
+- Tests in `i18n.test.js` erweitert (Browser-Fallback-Priorität,
+  `setLocalePreference`/`AUTO`-Round-Trip). GOTCHA dabei entdeckt: siehe
+  AGENTS.md ("jsdom liefert in diesem Vitest-Setup kein globales
+  `localStorage`").
+
 ## Darstellung: Beschriftung an/aus (2026-07-20)
 - Neues `configStore`-Feld `showLabels` (Default `false`), URL-Param `labels`
   (`src/lib/urlState.js`), Checkbox "Beschriftung an/aus" in

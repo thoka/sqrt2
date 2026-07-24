@@ -5,7 +5,7 @@ Offene Punkte, nach Relevanz sortiert. Erledigtes wird durchgestrichen
 `AGENTS.md` ("Tests für alle Stufen"). Vor Commit: `pnpm format` + `pnpm check`.
 
 ## i18n
-- [ ] Sprache über die Sprache des Browsers einstellbar machen
+- [x] ~~Sprache über die Sprache des Browsers einstellbar machen~~ (2026-07-24, siehe `docs/DONE.md`)
 
 ## Parameter
 - [ ] Parameter-Übergabe per URL konfigurierbar machen über Checkboxes für unterschiedliche Kategorien.
