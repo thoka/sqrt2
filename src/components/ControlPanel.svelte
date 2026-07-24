@@ -117,12 +117,16 @@
 
 	let urlCopied = $state(false);
 	let paramsCopied = $state(false);
+	// Aktuelle Sprache im geteilten Link mitgeben (`lang`, siehe i18n.js
+	// initialLocale()) - sonst oeffnet ein geteilter/QR-Link immer in der
+	// Default-Sprache statt in der, die der Teilende gerade eingestellt hat.
+	function buildShareParams() {
+		let params = buildStateParams($configStore, $playbackStore);
+		params.set('lang', $locale);
+		return params;
+	}
 	function copyUrl() {
-		let url =
-			location.origin +
-			location.pathname +
-			'?' +
-			buildStateParams($configStore, $playbackStore).toString();
+		let url = location.origin + location.pathname + '?' + buildShareParams().toString();
 		navigator.clipboard.writeText(url).then(() => {
 			urlCopied = true;
 			setTimeout(() => {
@@ -131,14 +135,12 @@
 		});
 	}
 	function copyParams() {
-		navigator.clipboard
-			.writeText(buildStateParams($configStore, $playbackStore).toString())
-			.then(() => {
-				paramsCopied = true;
-				setTimeout(() => {
-					paramsCopied = false;
-				}, 1200);
-			});
+		navigator.clipboard.writeText(buildShareParams().toString()).then(() => {
+			paramsCopied = true;
+			setTimeout(() => {
+				paramsCopied = false;
+			}, 1200);
+		});
 	}
 
 	// === Fernsteuerung / Cross-Device (Connection-Service, Spec §12 3/4) ===
@@ -211,6 +213,7 @@
 				wsUrl: minted.wsUrl,
 				token: minted.token,
 				pin: minted.pin,
+				lang: $locale,
 			});
 			session = { ...minted, guestLink, room };
 		} catch (e) {
@@ -230,6 +233,7 @@
 				wsUrl: session.wsUrl,
 				token: session.token,
 				pin,
+				lang: $locale,
 			});
 			session = { ...session, pin, guestLink };
 		} catch (e) {

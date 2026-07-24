@@ -380,7 +380,7 @@ test('Geschwindigkeit: Fernsteuerung ändert Speed im Hauptfenster (Sync)', asyn
 test('Intro-Screen: sichtbar beim Start, verschwindet bei Play', async ({ page }) => {
 	await page.goto('/');
 	await expect(page.locator('.intro-overlay')).toBeVisible();
-	await expect(page.locator('.intro-settings-hint')).toContainText('Einstellungen');
+	await expect(page.locator('.intro-settings-hint')).toContainText('Settings');
 
 	await page.keyboard.press(' ');
 	await expect(page.locator('.intro-overlay')).not.toBeVisible({ timeout: 2000 });

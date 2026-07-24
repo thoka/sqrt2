@@ -1,6 +1,16 @@
 export default {
 	app: {
 		title: 'Wurzel 2 - Flächenmodell (exakte Integer-Ziffern-Mathematik)',
+		intro: {
+			title: '√2 als Fläche',
+			hint: 'Diese Visualisierung nähert sich √2 Schritt für Schritt an.',
+			settingsHint: 'Einstellungen',
+		},
+		help: {
+			title: 'Tastensteuerung',
+			helpKey: 'Hilfe',
+			closeHint: 'Beliebige Taste zum Schliessen',
+		},
 	},
 	playback: {
 		playPause: 'Play/Pause',
@@ -89,8 +99,8 @@ export default {
 			tickForward: 'Tick vorwärts',
 			shellForward: 'Schale vorwärts',
 			direction: 'Richtungswechsel',
-			slower: 'Langsamer (÷1.3)',
-			faster: 'Schneller (×1.3)',
+			slower: 'Langsamer (÷{step})',
+			faster: 'Schneller (×{step})',
 		},
 	},
 	compile: {

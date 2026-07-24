@@ -28,10 +28,25 @@ const STORAGE_KEY = 'sqrt2.locale';
 addMessages('en', en);
 addMessages('de', de);
 
+// Priorität: `?lang=`-URL-Parameter (explizite Wahl, z.B. geteilter Link
+// oder Gast-Link/QR der Fernsteuerung) > localStorage (letzte Wahl im
+// Sprachumschalter) > Default. Reine Funktion (kein DOM-Zugriff), daher
+// per node --test/vitest ohne Browser-Mocking testbar - siehe i18n.test.js.
+export function pickLocale(urlLang, storedLang) {
+	if (SUPPORTED_LOCALES.includes(urlLang)) return urlLang;
+	if (SUPPORTED_LOCALES.includes(storedLang)) return storedLang;
+	return DEFAULT_LOCALE;
+}
+
+// Wird HIER (vor init()) ausgewertet, nicht erst in einem onMount, damit
+// keine Komponente kurz in der falschen Sprache aufblitzt (App.svelte UND
+// RemoteControl.svelte importieren i18n.js gleichermaßen - kein
+// Extra-Wiring pro Entry-Point nötig).
 function initialLocale() {
-	if (typeof localStorage === 'undefined') return DEFAULT_LOCALE;
-	const saved = localStorage.getItem(STORAGE_KEY);
-	return SUPPORTED_LOCALES.includes(saved) ? saved : DEFAULT_LOCALE;
+	const urlLang =
+		typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('lang') : null;
+	const storedLang = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
+	return pickLocale(urlLang, storedLang);
 }
 
 init({

@@ -281,32 +281,42 @@
 {#if showIntro}
 	<div class="intro-overlay" aria-hidden="true">
 		<div class="intro-box">
-			<h2>√2 als Fläche</h2>
-			<p>Diese Visualisierung nähert sich √2 Schritt für Schritt an.</p>
+			<h2>{$_('app.intro.title')}</h2>
+			<p>{$_('app.intro.hint')}</p>
 		</div>
-		<div class="intro-settings-hint">Einstellungen<span class="intro-arrow">↗</span></div>
+		<div class="intro-settings-hint">
+			{$_('app.intro.settingsHint')}<span class="intro-arrow">↗</span>
+		</div>
 	</div>
 {/if}
 
 {#if showHelp}
 	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 	<div class="help-overlay" onclick={() => (showHelp = false)}>
-		<div class="help-box" role="dialog" aria-label="Tastensteuerung">
-			<h3>Tastensteuerung</h3>
+		<div class="help-box" role="dialog" aria-label={$_('app.help.title')}>
+			<h3>{$_('app.help.title')}</h3>
 			<table>
 				<tbody>
-					<tr><td><kbd>Space</kbd></td><td>Play / Pause</td></tr>
-					<tr><td><kbd>←</kbd></td><td>Tick zurück</td></tr>
-					<tr><td><kbd>→</kbd></td><td>Tick vorwärts</td></tr>
-					<tr><td><kbd>PgUp</kbd></td><td>Schale vorwärts</td></tr>
-					<tr><td><kbd>PgDn</kbd></td><td>Schale zurück</td></tr>
-					<tr><td><kbd>Return</kbd></td><td>Richtungswechsel</td></tr>
-					<tr><td><kbd>+</kbd></td><td>Schneller (×{SPEED_STEP})</td></tr>
-					<tr><td><kbd>−</kbd></td><td>Langsamer (÷{SPEED_STEP})</td></tr>
-					<tr><td><kbd>?</kbd></td><td>Hilfe</td></tr>
+					<tr><td><kbd>Space</kbd></td><td>{$_('remoteControl.keys.playPause')}</td></tr>
+					<tr><td><kbd>←</kbd></td><td>{$_('remoteControl.keys.tickBack')}</td></tr>
+					<tr><td><kbd>→</kbd></td><td>{$_('remoteControl.keys.tickForward')}</td></tr>
+					<tr><td><kbd>PgUp</kbd></td><td>{$_('remoteControl.keys.shellForward')}</td></tr>
+					<tr><td><kbd>PgDn</kbd></td><td>{$_('remoteControl.keys.shellBack')}</td></tr>
+					<tr><td><kbd>Return</kbd></td><td>{$_('remoteControl.keys.direction')}</td></tr>
+					<tr
+						><td><kbd>+</kbd></td><td
+							>{$_('remoteControl.keys.faster', { values: { step: SPEED_STEP } })}</td
+						></tr
+					>
+					<tr
+						><td><kbd>−</kbd></td><td
+							>{$_('remoteControl.keys.slower', { values: { step: SPEED_STEP } })}</td
+						></tr
+					>
+					<tr><td><kbd>?</kbd></td><td>{$_('app.help.helpKey')}</td></tr>
 				</tbody>
 			</table>
-			<p class="help-hint">Beliebige Taste zum Schliessen</p>
+			<p class="help-hint">{$_('app.help.closeHint')}</p>
 		</div>
 	</div>
 {/if}

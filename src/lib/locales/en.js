@@ -1,6 +1,16 @@
 export default {
 	app: {
 		title: '√2 Area Model (exact integer-digit mathematics)',
+		intro: {
+			title: '√2 as Area',
+			hint: 'This visualization approaches √2 step by step.',
+			settingsHint: 'Settings',
+		},
+		help: {
+			title: 'Keyboard controls',
+			helpKey: 'Help',
+			closeHint: 'Press any key to close',
+		},
 	},
 	playback: {
 		playPause: 'Play/Pause',
@@ -89,8 +99,8 @@ export default {
 			tickForward: 'Tick forward',
 			shellForward: 'Shell forward',
 			direction: 'Reverse direction',
-			slower: 'Slower (÷1.3)',
-			faster: 'Faster (×1.3)',
+			slower: 'Slower (÷{step})',
+			faster: 'Faster (×{step})',
 		},
 	},
 	compile: {

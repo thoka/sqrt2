@@ -127,8 +127,16 @@
 		<button class="key-btn" onclick={toggleDirection} title={$_('remoteControl.keys.direction')}
 			>↩</button
 		>
-		<button class="key-btn" onclick={slower} title={$_('remoteControl.keys.slower')}>−</button>
-		<button class="key-btn" onclick={faster} title={$_('remoteControl.keys.faster')}>+</button>
+		<button
+			class="key-btn"
+			onclick={slower}
+			title={$_('remoteControl.keys.slower', { values: { step: SPEED_STEP } })}>−</button
+		>
+		<button
+			class="key-btn"
+			onclick={faster}
+			title={$_('remoteControl.keys.faster', { values: { step: SPEED_STEP } })}>+</button
+		>
 	</div>
 </main>
 
