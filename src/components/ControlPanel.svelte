@@ -22,7 +22,14 @@
 	import { displayStore } from '../lib/displayStore.js';
 	import { buildStateParams } from '../lib/urlState.js';
 	import { initNetworkSync } from '../lib/syncedStore.js';
-	import { locale, _, SUPPORTED_LOCALES } from '../lib/i18n.js';
+	import {
+		locale,
+		_,
+		SUPPORTED_LOCALES,
+		AUTO,
+		localePreference,
+		setLocalePreference,
+	} from '../lib/i18n.js';
 	import {
 		buildWsUrl,
 		buildGuestLink,
@@ -564,7 +571,8 @@
 
 		<label class="control-group" style="margin-top:10px;"
 			>{$_('controlPanel.admin.language')}
-			<select value={$locale} onchange={(e) => locale.set(e.target.value)}>
+			<select value={$localePreference} onchange={(e) => setLocalePreference(e.target.value)}>
+				<option value={AUTO}>{$_('controlPanel.admin.languageAuto')}</option>
 				{#each SUPPORTED_LOCALES as loc}
 					<option value={loc}>{loc.toUpperCase()}</option>
 				{/each}

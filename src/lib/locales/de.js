@@ -68,6 +68,7 @@ export default {
 			copyParamsOnly: 'Nur Parameter kopieren',
 			copied: 'Kopiert ✓',
 			language: 'Sprache',
+			languageAuto: 'Automatisch (Browser)',
 		},
 		remote: {
 			heading: 'Fernsteuerung (Handy via QR)',

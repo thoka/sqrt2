@@ -68,6 +68,7 @@ export default {
 			copyParamsOnly: 'Copy parameters only',
 			copied: 'Copied ✓',
 			language: 'Language',
+			languageAuto: 'Auto (browser)',
 		},
 		remote: {
 			heading: 'Remote control (phone via QR)',

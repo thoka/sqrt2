@@ -58,15 +58,15 @@ export function pickLocale(urlLang, storedLang, browserLang) {
 	return DEFAULT_LOCALE;
 }
 
-// Wird HIER (vor init()) ausgewertet, nicht erst in einem onMount, damit
-// keine Komponente kurz in der falschen Sprache aufblitzt (App.svelte UND
-// RemoteControl.svelte importieren i18n.js gleichermaßen - kein
-// Extra-Wiring pro Entry-Point nötig).
 function storedLocale() {
 	const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
 	return SUPPORTED_LOCALES.includes(stored) ? stored : null;
 }
 
+// Wird HIER (vor init()) ausgewertet, nicht erst in einem onMount, damit
+// keine Komponente kurz in der falschen Sprache aufblitzt (App.svelte UND
+// RemoteControl.svelte importieren i18n.js gleichermaßen - kein
+// Extra-Wiring pro Entry-Point nötig).
 function initialLocale() {
 	const urlLang =
 		typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('lang') : null;
