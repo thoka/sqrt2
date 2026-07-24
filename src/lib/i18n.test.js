@@ -10,9 +10,21 @@ test('pickLocale: localStorage greift, wenn kein (gültiger) URL-Parameter da is
 	expect(pickLocale('fr', 'de')).toBe('de');
 });
 
-test('pickLocale: Default (en), wenn weder URL noch localStorage einen unterstützten Wert liefern', () => {
+test('pickLocale: Browsersprache greift, wenn weder URL noch localStorage einen unterstützten Wert liefern', () => {
+	expect(pickLocale(null, null, 'de')).toBe('de');
+	expect(pickLocale(null, null, 'de-AT')).toBe('de');
+	expect(pickLocale('fr', 'fr', 'de-DE')).toBe('de');
+});
+
+test('pickLocale: Default (en), wenn URL, localStorage und Browsersprache keinen unterstützten Wert liefern', () => {
 	expect(pickLocale(null, null)).toBe('en');
-	expect(pickLocale('fr', 'fr')).toBe('en');
+	expect(pickLocale(null, null, null)).toBe('en');
+	expect(pickLocale(null, null, 'fr-FR')).toBe('en');
+	expect(pickLocale('fr', 'fr', 'fr')).toBe('en');
+});
+
+test('pickLocale: localStorage hat Vorrang vor Browsersprache', () => {
+	expect(pickLocale(null, 'en', 'de')).toBe('en');
 });
 
 test('pickLocale: liefert nur unterstützte Locales', () => {
