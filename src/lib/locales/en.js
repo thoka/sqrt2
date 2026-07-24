@@ -23,7 +23,7 @@ export default {
 			targetDisplayRand: 'Edge visible',
 			targetDisplayGleichmaessig: 'Uniform',
 			targetDisplayEngagement: 'Target representation: engagement',
-			targetDisplayLevel: 'Target representation: strength',
+			targetDisplayLevel: 'Edge visible: minimal width',
 			abstraction: 'Abstraction',
 			showLabels: 'Labels on/off',
 			bankZoomLabel: 'Bank zoom (automatic, real base) —',

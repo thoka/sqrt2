@@ -23,7 +23,7 @@ export default {
 			targetDisplayRand: 'Rand sichtbar',
 			targetDisplayGleichmaessig: 'Gleichmäßig',
 			targetDisplayEngagement: 'Ziel-Darstellung: Aktivierung',
-			targetDisplayLevel: 'Ziel-Darstellung: Stärke',
+			targetDisplayLevel: 'Rand sichtbar: Mindestbreite',
 			abstraction: 'Abstraktion',
 			showLabels: 'Beschriftung an/aus',
 			bankZoomLabel: 'Bank-Zoom (automatisch, reale Basis) —',
