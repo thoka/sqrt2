@@ -59,7 +59,7 @@ mit drei bewusst unterschiedlichen Bausteinen je nach Anforderung:
    Fix: `buildMonotoneSpline()` trifft jeden Stützpunkt exakt und ohne
    Verzögerung - das allein reicht bereits als Garantie, sofern die
    Stützpunkt-Werte selbst monoton sind (kein zusätzlicher "harter"
-   Parallel-Wert mehr nötig, siehe `sqrt2.html` Ziel-Darstellung-Historie). **NICHT
+   Parallel-Wert mehr nötig, siehe Ziel-Darstellung-Historie). **NICHT
    für Werte verwenden, die nur asymptotisch folgen müssen** - dafür
    `buildDampedFilter()`, siehe Punkt 4.
 2. **Gebrochene Ordnungstreue zwischen mehreren Werten:** Wenn MEHRERE Werte
@@ -118,7 +118,7 @@ und der Übergang weich animiert sein soll.
 drei Zustände liegen auf einer Linie" oder "eine Feder direkt auf den rohen
 Ausgabewerten") - ob ein Übergang sich am fertigen Exponat richtig anfühlt,
 ist eine **empirische** Frage, keine, die sich am Reißbrett entscheiden
-lässt (siehe `docs/Alternative Zoom-Steuerung,md` für den konkreten Fall,
+lässt (siehe `docs/Alternative Ziel-Darstellung-Steuerung.md` für den konkreten Fall,
 der zu dieser Regel geführt hat: eine Feder direkt auf den Ausgabewerten
 fühlte sich je nach Richtung/Zustandspaar unterschiedlich schnell an und
 ignorierte die bereits bekannte Wahrnehmungs-Nichtlinearität eines der
@@ -167,7 +167,7 @@ Exponat-Projekte übertragbar (nicht nur die konkrete sqrt2-Instanz).
 **Wie anwenden:** vor dem Bauen einer neuen "weichen Umschaltung zwischen
 Zuständen" erst prüfen, ob diese Dreiteilung (Embedding/Blend/Treiber) hier
 zutrifft, statt direkt eine Ad-hoc-Lösung auf den rohen Ausgabewerten zu
-bauen. Siehe `docs/Alternative Zoom-Steuerung,md` als laufendes
+bauen. Siehe `docs/Alternative Ziel-Darstellung-Steuerung.md` als laufendes
 Fallbeispiel/erste konkrete Anwendung.
 
 ## Layout-Umordnungen mehrerer Objekte: Masse/Trägheit statt Förderband
@@ -204,11 +204,13 @@ einfach ein weiterer, ganz normal weich überblendeter Übergang.
 
 Jede einstellbare Größe (Compiler-Input, Checkbox, Laufzeit-Zustand wie
 "spielt gerade ab") gehört in EIN einziges Array (`SETTINGS` in
-`sqrt2.html`) mit `{ key, phase, get(), set(v) }` - NICHT in mehrere parallel
-gepflegte Listen (eine für `<input>`-Felder, eine für Checkboxen, eine für
-den URL-Export, ein eigener Init-Block für alles, was erst nach dem
-Kompilieren gültig ist). Zwei generische Funktionen (`applyPhase(phase)` zum
-Einlesen, `buildStateParams()` zum Exportieren) laufen über dieselbe Liste.
+`sqrt2.html`, nach Phase 7 in `configStore`/`playbackStore` mit
+URL-Sync über `urlState.js`) - NICHT in mehrere parallel gepflegte
+Listen (eine für `<input>`-Felder, eine für Checkboxen, eine für den
+URL-Export, ein eigener Init-Block für alles, was erst nach dem
+Kompilieren gültig ist). Zwei generische Funktionen (`applyPhase(phase)`
+zum Einlesen, `buildStateParams()` zum Exportieren) laufen über dieselbe
+Liste.
 
 **Warum:** vier von Hand synchron gehaltene Stellen für dieselbe
 Einstellung sind fehleranfällig (eine neue Einstellung wird leicht in einer

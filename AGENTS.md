@@ -5,8 +5,7 @@ vollständig lesen - hier nur das Nötigste (das *Warum/Wie* lebt in CLAUDE.md).
 
 ## Architektur
 
-- `sqrt2.html`: **dünne Shell** - mountet Svelte, hält `SETTINGS`-Array
-  (URL-Sync), Zahlentafel (`updateHUD`) + Playback-Brücke. Kein Canvas hier.
+- `index.html`: Vite-Root, mountet `App.svelte`. Kein Canvas hier.
 - Canvas + rAF-Loop + Ziel-Darstellung/Kompaktierung: `TargetBankCanvas.svelte`
   (Port von `renderFrame()`). Rest-Widgets austauschbar:
   `RestCounterBars.svelte` / `RestCounterGrid.svelte`. UI:
@@ -22,7 +21,7 @@ vollständig lesen - hier nur das Nötigste (das *Warum/Wie* lebt in CLAUDE.md).
 ```bash
 pnpm install      # pnpm (NICHT npm); aktiviert pre-commit-Hook
 pnpm dev          # Vite-Dev-Server
-pnpm build        # -> dist/sqrt2.html (+ assets)
+pnpm build        # -> dist/ (+ assets)
 pnpm test         # node --test *.test.js  +  vitest run
 pnpm check        # Gate: svelte-check && eslint . && knip --dependencies && prettier --check .
 pnpm format       # Prettier --write .  (vor Commit laufen lassen)
@@ -43,6 +42,11 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
   vorherigen Commit. Betrifft JEDE Änderung (Bugfix, Refactor, Docs, Config).
   Nur phasen-zugehörige Dateien (`git add` einzeln, nicht `-A`), Message kurz
   im Repo-Stil. **Nicht** pushen/amenden, keine leeren Commits, keine Secrets.
+- **Specs mit Datum + Status:** Jede Spezifikation (`docs/*-SPEC.md`,
+  `docs/*-PLAN.md`) bekommt einen Kopf mit Datum und Status
+  (offen/umgesetzt/teilweise). Neue ToDos in Specs als Checklisten
+  (`- [ ]` / `- [x]`), nicht als fließender Text. Erledigtes wird
+  durchgestrichen oder nach `docs/done/` verschoben.
 - **Playwright-E2E muss funktionieren:** Keine Arbeit an Renderer/Canvas/Zoom
   ohne funktionierendes Playwright. Wenn `pnpm test:e2e` hängt oder fehlschlägt,
   ist das das ERSTE Problem das gelöst wird. Root-Cause + Fix in
@@ -88,7 +92,8 @@ pnpm test:e2e     # Playwright-E2E über dist/ (3 Tests)
 3. **`displayStore` ist lokal** - neue geteilte Zustände über
    `configStore`/`playbackStore`.
 4. **`SETTINGS`-Array:** neue Größe = EIN Eintrag
-   `{ key, phase, get(), set(v) }` in `sqrt2.html`; nie vier parallele Listen.
+   `{ key, phase, get(), set(v) }` (historisch in `sqrt2.html`, jetzt
+   `configStore`/`urlState.js`); nie vier parallele Listen.
 5. **Vite:** bewusst `vite@7` (kein Rolldown-Wechsel). Upgrade = eigener
    Branch + `@sveltejs/vite-plugin-svelte` 6→7.
 6. **Connection-Service:** Relay als Bibliothek `createRelay()` in

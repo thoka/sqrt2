@@ -12,8 +12,8 @@ Nebenziel: dieses Projekt dient auch als Testfeld für **allgemeine,
 projektübergreifend wiederverwendbare Entwurfsprinzipien für grafische
 Exponate** (z.B. weiche Übergänge zwischen diskreten Steuerungs-
 Zuständen, Kopplung an eine gemeinsame Geschwindigkeits-Wahrnehmung) -
-siehe `CLAUDE.md` Abschnitt "Schalter-Tweening" für das aktuell
-erarbeitete Prinzip und `docs/Alternative Zoom-Steuerung,md` als
+siehe `docs/CLAUDE.md` Abschnitt "Schalter-Tweening" für das aktuell
+erarbeitete Prinzip und `docs/Alternative Ziel-Darstellung-Steuerung.md` als
 konkretes Fallbeispiel.
 
 ## 2. Schnellstart: aktuellen Stand ausprobieren
@@ -30,7 +30,7 @@ pnpm test             # node --test *.test.js (reine Logik) UND vitest run (Svel
 ```
 
 - **Haupttool:** im Dev-Server (`pnpm dev`) bzw. Produktions-Build
-  (`pnpm build` → `dist/sqrt2.html`). Canvas-Rendering
+  (`pnpm build` → `dist/`). Canvas-Rendering
   (Zielquadrat + Bank/Rest) liegt in `<TargetBankCanvas>`, die Rest-Anzeige
   ist ein austauschbares Widget (Balken/Grid, Umschalter "Rest-Anzeige" im
   `ControlPanel`), Steuerung in `ControlPanel`/`PlaybackBar`. Alle drei an
@@ -44,8 +44,6 @@ pnpm test             # node --test *.test.js (reine Logik) UND vitest run (Svel
   Vorrang), `restwidget=grid|bars` (Rest-Widget wählen),
   `compaction=1` (Kompaktierung statt Bank-Zoom), `transition` (Kompaktierungs-
   Dauer in Ticks), `zoomspeed` (Bank-Zoom-Trägheit).
-- **Test-Tool** (Bank-Algorithmus isoliert, Stücke an echten Positionen):
-  `selection_strategy_prototype.html` (über Dev-Server oder als statische Datei).
 - **Visuelle Verifikation** via Playwright (`pnpm test:e2e`), aber nur mit
   frischem Build - siehe `AGENTS.md` (stale-dist-Falle). Korrektheits-Gate:
   `pnpm build` + `pnpm test` + `pnpm test:e2e`.
@@ -54,25 +52,23 @@ pnpm test             # node --test *.test.js (reine Logik) UND vitest run (Svel
 
 | Datei | Zweck | Zustand |
 |---|---|---|
-| `sqrt2.html` | **Haupttool-Shell.** Mountet die Svelte-Komponenten und hält nur noch die Zahlentafel (`updateHUD`, l/l²/R), das `SETTINGS`-Array (URL-Sync) und die Playback-Brücke für die Zahlentafel. Das Canvas-Rendering selbst liegt seit Phase 4a in `TargetBankCanvas.svelte`. Enthält den *ausgelagerten* alten SYSTEM-C-Renderblock noch als toten Code (siehe `AGENTS.md`). | Funktionsfähig |
-| `selection_strategy_prototype.html` | **Algorithmus-Spiel-Tool.** Bank isoliert an echten Positionen, Tick-Zeitachse (1 Tick = 1 Entnahme), zum Testen von Auswahl-/Schneide-Strategien. | Funktionsfähig, im Browser getestet |
-| `p.html` | Referenz-Prototyp (Slot-basiertes Repacking, **verworfen**, nur als Vergleich). | historisch |
-| `bank-core.js` | **Gemeinsame Bibliothek** (ES-Modul), von beiden HTML-Tools importiert: Bank-Algorithmus + Kompaktierung + bijektive Tick↔Zeit-Abbildung. | Fertig, in Node getestet |
+| `index.html` | **Vite-Root.** Mountet `App.svelte`, kein inline-Code mehr. | Funktionsfähig |
+| `bank-core.js` | **Gemeinsame Bibliothek** (ES-Modul): Bank-Algorithmus + Kompaktierung + bijektive Tick↔Zeit-Abbildung. | Fertig, in Node getestet |
 | `src/lib/smoothing.js` | **Gemeinsame Glättungs-Bibliothek** (3 Bausteine, siehe §6.1). | Fertig, persistent getestet |
-| `src/lib/paramTween.js` | **Echtzeit-Feder-Tweener** (`createSpringTween()`) für Live-Parameter, die zu beliebiger, vorher unbekannter Echtzeit neu verzielt werden (Abgrenzung zu `smoothing.js` im Modul-Kopfkommentar). | Fertig, `paramTween.test.js` |
-| `src/lib/zoomStateTween.js` | Treiber für die **Alternative Rand-Zoom-Steuerung** (`docs/Alternative Zoom-Steuerung,md`): animiert `modeAB`/`autoZoomMinPx` weich auf das Preset des gewählten Zoom-Zustands. | Fertig, `zoomStateTween.test.js` |
+| `src/lib/paramTween.js` | **Echtzeit-Feder-Tweener** (`createSpringTween()`) für Live-Parameter (Abgrenzung zu `smoothing.js` im Modul-Kopfkommentar). | Fertig, `paramTween.test.js` |
+| `src/lib/zoomStateTween.js` | Treiber für die **Alternative Rand-Zoom-Steuerung** (`docs/Alternative Ziel-Darstellung-Steuerung.md`): animiert `modeAB`/`autoZoomMinPx` weich auf das Preset des gewählten Zoom-Zustands. | Fertig, `zoomStateTween.test.js` |
 | `src/lib/compiler.js` | `compileSystem()` als reine Funktion (Config rein, kompilierter Zustand raus). | Fertig, `compiler.test.js` |
 | `src/lib/stores.js` | `configStore`/`playbackStore` (writable) + `compiledStore` (derived) + `displayStore` (lokaler UI-State, **nicht** synchronisiert). | Fertig |
 | `src/lib/urlState.js` | `parseConfigFromUrl`/`parsePlaybackFromUrl`/`buildStateParams`. | Fertig, `url-state.test.js` |
 | `src/components/TargetBankCanvas.svelte` | Canvas-Rendering + rAF-Loop + Auto-Zoom/Kompaktierung (Port von `renderFrame()`). | Fertig (Phase 4a) |
 | `src/components/RestCounterBars.svelte` / `RestCounterGrid.svelte` | Austauschbare Rest-Widgets (Balken / 4×4-Grid), nur lesend auf Stores. | Fertig (Phase 4b/c) |
 | `src/components/ControlPanel.svelte` / `PlaybackBar.svelte` | UI, an Stores gebunden (Basis, Tiefe, Modus, Rest-Widget-Wahl, Play/Pause, Zeitstrahl). | Fertig (Phase 3) |
-| `TOOLING_SPEC.md` | **Lebendige Migrations-Spezifikation** (Phasen 0-5 + 8, Stand je Step). Bei jeder Änderung aktualisieren. | gepflegt |
+| `docs/TOOLING_SPEC.md` | **Lebendige Migrations-Spezifikation** (Phasen 0-8 erledigt, Phase 6 offen). | gepflegt |
 | `docs/DEPLOYMENT.md` | **Zentrale Betriebsanleitung**: ein Server pro Exponat, embedded Relay, QR-Fernsteuerung, Tailscale. | gepflegt |
 | `docs/CONNECTION_SERVICE_SPEC.md` | Relay-Protokoll (Token/PIN/WS, embedded Betriebsmodell). | gepflegt |
 | `docs/MATHJAX_METRICS.md` | MathJax-Optik (Brüche/Exponenten) ohne MathJax-Laufzeit nachgebaut - Mess-Tool + Konstanten. | gepflegt |
-| `CLAUDE.md` | Agentenregeln (stetige Ableitung, Layout-Masse, SETTINGS-EIN-Objekt, Tooling-Updates, Svelte-Tests). | gepflegt |
-| `AGENTS.md` | Kurzübersicht + Gotchas für Agents (Build/Test, toter Code, Store-Pitfalls, npm-blockiert). | gepflegt |
+| `docs/CLAUDE.md` | Agentenregeln (stetige Ableitung, Layout-Masse, Store-Objekt, Tooling-Updates, Svelte-Tests). | gepflegt |
+| `AGENTS.md` | Kurzübersicht + Gotchas für Agents (Build/Test, Store-Pitfalls, npm-blockiert). | gepflegt |
 | `TODO.md` | Offene Punkte / Checkliste (nächste Stufen + Politur). | lebendig |
 
 **Tests:** `pnpm test` = `node --test *.test.js` (reine Logik:
@@ -197,19 +193,13 @@ Smoothstep statt linear umgestellt werden (noch nicht umgesetzt).
 
 Regler "Auto-Zoom: Mindestbreite feinste Stelle (Pixel, 0 = aus)".
 
-## 9. Einstellungen & URL-Zustand (`SETTINGS`)
+## 9. Einstellungen & URL-Zustand
 
-**EIN `SETTINGS`-Array** (`sqrt2.html`): jede Einstellung = ein Eintrag
-`{ key, phase, get(), set(v) }`. `applyPhase(phase)` liest URL-Parameter,
-`buildStateParams()` exportiert sie ("Als URL kopieren"). Neue Einstellung →
-EIN neuer Eintrag (keine vier parallelen Listen mehr). `bindEl()` für
-`<input>`/`<select>`/Checkbox. `phase:'pre'` (Compiler-Eingaben, vor
-`compileSystem()`) vs `phase:'post'` (Wiedergabe-Position, `modeab`, **`play`** -
-neu, schließt die Lücke "geteilter Link startet Animation nicht automatisch").
-Sonderfälle als `resolveFromUrl()`-Hook auf dem Eintrag, nicht als
-Extra-`if`-Zweig. Zwei neue Regler: `transition` (Kompaktierungs-Dauer,
-Default `3`) und `zoomspeed` (Bank-Zoom-Trägheit, Default `0.012`, ersetzt
-hartkodiertes `0.03`).
+Jede Einstellung lebt in `configStore`/`playbackStore` (writable Stores)
+mit URL-Sync über `urlState.js`. Neue Einstellung → Store-Feld + URL-Param
+in `urlState.js`. `phase:'pre'` (Compiler-Eingaben, vor `compileSystem()`)
+vs `phase:'post'` (Wiedergabe-Position, `modeab`, `play`). Siehe
+`docs/CLAUDE.md` "Einstellungen & URL-Zustand" für Design-Prinzipien.
 
 ## 10. Zukünftige Vision & Status
 
@@ -245,7 +235,6 @@ Hintergrund: pnpm 11.13 blockiert `pnpm install` im CI bei esbuild-Build-
 Scripts, daher kein GitHub-Actions-Build (`build_type: legacy`). Details in
 `docs/TOOLING_SPEC.md` §8.
 
-## 11. nächste Schritte
+## 11. Offene Punkte
 
-- **Tailscale/TLS** für echtes Handy — siehe `TODO.md`.
-- (Widget-Auswahl )
+Siehe **`TODO.md`** — alle offenen Features, Bugfixes und Politur-Punkte.
